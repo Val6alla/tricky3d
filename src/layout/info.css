@@ -1,0 +1,13 @@
+/* Information panel. The grid and the faint placeholder colour come from .rpanel-info in layout.css. */
+
+.rpanel-info dd.info-value {
+  color: var(--text);
+}
+
+.info-warning {
+  display: inline-flex;
+  margin-right: 4px;
+  color: var(--warn);
+  vertical-align: -2px;
+  cursor: help;
+}

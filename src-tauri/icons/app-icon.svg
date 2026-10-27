@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- tricky3D app icon: a triangulated cube on a teal tile. Source for `npx tauri icon`. -->
+  <defs>
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="64" y1="64" x2="960" y2="960">
+      <stop offset="0" stop-color="#2bb3b1"/>
+      <stop offset="1" stop-color="#0b8a8f"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)"/>
+  <!-- Seams are stroked with the tile gradient so they read as gaps between facets. -->
+  <g fill="#ffffff" stroke="url(#tile)" stroke-width="16" stroke-linejoin="round">
+    <polygon points="512,212 771.8,362 252.2,362" fill-opacity="1"/>
+    <polygon points="252.2,362 771.8,362 512,512" fill-opacity="0.88"/>
+    <polygon points="252.2,362 512,512 512,812" fill-opacity="0.74"/>
+    <polygon points="252.2,362 512,812 252.2,662" fill-opacity="0.64"/>
+    <polygon points="512,512 771.8,362 512,812" fill-opacity="0.5"/>
+    <polygon points="771.8,362 771.8,662 512,812" fill-opacity="0.4"/>
+  </g>
+</svg>

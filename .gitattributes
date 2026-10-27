@@ -1,0 +1,2 @@
+# The .repair test fixture keeps the CRLF line endings the reference tool writes.
+*.repair -text

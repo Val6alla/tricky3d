@@ -1,0 +1,206 @@
+/* Right panel in Boolean operations (src/boolean/BooleanPanel.tsx). The layout, footer, titles, checkboxes, fields
+   and buttons are repair mode's (src/repair/repair.css) and the Clip planes section's (src/layout/clip.css); the list
+   colours are the viewport's (theme.css --vp-boolean-*). */
+
+.rpanel-content.is-boolean {
+  scroll-padding-bottom: 72px;
+}
+
+/* ---------- The two lists ---------- */
+
+/* Headings in the first row, lists and arrows in the second: a heading that wraps in a narrow panel moves both lists
+   down together, so they stay side by side. */
+.bp-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 4px 6px;
+}
+
+.bp-list {
+  --bp-color: var(--vp-boolean-main);
+  display: contents;
+}
+
+.bp-list.is-tool {
+  --bp-color: var(--vp-boolean-tool);
+}
+
+.bp-list.is-main > * {
+  grid-column: 1;
+}
+
+.bp-list.is-tool > * {
+  grid-column: 3;
+}
+
+.bp-list-title {
+  grid-row: 1;
+  align-self: end;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.bp-list-title::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--bp-color);
+}
+
+.bp-list-note {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.bp-items {
+  grid-row: 2;
+  min-width: 0;
+  min-height: 96px;
+  max-height: 220px;
+  margin: 0;
+  padding: 2px 0;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--bp-color);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  list-style: none;
+}
+
+.bp-item {
+  padding: 3px 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bp-item:hover {
+  background: var(--surface-3);
+}
+
+.bp-item.is-selected {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.bp-empty {
+  padding: 6px;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+.bp-arrows {
+  display: flex;
+  grid-row: 2;
+  grid-column: 2;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bp-arrow {
+  width: 28px;
+  padding: 0;
+}
+
+/* ---------- Progress and log ---------- */
+
+.bp-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bp-progress-head {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bp-progress-step {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 64px;
+  max-height: 200px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-xs);
+  list-style: none;
+}
+
+.bp-log-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding-left: 7px;
+  border-left: 2px solid var(--border-strong);
+  overflow-wrap: anywhere;
+}
+
+.bp-log-line.is-ok {
+  border-left-color: var(--accent);
+}
+
+.bp-log-line.is-warn {
+  border-left-color: var(--warn);
+}
+
+.bp-log-line.is-error {
+  border-left-color: var(--danger);
+}
+
+.bp-repair {
+  height: 20px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+}
+
+/* ---------- Settings ---------- */
+
+.bp-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.bp-tolerance {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+/* ---------- Footer: Union, Difference, Intersection, Cancel ---------- */
+
+.rp-footer.bp-footer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rp-footer.bp-footer .clip-btn {
+  height: 26px;
+}

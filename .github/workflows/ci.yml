@@ -1,0 +1,102 @@
+name: CI
+
+# A change to documentation only (Markdown, the license text, issue forms) runs nothing.
+# THIRD_PARTY.md still runs CI, because the license job checks that it is up to date.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "**"
+      - "!**.md"
+      - "THIRD_PARTY.md"
+      - "!LICENSE"
+      - "!.github/ISSUE_TEMPLATE/**"
+  pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "THIRD_PARTY.md"
+      - "!LICENSE"
+      - "!.github/ISSUE_TEMPLATE/**"
+
+permissions:
+  contents: read
+
+# A new push to a branch or pull request cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS minutes cost ten times as much, so macOS runs only for pull requests into main and
+        # for pushes to main. Other branch pushes check Windows and Linux.
+        os: ${{ fromJSON((github.ref == 'refs/heads/main' || github.base_ref == 'main') && '["macos-latest", "windows-latest", "ubuntu-22.04"]' || '["windows-latest", "ubuntu-22.04"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+
+      # Formatting is the same everywhere, so one platform checks it.
+      - name: Rust formatting
+        if: runner.os == 'Linux'
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # Also needed by the Rust build, which embeds dist/.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: TypeScript tests
+        run: npm test
+
+      - name: Clippy
+        run: npm run clippy
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  licenses:
+    name: Licenses
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Fails on any crate whose license is not on the allow list in deny.toml.
+      # With no [graph] targets in deny.toml, this Linux job also checks the Windows and macOS crates.
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          # --locked: check the crates in Cargo.lock as committed, never a re-resolved set.
+          arguments: --all-features --locked
+          command: check
+          command-arguments: licenses
+          # The action's image ships Rust 1.85; read the lockfile with current stable like the other jobs.
+          rust-version: stable
+
+      - name: Check THIRD_PARTY.md and the npm licenses
+        run: node scripts/third-party.mjs --check

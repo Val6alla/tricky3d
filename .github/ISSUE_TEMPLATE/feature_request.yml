@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest a new tool or a change to an existing one.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task you want to get done when preparing a print, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How should it work?
+      description: Describe the result you'd like. If another tool already does this, say which one and how it behaves there.
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Example files, screenshots, or links. Anything you attach is public.

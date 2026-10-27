@@ -1,0 +1,11 @@
+/* Screen-edge rulers, drawn by rulers.ts. The canvas covers the viewport but only the left and
+   bottom strips are painted. It sits above the WebGL canvas and below the view cube's overlay and
+   the drop hint, and never takes pointer events, so orbiting and picking work through it. */
+.viewport-rulers {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}

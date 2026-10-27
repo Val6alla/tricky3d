@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "licenseFile": null,
+    "macOS": {
+      "files": {
+        "Resources/LICENSE": "../LICENSE",
+        "Resources/THIRD_PARTY.md": "../THIRD_PARTY.md"
+      }
+    }
+  }
+}

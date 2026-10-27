@@ -1,0 +1,73 @@
+.viewport {
+  position: relative;
+  flex: 1 1 auto;
+  /* The side panels shrink before the viewport goes below this. */
+  min-width: 300px;
+  overflow: hidden;
+  /* The WebGL canvas is transparent; this gradient is the scene background. */
+  background: linear-gradient(to bottom, var(--vp-bg-top), var(--vp-bg-bottom));
+}
+
+/* Absolutely placed so the canvas never feeds back into the container's size. */
+.viewport-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* Size and offset are set from viewCube.ts so they match the scissored render region. */
+.viewport-cube {
+  position: absolute;
+  touch-action: none;
+}
+
+/* Shown while files are dragged over the window. */
+.viewport-drop {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Box selection's rectangle while a left drag from empty space goes on (src/viewport/picking.ts). */
+.viewport-box {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+.viewport-box[hidden] {
+  display: none;
+}
+
+/* Move nodes: the position of the point under the pointer, beside the pointer (src/viewport/editTools.ts). */
+.viewport-tooltip {
+  position: absolute;
+  z-index: 2;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 18%);
+  pointer-events: none;
+}
+
+.viewport-tooltip[hidden] {
+  display: none;
+}

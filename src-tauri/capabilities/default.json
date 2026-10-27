@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window only. Message boxes, file drops, and the close-requested event (for the unsaved-changes prompt); no network, shell, opener, updater or process access. The webview gets no file access of its own: mesh files and projects are read and written by the app's Rust commands, and those accept only paths the user picked in the open and save dialogs (which the Rust side runs itself) or dropped on the window. fs:deny-default keeps the webview data folders off-limits should an fs permission ever be added.",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-set-title",
+    "core:window:allow-destroy",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "dialog:allow-message",
+    "fs:deny-default"
+  ]
+}

@@ -1,0 +1,272 @@
+/* Ribbon: a tab row over a fixed-height strip of button groups. Flat and neutral on purpose. */
+.ribbon {
+  flex: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tab row */
+.rb-tabbar {
+  display: flex;
+  align-items: flex-end;
+  height: 32px;
+  padding: 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.rb-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  margin-bottom: 3px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.rb-file:hover,
+.rb-file.is-open {
+  background: var(--surface-3);
+}
+
+.rb-tabbar-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 8px 8px;
+  background: var(--border-strong);
+}
+
+.rb-tablist {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+}
+
+.rb-tab {
+  height: 28px;
+  margin-bottom: -1px; /* the selected tab covers the row's bottom border and joins the strip */
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.rb-tab:hover {
+  color: var(--text);
+}
+
+.rb-tab.is-selected {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+/* A contextual tab (Repair, only in repair mode) sits after a separator, tinted in the accent with its icon, so it
+   stays easy to find after switching to another tab. */
+.rb-tab.is-contextual {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rb-tab.is-contextual:hover {
+  color: var(--accent-hover);
+}
+
+.rb-tab.is-contextual.is-selected {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.rb-tab-icon {
+  flex: none;
+}
+
+/* Group strip: fixed height. Groups collapse to fit (Ribbon.tsx); it scrolls sideways only when even that is too wide. */
+.rb-strip {
+  display: flex;
+  height: 96px;
+  padding: 0 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rb-strip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.rb-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rb-strip::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+
+.rb-group {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  height: 90px;
+  padding: 4px 6px 0;
+}
+
+.rb-group + .rb-group::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.rb-group-body {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-height: 0;
+}
+
+.rb-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rb-group-label {
+  flex: none;
+  height: 16px;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Buttons */
+.rb-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+}
+
+.rb-btn:hover,
+.rb-btn.is-open {
+  background: var(--surface-3);
+}
+
+.rb-btn:active {
+  background: var(--border);
+}
+
+.rb-btn.is-active {
+  background: var(--accent-soft);
+}
+
+.rb-btn.is-active .rb-icon {
+  color: var(--accent);
+}
+
+.rb-btn:focus-visible {
+  outline-offset: -2px;
+}
+
+.rb-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.rb-large {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  height: 100%;
+  min-width: 54px;
+  max-width: 84px;
+  padding: 12px 6px 0; /* room above the icon for the Soon pill */
+}
+
+.rb-large .rb-icon {
+  color: var(--text);
+}
+
+.rb-large .rb-label {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  line-height: 14px;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.rb-small {
+  gap: 6px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.rb-small .rb-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.rb-chevron {
+  margin-left: 2px;
+  color: var(--text-faint);
+  vertical-align: -2px;
+}
+
+/* Soon buttons, and buttons that cannot run right now (no triangles selected, repair mode open): greyed out. */
+.rb-btn.is-soon .rb-icon,
+.rb-btn.is-soon .rb-label,
+.rb-btn.is-disabled .rb-icon,
+.rb-btn.is-disabled .rb-label {
+  opacity: 0.45;
+}
+
+/* The Soon pill sits on the button's top-right corner, so it adds no width. On small buttons it
+   straddles the top edge, between the row above and this label's letters. ".rb-btn" outranks
+   .soon-pill in theme.css, which loads later. */
+.rb-btn .rb-pill {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  z-index: 1;
+  padding: 0 3px;
+  font-size: 8px;
+  line-height: 9px;
+  box-shadow: 0 0 0 1px var(--surface);
+  pointer-events: none;
+}
+
+.rb-large .rb-pill {
+  top: 1px;
+  right: 1px;
+}

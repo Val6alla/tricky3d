@@ -1,0 +1,34 @@
+# Private notes and reference material. Never commit.
+_private/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local AI assistant instructions and state. Never commit.
+CLAUDE.md
+.claude/
+
+# Output of scripts/corpus/repair-corpus.ps1 and other scratch work.
+corpus-out/
+scratch/

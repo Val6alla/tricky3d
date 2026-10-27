@@ -1,0 +1,166 @@
+/* Numeric Move / Rotate / Scale dialog. Builds on dialogs.css; colours come from theme.css. */
+
+/* One-of-several choice: a row of buttons, the pressed one tinted and outlined with the accent. Its
+   text stays in the text colour: the accent on the tint is below 4.5:1 for small text. */
+.tf-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.tf-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tf-seg-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.tf-seg-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Axis letter in the button's text colour with a swatch in the viewport axis colour, as in clip.css:
+   the axis colours are too light for small text on the light theme. */
+.tf-axis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.tf-axis::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--tf-axis-color);
+}
+
+.tf-axis-x {
+  --tf-axis-color: var(--vp-axis-x);
+}
+
+.tf-axis-y {
+  --tf-axis-color: var(--vp-axis-y);
+}
+
+.tf-axis-z {
+  --tf-axis-color: var(--vp-axis-z);
+}
+
+/* Label on the left, control on the right. */
+.tf-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tf-row select:disabled {
+  opacity: 0.55;
+}
+
+.tf-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tf-chips {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.tf-chip {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tf-chip:hover {
+  background: var(--surface-3);
+}
+
+/* Numbers read right-aligned. */
+.tf-num {
+  text-align: right;
+}
+
+.tf-num:disabled {
+  opacity: 0.55;
+}
+
+.tf-angle {
+  flex: none;
+  width: 76px;
+}
+
+.tf-help {
+  margin: 0;
+}
+
+/* Scale: rows Scale / Size now / New size against X, Y, Z columns. Every row is input height so
+   switching which row takes input does not move anything. */
+.tf-table {
+  display: grid;
+  grid-template-columns: 96px repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.tf-th {
+  padding-right: 9px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-align: right;
+}
+
+.tf-val {
+  overflow: hidden;
+  height: 28px;
+  padding: 0 9px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 28px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tf-val.is-result {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* A resulting size that is out of range. */
+.tf-val.is-bad {
+  color: var(--danger);
+}

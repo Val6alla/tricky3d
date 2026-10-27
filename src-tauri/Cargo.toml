@@ -1,0 +1,93 @@
+[package]
+name = "tricky3d"
+version = "0.1.0"
+description = "Free, offline mesh preparation for 3D printing"
+authors = ["tricky3D contributors"]
+license = "GPL-3.0-only"
+edition = "2024"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name.
+# Needed on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "tricky3d_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip: matrices from the window must parse to the exact f64 the window sent.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+# Mesh file formats. No C libraries: zip only gets its pure-Rust deflate backend.
+stl_io = "0.11"
+tobj = { version = "4", default-features = false }
+ply-rs = "0.1"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+quick-xml = "0.42"
+# Fills the cut surfaces of the plane cut (ISC, a port of mapbox/earcut).
+earcutr = "0.5"
+# Repair (src/repair): Shewchuk's exact orientation predicates, and constrained Delaunay
+# triangulation for retriangulating intersected triangles in Wrap part surface.
+robust = "1.2"
+spade = "2.15"
+# Repair runs its per-triangle work (intersection tests, retriangulation, ray casts) on every core.
+rayon = "1.12"
+
+[dev-dependencies]
+# Exact rational arithmetic for the reference implementations the repair tests compare against.
+num-bigint = "0.4"
+num-rational = "0.4"
+num-traits = "0.2"
+
+# Repair runs opt out of Windows power throttling while they last (src/power.rs). Tauri already
+# builds this crate on Windows.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+
+# Heavy work runs below normal priority (src/workers.rs). Tauri already builds this crate on macOS
+# and Linux.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The macOS open panel (src/open_dialog/macos.rs). Tauri already builds these crates on macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSArray",
+  "NSGeometry",
+  "NSString",
+  "NSURL",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "NSApplication",
+  "NSControl",
+  "NSLayoutConstraint",
+  "NSOpenPanel",
+  "NSPanel",
+  "NSPopUpButton",
+  "NSButton",
+  "NSResponder",
+  "NSSavePanel",
+  "NSStackView",
+  "NSTextField",
+  "NSView",
+  "NSWindow",
+] }
+
+# https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

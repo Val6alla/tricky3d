@@ -1,0 +1,58 @@
+/* Cut surfaces' right panel (src/repair/cut/CutPanel.tsx). The layout, footer, titles, checkboxes, fields and buttons
+   are repair mode's (src/repair/repair.css) and the Clip planes section's (src/layout/clip.css). */
+
+.cp-note {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-xs);
+}
+
+.cp-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.cp-buttons .clip-btn {
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cp-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.cp-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.cp-field.is-off {
+  opacity: 0.55;
+}
+
+.cp-update {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 8px;
+}
+
+.cp-problem {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--vp-cut-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-xs);
+}

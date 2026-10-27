@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<repairlist>
+	<name>Extended repair</name>
+	<repair enabled="1">
+		<type>1</type>
+		<option>
+			<id>1</id>
+			<type>float</type>
+			<value>0.01</value>
+		</option>
+		<option>
+			<id>2</id>
+			<type>boolean</type>
+			<value>0</value>
+		</option>
+	</repair>
+	<repair enabled="1">
+		<type>3</type>
+	</repair>
+	<repair enabled="1">
+		<type>5</type>
+	</repair>
+	<repair enabled="1">
+		<type>2</type>
+	</repair>
+	<repair enabled="1">
+		<type>3</type>
+	</repair>
+	<repair enabled="1">
+		<type>1</type>
+		<option>
+			<id>1</id>
+			<type>float</type>
+			<value>0.01</value>
+		</option>
+		<option>
+			<id>2</id>
+			<type>boolean</type>
+			<value>1</value>
+		</option>
+	</repair>
+	<repair enabled="1">
+		<type>2</type>
+	</repair>
+	<repair enabled="1">
+		<type>4</type>
+	</repair>
+	<repair enabled="1">
+		<type>13</type>
+	</repair>
+	<repair enabled="1">
+		<type>6</type>
+		<option>
+			<id>calc_tolerance</id>
+			<type>boolean</type>
+			<value>1</value>
+		</option>
+		<option>
+			<id>3</id>
+			<type>float</type>
+			<value>0.002</value>
+		</option>
+	</repair>
+	<repair enabled="1">
+		<type>7</type>
+		<option>
+			<id>mode</id>
+			<type>integer</type>
+			<value></value>
+		</option>
+		<option>
+			<id>4</id>
+			<type>float</type>
+			<value>0.0001</value>
+		</option>
+		<option>
+			<id>minarea</id>
+			<type>float</type>
+			<value>0.0001</value>
+		</option>
+	</repair>
+</repairlist>

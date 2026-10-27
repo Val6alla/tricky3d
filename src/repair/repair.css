@@ -1,0 +1,806 @@
+/* Right panel in repair mode (src/repair/panel) and the quick-action strip at its bottom in normal mode
+   (src/layout/QuickActions.tsx). Buttons, fields, checkboxes, selects and sliders are the Clip planes classes from
+   src/layout/clip.css; label/value lists are .rpanel-info from layout.css. Colours come from theme.css. */
+
+/* ---------- Layout ----------
+   The panel content (.rpanel-content) is the one scroll area. The tab row sticks to its top once the Clip planes
+   section has scrolled away; the footer (and the quick strip) sticks to its bottom, or sits at the bottom of the
+   panel while the content is shorter than the panel. */
+
+/* Scrolling a control into view (keyboard focus) keeps it clear of the sticky tab row and footer (whose two buttons
+   stack in a narrow panel). */
+.rpanel-content.is-repair {
+  scroll-padding: 31px 0 84px;
+}
+
+.rpanel-content.has-quick {
+  scroll-padding-bottom: 44px;
+}
+
+.rp {
+  container: rp / inline-size;
+  /* The swatches beside the switches: the colours the viewport draws the highlights in (theme.css). */
+  --rp-holes: var(--vp-repair-hole);
+  --rp-inverted: var(--vp-backface);
+  --rp-degenerate: var(--vp-repair-degenerate);
+  --rp-errors: var(--vp-repair-error);
+  --rp-slim: var(--vp-repair-slim);
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+/* The repair tabs while Cut surfaces' panel stands in for them. */
+.rp[hidden] {
+  display: none;
+}
+
+.rp-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* The five names take about 204 px at 12 px (Segoe UI), so with 4 px each side they fit a 280 px panel even with a
+   scrollbar; narrower panels get the compact size below, and only very narrow ones wrap to a second row. */
+.rp-tab {
+  flex: 1 0 auto;
+  height: 30px;
+  margin-bottom: -1px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rp-tab:hover {
+  color: var(--text);
+}
+
+.rp-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.rp-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+@container rp (max-width: 251px) {
+  .rp-tab {
+    padding: 0 2px;
+    font-size: var(--fs-xs);
+  }
+}
+
+/* In the narrowest panels the two bottom buttons stack, so both names stay whole. */
+@container rp (max-width: 235px) {
+  .rp-footer {
+    flex-direction: column;
+  }
+
+  .rp-footer .clip-btn {
+    flex: none;
+  }
+}
+
+.rp-panel {
+  padding: 10px 10px 14px;
+}
+
+.rp-footer,
+.quick-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex: none;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.rp-footer {
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.rp-footer .clip-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+}
+
+/* ---------- Common pieces ---------- */
+
+.rp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rp-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+/* The last button of a row sits at its right end, also when it wraps onto a line of its own. */
+.rp-push {
+  margin-left: auto;
+}
+
+/* Label/value lists sit closer than in the Information section. */
+.rpanel-info.rp-info {
+  margin: 0;
+}
+
+.rpanel-info dd.rp-value {
+  color: var(--text);
+}
+
+.rpanel-info dd.rp-problem {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.rp-mark {
+  font-weight: 700;
+}
+
+.rpanel-info dd.rp-mark.is-yes {
+  color: var(--accent);
+}
+
+.rpanel-info dd.rp-mark.is-no {
+  color: var(--danger);
+}
+
+.rp-stats {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.rp-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rp-check.is-soon {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.rp-check.is-soon input {
+  cursor: default;
+}
+
+/* Colour beside a highlight switch: a square for triangles, a short thick line for edges. */
+.rp-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--rp-swatch, transparent);
+}
+
+.rp-swatch.is-line {
+  height: 3px;
+  border-radius: 1px;
+}
+
+.rp-swatch-holes {
+  --rp-swatch: var(--rp-holes);
+}
+
+.rp-swatch-inverted {
+  --rp-swatch: var(--rp-inverted);
+}
+
+.rp-swatch-degenerate {
+  --rp-swatch: var(--rp-degenerate);
+}
+
+.rp-swatch-errors {
+  --rp-swatch: var(--rp-errors);
+}
+
+.rp-swatch-slim {
+  --rp-swatch: var(--rp-slim);
+}
+
+/* "Edges from" [slider] "off": lines up with the switches above and below it. */
+.rp-edges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rp-edges-label {
+  flex: none;
+  padding-left: 35px; /* checkbox, swatch and their gaps, so the name lines up with the switches' names */
+}
+
+.rp-edges-value {
+  flex: none;
+  min-width: 4ch;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rp-edges-value.is-off {
+  color: var(--text-faint);
+}
+
+/* A named slider: the name on one line, the slider and its number field on the next, as in Clip planes. */
+.rp-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rp-slider-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rp-slider.is-off .rp-slider-label {
+  color: var(--text-faint);
+}
+
+.rp-field {
+  flex: none;
+}
+
+/* ---------- Actions ---------- */
+
+.rp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.rp-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rp-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rp-run {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Repair scripts ---------- */
+
+.rp-picker .clip-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.rp-picker {
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+
+.rp-empty {
+  padding: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.rp-steps {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  list-style: none;
+}
+
+.rp-step {
+  position: relative;
+  outline: none;
+}
+
+.rp-step + .rp-step {
+  border-top: 1px solid var(--border);
+}
+
+.rp-step-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 4px 2px 2px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.rp-steps.is-dragging,
+.rp-steps.is-dragging .rp-step-row {
+  cursor: grabbing;
+}
+
+.rp-step-row:hover {
+  background: var(--surface-2);
+}
+
+.rp-step:focus > .rp-step-row {
+  background: var(--accent-soft);
+}
+
+.rp-step:focus-visible > .rp-step-row {
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+.rp-grip {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.rp-expand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+button.rp-expand:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.rp-step-check {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.rp-step-num {
+  flex: none;
+  min-width: 2.2ch;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rp-step-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  min-width: 0;
+}
+
+/* Names wrap rather than lose their ends in a narrow panel. */
+.rp-step-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* At most two lines: enough to tell the two Stitch steps of the built-in scripts apart. */
+.rp-step-summary {
+  display: -webkit-box;
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.rp-step.is-off .rp-step-label,
+.rp-step.is-off .rp-step-summary {
+  color: var(--text-faint);
+}
+
+.rp-step.is-off .rp-step-label {
+  text-decoration: line-through;
+}
+
+.rp-step.is-unknown .rp-step-label {
+  color: var(--danger);
+}
+
+/* Shown over the end of the row while it is hovered or focused, so it takes no room from the name. */
+.rp-step-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.rp-step-row:hover .rp-step-remove,
+.rp-step:focus .rp-step-remove {
+  display: inline-flex;
+}
+
+.rp-steps.is-dragging .rp-step-remove {
+  display: none;
+}
+
+.rp-step-remove:hover {
+  color: var(--danger);
+}
+
+.rp-step.is-dragged > .rp-step-row {
+  opacity: 0.45;
+}
+
+/* The drop line where a dragged row would land. */
+.rp-step.is-drop-before::before,
+.rp-step.is-drop-after::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.rp-step.is-drop-before::before {
+  top: -1px;
+}
+
+.rp-step.is-drop-after::after {
+  bottom: -1px;
+}
+
+.rp-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 8px 8px 40px;
+}
+
+/* Label and field share a line; where they do not fit, the field moves under the label, still at the right. */
+.rp-param {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  min-width: 0;
+}
+
+.rp-param-label {
+  flex: 1 0 auto;
+  color: var(--text-muted);
+}
+
+.rp-param .rp-field {
+  width: 112px;
+  margin-left: auto;
+}
+
+@container rp (max-width: 251px) {
+  .rp-params {
+    padding-left: 22px;
+  }
+}
+
+.rp-param-choice {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.rp-param-choice .clip-select {
+  flex: none;
+  width: 100%;
+}
+
+.rp-param-check {
+  align-self: flex-start;
+}
+
+/* The add-action dropdown looks like a select; its menu is the app's dropdown menu (Soon pills included). */
+.rp-add-pick {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  text-align: left;
+}
+
+.rp-add-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-problems {
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: var(--warn);
+  line-height: 1.4;
+}
+
+.rp-fold {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.rp-fold:hover {
+  color: var(--text);
+}
+
+.rp-fold-time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.rp-reports {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rp-report-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.rp-report-time {
+  flex: none;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-report-msg {
+  color: var(--text-muted);
+}
+
+.rp-report.is-unchanged .rp-report-head,
+.rp-report.is-unchanged .rp-report-msg {
+  color: var(--text-faint);
+}
+
+.rp-report-warn {
+  color: var(--warn);
+}
+
+/* A warning a later action put right: kept for the record, no longer a warning. */
+.rp-report-resolved {
+  color: var(--text-faint);
+}
+
+/* ---------- Shells ---------- */
+
+/* The table scrolls in its own box, both ways: a big part's cm² and cm³ do not fit a narrow panel, and a raw model
+   can have a thousand shells. The header stays at the top of the box. */
+.rp-table-box {
+  max-height: max(180px, calc(100vh - 380px));
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  scroll-padding-top: 32px;
+}
+
+.rp-shells {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.rp-shells:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.rp-shells th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.rp-shells th button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  padding: 3px 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1.2;
+  text-align: right;
+  cursor: pointer;
+}
+
+/* Headers are tab stops (sorting from the keyboard); the ring stays inside, where the scrolling box cannot clip it. */
+.rp-shells th button:focus-visible {
+  outline-offset: -2px;
+}
+
+.rp-shells th button:hover,
+.rp-shells th[aria-sort="ascending"] button,
+.rp-shells th[aria-sort="descending"] button {
+  color: var(--text);
+}
+
+.rp-th-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 13px;
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.rp-shells th[aria-sort="ascending"] .rp-th-unit,
+.rp-shells th[aria-sort="descending"] .rp-th-unit {
+  color: var(--accent);
+}
+
+.rp-shells td {
+  padding: 2px 3px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rp-shells tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rp-shells tbody tr {
+  cursor: pointer;
+}
+
+.rp-shells tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.rp-shells tbody tr.is-open td:last-child {
+  color: var(--warn);
+}
+
+.rp-shells tbody tr.is-picked {
+  background: var(--accent-soft);
+}
+
+.rp-shells tbody tr.is-cursor td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.rp-shells.is-stale tbody {
+  opacity: 0.5;
+}
+
+.rp-shells.is-stale tbody tr {
+  cursor: default;
+}
+
+/* ---------- Quick-action strip (normal mode) ---------- */
+
+.quick-actions {
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.quick-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.quick-btn:hover {
+  background: var(--surface-3);
+}
+
+.quick-btn:active {
+  background: var(--border);
+}
+
+.quick-btn.is-soon svg {
+  opacity: 0.4;
+}

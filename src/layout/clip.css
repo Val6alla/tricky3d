@@ -1,0 +1,344 @@
+/* Right panel › Clip planes and Cuts. Colours come from theme.css. */
+
+.clip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: var(--fs-sm);
+  /* The direction fields stack when the panel is narrow; see the container query below. */
+  container-type: inline-size;
+}
+
+/* ---------- One plane ---------- */
+
+.clip-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.clip-row-head,
+.clip-row-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clip-row-name {
+  flex: 1 1 auto;
+}
+
+.clip-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.clip-check input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Axis letter in the text colour with a swatch in the viewport axis colour: the axis colours are too
+   light for small text on the light theme. Custom keeps an empty swatch so the names line up. */
+.clip-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.clip-axis::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--clip-axis-color, transparent);
+}
+
+.clip-axis-x {
+  --clip-axis-color: var(--vp-axis-x);
+}
+
+.clip-axis-y {
+  --clip-axis-color: var(--vp-axis-y);
+}
+
+.clip-axis-z {
+  --clip-axis-color: var(--vp-axis-z);
+}
+
+.clip-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.clip-slider:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- Text fields ---------- */
+
+.clip-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: text;
+}
+
+.clip-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.clip-field:has(input:disabled) {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.clip-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+  user-select: text;
+}
+
+.clip-input:disabled {
+  color: var(--text-faint);
+}
+
+.clip-field-unit {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+/* The input gets an inline width that fits the longest value of the range, so the field grows for
+   long offsets such as -1154.70 and the slider gives way. */
+.clip-mm {
+  flex: none;
+  min-width: 76px;
+}
+
+.clip-field-tag {
+  flex: none;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.clip-field-tag::before {
+  height: 9px;
+}
+
+/* ---------- Buttons ---------- */
+
+.clip-icon-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.clip-icon-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.clip-icon-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.clip-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.clip-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.clip-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.clip-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.clip-btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.clip-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- Custom direction ---------- */
+
+.clip-normal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 6px 0 0 8px;
+  border-left: 2px solid var(--border);
+}
+
+.clip-normal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.clip-normal-label {
+  color: var(--text-muted);
+}
+
+.clip-quick {
+  display: flex;
+  gap: 2px;
+}
+
+.clip-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clip-quick-btn:hover {
+  background: var(--surface-3);
+}
+
+.clip-normal-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.clip-normal-field {
+  padding: 0 4px;
+}
+
+/* Below about 230 px of panel, three fields side by side cut off values like -0.577. */
+@container (max-width: 185px) {
+  .clip-normal-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Footer: Transparent cuts, Reset ---------- */
+
+.clip-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- Cuts ---------- */
+
+.cuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+
+.cuts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Wide enough for "Cut selected parts"; in a narrow panel the Cut button wraps below. */
+.clip-select {
+  flex: 1 1 140px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.clip-select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}

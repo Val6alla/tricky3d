@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Two tetrahedra in inches. The second object splits its triangles over two volumes. -->
+<amf unit="inch" version="1.1">
+  <metadata type="cad">Hand written</metadata>
+  <object id="0">
+    <metadata type="name">Wedge</metadata>
+    <mesh>
+      <vertices>
+        <vertex><coordinates><x>0</x><y>0</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>1</x><y>0</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>0</x><y>1</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>0</x><y>0</y><z>1</z></coordinates><normal><nx>0</nx><ny>0</ny><nz>1</nz></normal></vertex>
+      </vertices>
+      <volume>
+        <triangle><v1>0</v1><v2>2</v2><v3>1</v3></triangle>
+        <triangle><v1>0</v1><v2>1</v2><v3>3</v3></triangle>
+        <triangle><v1>0</v1><v2>3</v2><v3>2</v3></triangle>
+        <triangle><v1>1</v1><v2>2</v2><v3>3</v3></triangle>
+      </volume>
+    </mesh>
+  </object>
+  <object id="1">
+    <metadata type="name">Second &amp; last</metadata>
+    <mesh>
+      <vertices>
+        <vertex><coordinates><x>2</x><y>0</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>3</x><y>0</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>2</x><y>1</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>2</x><y>0</y><z>1</z></coordinates></vertex>
+      </vertices>
+      <volume materialid="1">
+        <triangle><v1>0</v1><v2>2</v2><v3>1</v3></triangle>
+        <triangle><v1>0</v1><v2>1</v2><v3>3</v3></triangle>
+      </volume>
+      <volume>
+        <metadata type="name">Other half</metadata>
+        <triangle><v1>0</v1><v2>3</v2><v3>2</v3></triangle>
+        <triangle><v1>1</v1><v2>2</v2><v3>3</v3></triangle>
+      </volume>
+    </mesh>
+  </object>
+  <material id="1"><metadata type="name">Grey</metadata></material>
+  <constellation id="2">
+    <instance objectid="0"><deltax>1</deltax><deltay>0</deltay><deltaz>0</deltaz></instance>
+  </constellation>
+</amf>

@@ -1,0 +1,162 @@
+/* tricky3D palette. Neutral slate surfaces with a teal accent; light and dark follow the OS.
+   Every component reads colours from these tokens. The viewport reads the --vp-* tokens at runtime. */
+:root {
+  color-scheme: light dark;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --bg: #eef0f3;
+  --surface: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #e6e9ee;
+  --border: #d3d8df;
+  --border-strong: #b9c0ca;
+  --text: #1b2028;
+  --text-muted: #5d6877;
+  --text-faint: #8a94a2;
+  --accent: #0b8a8f;
+  --accent-hover: #097478;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(11, 138, 143, 0.12);
+  --focus-ring: rgba(11, 138, 143, 0.45);
+  --soon: #8a94a2;
+  --soon-bg: #e3e7ec;
+  --danger: #c93c3c;
+  --warn: #b7791f;
+  --shadow: 0 6px 24px rgba(20, 28, 40, 0.16), 0 1px 3px rgba(20, 28, 40, 0.12);
+  --backdrop: rgba(20, 28, 40, 0.32);
+
+  /* Viewport */
+  --vp-bg-top: #f7f8fa;
+  --vp-bg-bottom: #dfe3e9;
+  --vp-platform: #7d8794;
+  --vp-grid-minor: #d2d7de;
+  --vp-grid-major: #b3bbc6;
+  --vp-ruler: #5d6877;
+  --vp-part: #a9b1bc;
+  --vp-selected: #f28c28;
+  --vp-backface: #d93a3a;
+  --vp-open-edge: #e02424;
+  --vp-edge: #3a4250;
+  --vp-axis-x: #d6453d;
+  --vp-axis-y: #3f9b4a;
+  --vp-axis-z: #3b6fd8;
+  --vp-gizmo-centre: #8a929e;
+  /* Repair highlights, drawn on the part in both themes (parts keep their colours in dark mode too). Inverted
+     triangles use --vp-backface. The Status tab's swatches use the same tokens. */
+  --vp-repair-hole: #ffcf26;
+  --vp-repair-error: #ff8a1c;
+  --vp-repair-degenerate: #e04ce0;
+  --vp-repair-selected: #33c25a;
+  --vp-repair-slim: #3d8bf2;
+  /* Repair's edit tools, on the part in both themes: Cut surfaces' points (the current one deeper) and its line, and the
+     point Move nodes would drag. */
+  --vp-cut-point: #ff5cb1;
+  --vp-cut-current: #d4006f;
+  --vp-cut-line: #e8202a;
+  --vp-node: #18b4f0;
+  /* Boolean operations' green and red lists, drawn on the parts in both themes, and the lighter shade of the part
+     selected in the lists. The panel's list headings use the same tokens. */
+  --vp-boolean-main: #3aa655;
+  --vp-boolean-main-selected: #86e09a;
+  --vp-boolean-tool: #d64545;
+  --vp-boolean-tool-selected: #ff9a9a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181d;
+    --surface: #1d2128;
+    --surface-2: #232830;
+    --surface-3: #2b313b;
+    --border: #323944;
+    --border-strong: #46505e;
+    --text: #e4e8ee;
+    --text-muted: #9aa5b3;
+    --text-faint: #6c7785;
+    --accent: #2bb3b1;
+    --accent-hover: #46c7c4;
+    --accent-text: #0b1214;
+    --accent-soft: rgba(43, 179, 177, 0.16);
+    --focus-ring: rgba(43, 179, 177, 0.5);
+    --soon: #7a8593;
+    --soon-bg: #2b313b;
+    --danger: #f06a6a;
+    --warn: #e0a84a;
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --backdrop: rgba(0, 0, 0, 0.5);
+
+    --vp-bg-top: #262b33;
+    --vp-bg-bottom: #16191e;
+    --vp-platform: #8792a1;
+    --vp-grid-minor: #2c323b;
+    --vp-grid-major: #3f4753;
+    --vp-ruler: #9aa5b3;
+    --vp-part: #a9b1bc;
+    --vp-selected: #f5973a;
+    --vp-backface: #e04848;
+    --vp-open-edge: #ff4d4d;
+    --vp-edge: #11151a;
+    --vp-axis-x: #ef5a50;
+    --vp-axis-y: #56b862;
+    --vp-axis-z: #5a8cf0;
+    --vp-gizmo-centre: #a7b0bc;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.35;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Small "Soon" pill used on ribbon buttons, menu items, tree roots and tabs. */
+.soon-pill {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--soon-bg);
+  color: var(--soon);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 13px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}

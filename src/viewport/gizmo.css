@@ -1,0 +1,20 @@
+/* The live value beside the cursor while a gizmo handle is dragged ("X +12.5 mm", "Z +30°"), placed
+   by gizmo.ts. Last in the viewport, so it sits over the rulers and the view cube; it never takes
+   pointer events, so the drag runs on under it. `white-space: pre` keeps the two spaces between axes. */
+.viewport-gizmo-value {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  white-space: pre;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
