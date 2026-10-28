@@ -31,6 +31,7 @@ import {
   childrenOf,
   effectiveStatus,
   featureById,
+  historyMenu,
   hoverHintFor,
   isMenu,
   registryProblems,
@@ -181,8 +182,8 @@ afterEach(() => {
 
 /** The Repair tab as designed: group → ids, in order. */
 const REPAIR_GROUPS: [string, string[]][] = [
-  ["Repair", ["repair.script"]],
-  ["Info", ["repair.selection-info"]],
+  ["Repair", ["repair.script", "repair.edit-scripts"]],
+  ["Info", ["repair.selection-info", "repair.status"]],
   [
     "Select",
     [
@@ -206,16 +207,86 @@ const REPAIR_GROUPS: [string, string[]][] = [
   ["Close", ["repair.apply", "repair.close"]],
 ];
 
-/** The entries of the Repair tab that work today; every other entry of the tab is Soon. */
-const REPAIR_READY = new Set([
-  "repair.script",
-  "repair.selection-info",
+/** The Home tab as designed (the reference tool's layout): group → ids, in order. */
+const HOME_GROUPS: [string, string[]][] = [
+  ["Edit", ["home.save", "home.undo", "home.redo"]],
+  ["Add parts", ["home.my-machines", "home.add-part", "home.part-library", "home.platform-statistics"]],
+  ["Prepare", ["home.repair", "home.run-script"]],
+  ["Analyze", ["home.new-analysis", "home.measure"]],
+  ["Modify", ["home.boolean", "home.generate-shell", "home.generate-label"]],
+  ["Arrange", ["home.scale", "home.rotate", "home.move", "home.orient", "home.duplicate", "home.pack"]],
+  ["Support", ["home.generate-supports", "home.manage-supports"]],
+  ["Slice parts", ["home.slice-parts"]],
+  ["Zoom to", ["home.zoom-everything", "home.zoom-selected", "home.zoom-platform", "home.zoom-area", "home.zoom-parts", "home.zoom-point"]],
+  ["Utilities", ["home.open-utility"]],
+];
+
+/** Where each repair tool of the old Home tab went (or the entry that already did the same). */
+const FORMER_HOME_REPAIR = [
+  "repair.damage-warnings",
+  "repair.problem-counts",
+  "repair.shell-list",
+  "repair.apply",
+  "repair.select-primitive",
   "repair.select-triangle",
   "repair.select-surface",
   "repair.select-shell",
+  "repair.select-brush",
+  "repair.select-criteria",
+  "repair.selection-info",
+  "repair.select-overlap",
+  "repair.hide-triangles",
+  "repair-ctx.close-all",
+  "repair-ctx.close-defined",
+  "repair-ctx.close-curved",
+  "repair-ctx.bridge-gap",
+  "repair-ctx.grow-band",
+  "repair-ctx.stitch",
+  "repair-ctx.remove-duplicates",
+  "repair-ctx.remove-degenerate",
+  "repair-ctx.merge-points",
+  "repair-ctx.remove-tiny-shells",
+  "repair-ctx.self-intersections",
+  "repair-ctx.split-non-oriented",
+  "repair.split-non-manifold",
+  "repair-ctx.remove-problem-areas",
+  "repair-ctx.fix-flipped",
+  "repair-ctx.invert-shells",
+  "repair-ctx.wrap-surface",
+  "repair-ctx.refine",
+  "repair-ctx.fill-three-edge",
+  "repair-ctx.insert-point",
+  "repair.move-nodes",
+  "repair-ctx.smooth",
+  "repair.remove-triangles",
+  "repair.flip-selected",
+  "repair.cut-surfaces",
+  "repair.extract-copy",
+  "repair.extract-shells",
+  "repair.edit-scripts",
+];
+
+/** The entries of the Repair tab that work today; every other entry of the tab is Soon. */
+const REPAIR_READY = new Set([
+  "repair.script",
+  "repair.edit-scripts",
+  "repair.selection-info",
+  "repair.status",
+  "repair.damage-warnings",
+  "repair.problem-counts",
+  "repair.shell-list",
+  "repair.select-primitive",
+  "repair.select-triangle",
+  "repair.select-surface",
+  "repair.select-brush",
+  "repair.select-shell",
   "repair.select-all",
   "repair.select-none",
+  "repair.select-overlap",
   "repair.select-toggle",
+  "repair.select-advanced",
+  "repair.select-criteria",
+  "repair.hide-triangles",
   "repair.split-non-manifold",
   "repair.remove-triangles",
   "repair.flip-selected",
@@ -224,8 +295,10 @@ const REPAIR_READY = new Set([
   "repair.extract",
   "repair.extract-copy",
   "repair.extract-separate",
+  "repair.extract-shells",
   "repair.zoom-part",
   "repair.zoom-selected",
+  "repair.zoom-area",
   "repair.apply",
   "repair.close",
 ]);
@@ -237,8 +310,11 @@ const REPAIR_MENU: [string, string][] = [
   ["repair-ctx.add-shell", "Add this shell to selection"],
   ["repair-ctx.expand", "Expand selection"],
   ["repair-ctx.shrink", "Shrink selection"],
+  ["repair-ctx.select-criteria", "Select damaged triangles"],
+  ["repair-ctx.hide-triangles", "Hide selected triangles"],
   ["repair-ctx.reduce", "Reduce triangles"],
   ["repair-ctx.refine", "Refine triangle mesh"],
+  ["repair-ctx.insert-point", "Add point"],
   ["repair-ctx.smooth", "Smooth triangles"],
   ["repair-ctx.z-compensation", "Z-compensation"],
   ["repair-ctx.remesh", "Remesh"],
@@ -246,18 +322,32 @@ const REPAIR_MENU: [string, string][] = [
   ["repair-ctx.close-trivial", "Close trivial holes"],
   ["repair-ctx.close-defined", "Close defined holes"],
   ["repair-ctx.close-all", "Close all holes"],
+  ["repair-ctx.close-curved", "Close holes along the curvature"],
+  ["repair-ctx.fill-three-edge", "Fill three-edge holes"],
+  ["repair-ctx.grow-band", "Grow a band from a hole edge"],
+  ["repair-ctx.bridge-gap", "Bridge a gap"],
   ["repair-ctx.stitch", "Stitch triangles"],
+  ["repair-ctx.remove-duplicates", "Remove duplicate triangles"],
+  ["repair-ctx.remove-degenerate", "Collapse degenerate triangles"],
+  ["repair-ctx.merge-points", "Merge duplicate points"],
+  ["repair-ctx.remove-tiny-shells", "Delete small shells"],
+  ["repair-ctx.self-intersections", "Fix self-intersections"],
+  ["repair-ctx.remove-problem-areas", "Cut out damaged areas"],
+  ["repair-ctx.wrap-surface", "Keep only the outer surface"],
   ["repair-ctx.remove-selected", "Remove selected triangles"],
   ["repair-ctx.flip-selected", "Flip selected triangles"],
   ["repair-ctx.fix-flipped", "Fix flipped triangles"],
+  ["repair-ctx.invert-shells", "Turn inside-out shells"],
   ["repair-ctx.split-non-oriented", "Split non-oriented edges"],
   ["repair-ctx.extract-copy", "Extract selected triangles as part"],
   ["repair-ctx.extract-separate", "Separate selection as part"],
+  ["repair-ctx.extract-shells", "Selected shells to new part"],
 ];
-const MENU_SOON = new Set(["repair-ctx.reduce", "repair-ctx.refine", "repair-ctx.z-compensation", "repair-ctx.remesh", "repair-ctx.offset"]);
+const MENU_SOON = new Set(["repair-ctx.reduce", "repair-ctx.z-compensation", "repair-ctx.remesh", "repair-ctx.offset", "repair-ctx.bridge-gap"]);
 const MENU_NEEDS_SELECTION = new Set([
   "repair-ctx.expand",
   "repair-ctx.shrink",
+  "repair-ctx.insert-point",
   "repair-ctx.close-defined",
   "repair-ctx.remove-selected",
   "repair-ctx.flip-selected",
@@ -280,9 +370,9 @@ const MAIN_COMMANDS = [
   "home.repair",
   "context.repair",
   "quick.repair",
-  "home.copy",
-  "home.paste",
-  "home.batch-repair",
+  "context.copy",
+  "context.paste",
+  "context.batch-repair",
 ];
 
 const ids = (entries: readonly MenuEntry[]) => entries.map((e) => (e === "-" ? "-" : e.id));
@@ -298,13 +388,14 @@ describe("the registry", () => {
     expect(childrenOf("repair.extract").map((f) => [f.id, f.label])).toEqual([
       ["repair.extract-copy", "Extract selected triangles as part"],
       ["repair.extract-separate", "Separate selection as part"],
+      ["repair.extract-shells", "Selected shells to new part"],
     ]);
     expect(["repair.script", "repair.apply", "repair.close"].map((id) => feature(id).size)).toEqual(["large", "large", "large"]);
   });
 
   it("makes ready exactly the Repair tab entries that work, each with a run, and leaves the rest Soon without one", () => {
     const tab = FEATURES.filter((f) => f.tab === "repair");
-    expect(tab.length).toBe(REPAIR_GROUPS.flatMap(([, list]) => list).length + 2);
+    expect(tab.length).toBe(REPAIR_GROUPS.flatMap(([, list]) => list).length + 8);
     for (const f of tab) {
       expect([f.id, effectiveStatus(f)]).toEqual([f.id, REPAIR_READY.has(f.id) ? "ready" : "soon"]);
       if (isMenu(f)) expect(f.run).toBeUndefined();
@@ -316,8 +407,8 @@ describe("the registry", () => {
     const entries = repairContextMenuEntries();
     const rows = entries.filter((e): e is Feature => e !== "-");
     expect(rows.map((f) => [f.id, f.label])).toEqual(REPAIR_MENU);
-    // Sections: this triangle, the selection, mesh actions (Soon), holes, triangles, extract.
-    expect(ids(entries).join(" ").split(" - ").length).toBe(6);
+    // Sections: this triangle, the selection, mesh actions, holes, clean up, triangles, extract.
+    expect(ids(entries).join(" ").split(" - ").length).toBe(7);
     for (const f of rows) {
       expect([f.id, f.status]).toEqual([f.id, MENU_SOON.has(f.id) ? "soon" : "ready"]);
       expect([f.id, f.needsTriangles === true]).toEqual([f.id, MENU_NEEDS_SELECTION.has(f.id)]);
@@ -334,13 +425,38 @@ describe("the registry", () => {
     expect(shown[shown.length - 1]).not.toBe("-");
   });
 
-  it("makes Home › Repair ready, adds the quick strip, and puts Repair part after Rename in the part menu", () => {
+  it("lays out the Home tab like the reference: its groups and buttons in order, with Repair part large", () => {
+    const groups = groupsFor("home", false);
+    expect(groups.map((g) => [g.name, g.entries.map((f) => f.id)])).toEqual(HOME_GROUPS);
     const home = feature("home.repair");
-    expect([home.status, home.size, typeof home.run]).toEqual(["ready", "large", "function"]);
+    expect([home.label, home.status, home.size, typeof home.run]).toEqual(["Repair part", "ready", "large", "function"]);
     expect(home.hint).toBe("Repair the selected part: find and fix holes, flipped triangles and other problems.");
-    // Every Home › Repair entry works, but Bridge a gap, parked as Soon for now (its Rust action stays).
-    const soon = FEATURES.filter((f) => f.tab === "home" && f.group === "Repair" && effectiveStatus(f) !== "ready");
-    expect(soon.map((f) => [f.id, typeof f.run])).toEqual([["home.bridge-gap", "undefined"]]);
+    expect(childrenOf("home.run-script").map((f) => [f.id, effectiveStatus(f)])).toEqual([
+      ["home.run-repair-script", "ready"],
+      ["home.run-support-script", "soon"],
+      ["home.run-lua-script", "soon"],
+      ["home.quick-access", "soon"],
+    ]);
+    expect(isMenu(feature("home.quick-access"))).toBe(true);
+    expect(childrenOf("home.new-analysis").map((f) => f.label)).toEqual([
+      "Up-/Down-skin",
+      "Center of gravity",
+      "Standard analysis",
+      "Shadow area",
+      "Support volume",
+      "Wall thickness",
+    ]);
+    expect(childrenOf("home.new-analysis").every((f) => f.status === "soon")).toBe(true);
+    // Home's buttons run the same commands as their twins on the other tabs.
+    for (const [a, b] of [
+      ["home.boolean", "modify.boolean"],
+      ["home.scale", "modify.scale"],
+      ["home.rotate", "arrange.rotate"],
+      ["home.move", "arrange.move"],
+      ["home.save", "file.save"],
+    ]) {
+      expect([a, feature(a).run]).toEqual([a, feature(b).run]);
+    }
     const quick = FEATURES.filter((f) => f.tab === "quick");
     expect(quick.map((f) => [f.id, f.label, f.status, f.group])).toEqual([
       ["quick.repair", "Repair", "ready", "Quick"],
@@ -353,12 +469,65 @@ describe("the registry", () => {
     const at = CONTEXT_MENU.indexOf("context.rename");
     expect(CONTEXT_MENU[at + 1]).toBe("context.repair");
     expect(feature("context.repair").label).toBe("Repair part");
+    // Copy and Paste moved to the part menu, Platform size to Arrange, Export to File › Export part.
+    expect(CONTEXT_MENU.slice(0, 5)).toEqual(["context.export", "-", "context.copy", "context.paste", "context.duplicate"]);
+    expect(CONTEXT_MENU).toContain("context.batch-repair");
+    expect(feature("arrange.platform-size").run).toBeTypeOf("function");
+    expect(feature("file.export-any").parent).toBe("file.export");
+  });
+
+  it("lays out the Measurement tab: six dropdowns as the reference lists them, Wall thickness, 3-point angle and Cancel", () => {
+    const groups = groupsFor("measure", false);
+    expect(groups.map((g) => [g.name, g.entries.map((f) => f.id)])).toEqual([
+      ["New measurement", ["measure.point", "measure.edge", "measure.circle", "measure.circle3", "measure.sphere4", "measure.surface", "measure.wall", "measure.angle3"]],
+      ["Exit measurement", ["measure.cancel"]],
+    ]);
+    expect(childrenOf("measure.point").map((f) => f.label)).toEqual([
+      "Distance point to point",
+      "Distance point to edge",
+      "Distance point to detected circle",
+      "Distance point to 3-point circle",
+      "Distance point to sphere",
+      "Distance point to surface",
+      "Position point",
+    ]);
+    expect(childrenOf("measure.edge").map((f) => f.label)).toEqual([
+      "Distance edge to point",
+      "Distance edge to edge",
+      "Distance edge to sphere",
+      "Angle edge to edge",
+      "Angle edge to surface",
+      "Angle edge to YZ plane",
+      "Angle edge to XZ plane",
+      "Angle edge to XY plane",
+    ]);
+    expect(childrenOf("measure.surface").map((f) => f.label)).toEqual([
+      "Distance surface to point",
+      "Angle surface to edge",
+      "Angle surface to surface",
+      "Position surface",
+      "Angle surface to YZ plane",
+      "Angle surface to XZ plane",
+      "Angle surface to XY plane",
+    ]);
+    const tab = FEATURES.filter((f) => f.tab === "measure");
+    expect(tab.every((f) => effectiveStatus(f) === "ready")).toBe(true);
+    expect(["home.measure", "analyze.measure", "analyze.wall-thickness"].map((id) => effectiveStatus(feature(id)))).toEqual(["ready", "ready", "ready"]);
+  });
+
+  it("keeps every repair tool the Home tab had, in the Repair tab or the repair right-click menu", () => {
+    for (const id of FORMER_HOME_REPAIR) {
+      const f = feature(id);
+      expect([id, ["repair", "repair-context"].includes(f.tab)]).toEqual([id, true]);
+      expect([id, effectiveStatus(f)]).toEqual([id, id === "repair-ctx.bridge-gap" ? "soon" : "ready"]);
+    }
+    expect(FEATURES.some((f) => f.tab === "home" && f.group === "Repair")).toBe(false);
   });
 
   it("toasts for a Soon repair entry instead of running anything", () => {
-    activate(feature("repair.select-brush"));
-    expect(lastToast()).toBe(soonMessage(feature("repair.select-brush")));
-    expect(blockedReason(feature("repair.select-brush"))).toBeNull();
+    activate(feature("repair.z-comp"));
+    expect(lastToast()).toBe(soonMessage(feature("repair.z-comp")));
+    expect(blockedReason(feature("repair.z-comp"))).toBeNull();
   });
 
   it("names the repair select tools in the status bar", () => {
@@ -763,16 +932,53 @@ const settle = async () => {
   await idle();
 };
 
+describe("Undo and Redo arrows", () => {
+  const labels = (kind: "undo" | "redo") => historyMenu(kind).map((f) => f.label);
+
+  it("list the project's steps newest first, and a row takes back that step and the newer ones", () => {
+    expect(labels("undo")).toEqual(["Nothing to undo."]);
+    addPart("A");
+    addPart("B");
+    addPart("C");
+    expect(labels("undo")).toEqual(["Undo Add C", "Undo Add B", "Undo Add A"]);
+    historyMenu("undo")[1].run?.();
+    expect(s().parts.map((p) => p.name)).toEqual(["A"]);
+    expect(labels("redo")).toEqual(["Redo Add B", "Redo Add C"]);
+    historyMenu("redo")[1].run?.();
+    expect(s().parts.map((p) => p.name)).toEqual(["A", "B", "C"]);
+    expect(labels("redo")).toEqual(["Nothing to redo."]);
+  });
+
+  it("list repair mode's own steps while it is open, and nothing in Boolean operations", async () => {
+    await enter();
+    selectTriangles([0], "replace");
+    ipc.runRepair.mockImplementation(async () => ({ ...changed(makeBox([5, 5, 5])), reports: [report("Added 1 point.")] }));
+    runFeature("repair-ctx.insert-point");
+    await settle();
+    expect(labels("undo")).toEqual(["Undo Add point"]);
+    historyMenu("undo")[0].run?.();
+    expect(session().past).toHaveLength(0);
+    expect(labels("redo")).toEqual(["Redo Add point"]);
+    expect(await closeRepair()).toBe(true);
+
+    addPart("Two");
+    s().select(s().parts.map((p) => p.id));
+    openBooleanMode();
+    expect(labels("undo")).toEqual([CLOSE_BOOLEAN_FIRST]);
+    useBoolean.setState({ session: null });
+  });
+});
+
 describe("Home copy and paste", () => {
   it("copies the selected parts and pastes each copy one gap further along +X", async () => {
     ipc.checkMeshes.mockResolvedValue([{ closed: true, oriented: true, holes: 0, borderEdges: 0, nonManifoldEdges: 0, invertedTriangles: 0 }]);
     const mesh = makeBox([20, 20, 20]);
     addPart("Widget", mesh);
-    runFeature("home.copy");
+    runFeature("context.copy");
     expect(lastToast()).toBe("Copied 1 part.");
     expect(s().clipboard).toHaveLength(1);
 
-    runFeature("home.paste");
+    runFeature("context.paste");
     await settle();
     expect(s().parts).toHaveLength(2);
     expect(s().parts[1].matrix[12]).toBe(25);
@@ -780,21 +986,21 @@ describe("Home copy and paste", () => {
     expect(s().selection).toEqual([s().parts[1].id]);
     expect(ipc.checkMeshes).toHaveBeenCalledTimes(1);
 
-    runFeature("home.paste");
+    runFeature("context.paste");
     expect(s().parts[2].matrix[12]).toBe(50);
     expect(s().history.past[s().history.past.length - 1]?.label).toBe("Paste Widget");
   });
 
   it("toasts when nothing is selected or the clipboard is empty, and keeps the clipboard", () => {
-    runFeature("home.copy");
+    runFeature("context.copy");
     expect(lastToast()).toBe("Select a part to repair.");
     addPart();
-    runFeature("home.copy");
+    runFeature("context.copy");
     s().clearSelection();
-    runFeature("home.copy");
+    runFeature("context.copy");
     expect(s().clipboard).toHaveLength(1);
     s().newProject();
-    runFeature("home.paste");
+    runFeature("context.paste");
     expect(lastToast()).toBe("Nothing to paste. Copy a part first.");
     expect(s().parts).toHaveLength(0);
   });
@@ -812,7 +1018,7 @@ describe("Home repair commands", () => {
     addPart("Two");
     s().select(s().parts.map((p) => p.id));
     openBooleanMode();
-    runFeature("home.repair-undo");
+    runFeature("home.undo");
     expect(s().parts).toHaveLength(2);
     expect(lastToast()).toBe(CLOSE_BOOLEAN_FIRST);
     useBoolean.setState({ session: null });
@@ -823,7 +1029,7 @@ describe("Home repair commands", () => {
     addPart("Two");
     s().select(s().parts.map((p) => p.id));
     openBooleanMode();
-    runFeature("home.shell-list");
+    runFeature("repair.shell-list");
     await flush();
     expect(isRepairing()).toBe(false);
     expect(lastToast()).toBe(CLOSE_BOOLEAN_FIRST);
@@ -833,7 +1039,7 @@ describe("Home repair commands", () => {
   it("opens repair on the selected part and reports that a closed mesh has no damage", async () => {
     const id = addPart();
     ipc.runRepair.mockImplementation(async (m: MeshData) => ({ ...unchanged(m), status: CLOSED_STATUS, highlights: null }));
-    runFeature("home.damage-warnings");
+    runFeature("repair.damage-warnings");
     await settle();
     expect(isRepairing()).toBe(true);
     expect(session().partId).toBe(id);
@@ -848,32 +1054,31 @@ describe("Home repair commands", () => {
       ...unchanged(m),
       status: { ...CLOSED_STATUS, borderEdges: 4, holes: 1, invertedTriangles: 2 },
     }));
-    runFeature("home.problem-counts");
+    runFeature("repair.problem-counts");
     await settle();
     expect(lastToast()).toBe("Border edges 4, Holes 1, Inv. orientation 2, Degenerate faces 0, Non-manifold edges 0");
     expect(r().panelTab).toBe("status");
 
-    runFeature("home.shell-list");
+    runFeature("repair.shell-list");
     await flush();
     expect(r().panelTab).toBe("shells");
 
-    runFeature("home.selection-info");
+    runFeature("repair.selection-info");
     await flush();
     expect(lastToast()).toBe("No triangles selected.");
   });
 
   it("asks to apply only while a repair is open, and undoes the repair or the part edit", async () => {
     addPart();
-    runFeature("home.apply-repair");
-    expect(lastToast()).toBe("No repair in progress. Click Repair first.");
+    runFeature("repair.apply");
     expect(useUi.getState().dialog).toBeNull();
-    runFeature("home.repair-undo");
+    runFeature("home.undo");
     expect(s().parts).toHaveLength(0);
-    runFeature("home.repair-undo");
+    runFeature("home.undo");
     expect(lastToast()).toBe("Nothing to undo.");
 
     await enter();
-    runFeature("home.apply-repair");
+    runFeature("repair.apply");
     expect(useUi.getState().dialog).toEqual({ kind: "repair-apply" });
     useUi.getState().closeDialog();
     selectTriangles([0], "replace");
@@ -881,7 +1086,7 @@ describe("Home repair commands", () => {
     const finer = makeBox([10, 10, 10]);
     // Rust splits the triangles and leaves nothing selected.
     ipc.runRepair.mockImplementation(async () => ({ ...changed(finer), selected: true, reports: [report("Added 3 triangles.")] }));
-    runFeature("home.refine");
+    runFeature("repair-ctx.refine");
     await settle();
     expect(actions()).toEqual(["subdivide_triangles"]);
     expect(Array.from(ipc.runRepair.mock.calls[0][2].selection)).toEqual([0]);
@@ -890,7 +1095,7 @@ describe("Home repair commands", () => {
     expect(session().past).toHaveLength(1);
     expect(session().past[0].label).toBe("Subdivide triangles");
     expect(lastToast()).toBe("Added 3 triangles.");
-    runFeature("home.repair-undo");
+    runFeature("home.undo");
     expect(session().mesh).toBe(before);
     expect(Array.from(maskToIds(session().selection))).toEqual([0]);
   });
@@ -898,23 +1103,23 @@ describe("Home repair commands", () => {
   it("picks each select tool, selects damaged triangles in Rust, and hides them until asked again", async () => {
     await enter();
     for (const [id, tool] of [
-      ["home.select-area", "area"],
-      ["home.select-triangles", "triangle"],
-      ["home.select-surface", "surface"],
-      ["home.select-shell", "shell"],
-      ["home.select-brush", "brush"],
+      ["repair.select-primitive", "area"],
+      ["repair.select-triangle", "triangle"],
+      ["repair.select-surface", "surface"],
+      ["repair.select-shell", "shell"],
+      ["repair.select-brush", "brush"],
     ] as const) {
       runFeature(id);
       await flush();
       expect(r().selectTool).toBe(tool);
       expect(feature(id).repairActive?.(r())).toBe(true);
     }
-    expect(feature("home.select-overlaps").repairActive).toBeUndefined();
+    expect(feature("repair.select-overlap").repairActive).toBeUndefined();
 
     // Nothing found: the selection stays as it was.
     selectTriangles([5], "replace");
     ipc.runRepair.mockImplementation(async (m: MeshData) => ({ ...unchanged(m), reports: [report("No problem triangles found.")] }));
-    runFeature("home.select-criteria");
+    runFeature("repair.select-criteria");
     await settle();
     expect(actions()).toEqual(["select_problem_triangles"]);
     expect(Array.from(ipc.runRepair.mock.calls[0][2].selection)).toEqual([]);
@@ -928,30 +1133,30 @@ describe("Home repair commands", () => {
       selection: new Uint32Array([1, 2]),
       reports: [report("Selected 2 problem triangles.")],
     }));
-    runFeature("home.select-criteria");
+    runFeature("repair.select-criteria");
     await settle();
     expect(Array.from(maskToIds(session().selection))).toEqual([1, 2]);
     expect(session().past).toHaveLength(0);
     expect(lastToast()).toBe("Selected 2 problem triangles.");
 
-    runFeature("home.hide-triangles");
+    runFeature("repair.hide-triangles");
     await flush();
     expect(Array.from(maskToIds(session().hiddenTriangles ?? new Uint8Array(0)))).toEqual([1, 2]);
     expect(session().selectedCount).toBe(0);
     expect(lastToast()).toBe("Hidden 2 triangles. Click Hide selected triangles again to show all.");
     // A selection Rust sends skips the hidden triangles.
     ipc.runRepair.mockImplementation(async (m: MeshData) => ({ ...unchanged(m), selected: true, selection: new Uint32Array([1, 2, 3]) }));
-    runFeature("home.select-criteria");
+    runFeature("repair.select-criteria");
     await settle();
     expect(Array.from(maskToIds(session().selection))).toEqual([3]);
-    runFeature("home.hide-triangles");
+    runFeature("repair.hide-triangles");
     await flush();
     expect(lastToast()).toBe("Hidden 1 triangles. Click Hide selected triangles again to show all.");
-    runFeature("home.hide-triangles");
+    runFeature("repair.hide-triangles");
     await flush();
     expect(session().hiddenTriangles).toBeNull();
     expect(lastToast()).toBe("All triangles shown.");
-    runFeature("home.hide-triangles");
+    runFeature("repair.hide-triangles");
     await flush();
     expect(lastToast()).toBe(SELECT_TRIANGLES_FIRST);
 
@@ -972,7 +1177,7 @@ describe("Home repair commands", () => {
       intersecting: new Uint32Array([0]),
       reports: [report("Found 2 overlapping triangles.")],
     }));
-    runFeature("home.select-overlaps");
+    runFeature("repair.select-overlap");
     await settle();
     expect(actions()).toEqual(["find_overlaps"]);
     expect(Array.from(ipc.runRepair.mock.calls[0][2].selection)).toEqual([]);
@@ -991,43 +1196,43 @@ describe("Home repair commands", () => {
       return actions();
     };
     const sent = () => Array.from(ipc.runRepair.mock.calls[0][2].selection as Uint32Array);
-    expect(await ran("home.close-holes")).toEqual(["close_trivial_holes", "close_all_holes"]);
+    expect(await ran("repair-ctx.close-all")).toEqual(["close_all_holes"]);
     expect(ipc.runRepair).toHaveBeenCalledTimes(1);
     selectTriangles([0, 1], "replace");
-    expect(await ran("home.close-holes")).toEqual(["close_defined_holes"]);
-    expect(await ran("home.close-holes-curved")).toEqual(["close_holes_curved"]);
+    expect(await ran("repair-ctx.close-defined")).toEqual(["close_defined_holes"]);
+    expect(await ran("repair-ctx.close-curved")).toEqual(["close_holes_curved"]);
     expect(sent()).toEqual([0, 1]);
     selectTriangles([], "replace");
-    expect(await ran("home.close-holes-curved")).toEqual(["close_holes_curved"]);
+    expect(await ran("repair-ctx.close-curved")).toEqual(["close_holes_curved"]);
     expect(sent()).toEqual([]);
-    expect(await ran("home.stitch")).toEqual(["stitch_triangles"]);
-    expect(await ran("home.remove-duplicate-faces")).toEqual(["remove_double_triangles"]);
-    expect(await ran("home.remove-degenerate")).toEqual(["remove_degenerate_faces"]);
-    expect(await ran("home.merge-duplicate-points")).toEqual(["sanitize_duplicate_nodes"]);
-    expect(await ran("home.remove-tiny-shells")).toEqual(["remove_tiny_shells"]);
-    expect(await ran("home.self-intersections")).toEqual(["remove_self_intersections"]);
-    expect(await ran("home.split-inconsistent-edges")).toEqual(["split_non_oriented_edges"]);
-    expect(await ran("home.split-nonmanifold-edges")).toEqual(["split_non_manifold_edges"]);
-    expect(await ran("home.remove-problem-areas")).toEqual(["remove_problem_areas"]);
-    expect(await ran("home.fix-flipped")).toEqual(["fix_flipped_triangles"]);
-    expect(await ran("home.invert-shells")).toEqual(["invert_negative_shells"]);
-    expect(await ran("home.wrap-surface")).toEqual(["wrap_part_surface"]);
+    expect(await ran("repair-ctx.stitch")).toEqual(["stitch_triangles"]);
+    expect(await ran("repair-ctx.remove-duplicates")).toEqual(["remove_double_triangles"]);
+    expect(await ran("repair-ctx.remove-degenerate")).toEqual(["remove_degenerate_faces"]);
+    expect(await ran("repair-ctx.merge-points")).toEqual(["sanitize_duplicate_nodes"]);
+    expect(await ran("repair-ctx.remove-tiny-shells")).toEqual(["remove_tiny_shells"]);
+    expect(await ran("repair-ctx.self-intersections")).toEqual(["remove_self_intersections"]);
+    expect(await ran("repair-ctx.split-non-oriented")).toEqual(["split_non_oriented_edges"]);
+    expect(await ran("repair.split-non-manifold")).toEqual(["split_non_manifold_edges"]);
+    expect(await ran("repair-ctx.remove-problem-areas")).toEqual(["remove_problem_areas"]);
+    expect(await ran("repair-ctx.fix-flipped")).toEqual(["fix_flipped_triangles"]);
+    expect(await ran("repair-ctx.invert-shells")).toEqual(["invert_negative_shells"]);
+    expect(await ran("repair-ctx.wrap-surface")).toEqual(["wrap_part_surface"]);
 
     // The local edits: one Rust action each, on the whole part or on the selection. Bridge a gap is Soon.
-    expect(await ran("home.offset-hole-edge")).toEqual(["grow_hole_band"]);
-    expect(await ran("home.bridge-gap")).toEqual([]);
-    expect(lastToast()).toBe(soonMessage(feature("home.bridge-gap")));
-    expect(await ran("home.refine")).toEqual(["subdivide_triangles"]);
-    expect(await ran("home.smooth-triangles")).toEqual(["smooth_triangles"]);
-    expect(await ran("home.add-triangle")).toEqual(["add_triangle"]);
+    expect(await ran("repair-ctx.grow-band")).toEqual(["grow_hole_band"]);
+    expect(await ran("repair-ctx.bridge-gap")).toEqual([]);
+    expect(lastToast()).toBe(soonMessage(feature("repair-ctx.bridge-gap")));
+    expect(await ran("repair-ctx.refine")).toEqual(["subdivide_triangles"]);
+    expect(await ran("repair-ctx.smooth")).toEqual(["smooth_triangles"]);
+    expect(await ran("repair-ctx.fill-three-edge")).toEqual(["add_triangle"]);
     expect(sent()).toEqual([]);
     selectTriangles([3], "replace");
     for (const [id, action] of [
-      ["home.offset-hole-edge", "grow_hole_band"],
-      ["home.refine", "subdivide_triangles"],
-      ["home.add-triangle", "add_triangle"],
-      ["home.add-point", "add_point"],
-      ["home.smooth-triangles", "smooth_triangles"],
+      ["repair-ctx.grow-band", "grow_hole_band"],
+      ["repair-ctx.refine", "subdivide_triangles"],
+      ["repair-ctx.fill-three-edge", "add_triangle"],
+      ["repair-ctx.insert-point", "add_point"],
+      ["repair-ctx.smooth", "smooth_triangles"],
     ] as const) {
       expect(await ran(id)).toEqual([action]);
       expect(sent()).toEqual([3]);
@@ -1036,7 +1241,7 @@ describe("Home repair commands", () => {
     // Edits that work on the selected triangles refuse without one, and Rust is not asked.
     selectTriangles([], "replace");
     ipc.runRepair.mockClear();
-    for (const id of ["home.add-point", "home.delete-triangles"]) {
+    for (const id of ["repair-ctx.insert-point", "repair.remove-triangles"]) {
       useUi.setState({ toasts: [] });
       runFeature(id);
       await flush();
@@ -1051,7 +1256,7 @@ describe("Home repair commands", () => {
     const before = session().mesh;
     const pointed = makeBox([30, 30, 30]);
     ipc.runRepair.mockImplementation(async () => ({ ...changed(pointed), selected: true, reports: [report("Added 1 point.")] }));
-    runFeature("home.add-point");
+    runFeature("repair-ctx.insert-point");
     await settle();
     expect(session().mesh).toBe(pointed);
     expect(session().selectedCount).toBe(0);
@@ -1060,27 +1265,27 @@ describe("Home repair commands", () => {
     // Nothing changed: no undo step, and the selection stays.
     selectTriangles([2], "replace");
     ipc.runRepair.mockImplementation(async (m: MeshData) => ({ ...unchanged(m), reports: [report("No interior point to smooth.")] }));
-    runFeature("home.smooth-triangles");
+    runFeature("repair-ctx.smooth");
     await settle();
     expect(session().past).toHaveLength(1);
     expect(Array.from(maskToIds(session().selection))).toEqual([2]);
     expect(lastToast()).toBe("No interior point to smooth.");
-    runFeature("home.repair-undo");
+    runFeature("home.undo");
     expect(session().mesh).toBe(before);
     expect(Array.from(maskToIds(session().selection))).toEqual([0]);
   });
 
   it("turns Move nodes and Cut surfaces on and off from Home and the Repair tab, and a select tool ends them", async () => {
     await enter();
-    runFeature("home.move-nodes");
+    runFeature("repair.move-nodes");
     await flush();
     expect(r().editTool).toBe("move-nodes");
-    expect(feature("home.move-nodes").repairActive?.(r())).toBe(true);
+    expect(feature("repair.move-nodes").repairActive?.(r())).toBe(true);
     expect(feature("repair.move-nodes").repairActive?.(r())).toBe(true);
     // The select tool stays picked, but is not the one taking the clicks.
-    expect(feature("home.select-triangles").repairActive?.(r())).toBe(false);
     expect(feature("repair.select-triangle").repairActive?.(r())).toBe(false);
-    runFeature("home.cut-surfaces");
+    expect(feature("repair.select-triangle").repairActive?.(r())).toBe(false);
+    runFeature("repair.cut-surfaces");
     await flush();
     expect(r().editTool).toBe("cut");
     expect(feature("repair.cut-surfaces").repairActive?.(r())).toBe(true);
@@ -1090,11 +1295,11 @@ describe("Home repair commands", () => {
     runFeature("repair.move-nodes");
     await flush();
     expect(r().editTool).toBe("move-nodes");
-    runFeature("home.select-shell");
+    runFeature("repair.select-shell");
     await flush();
     expect([r().editTool, r().selectTool]).toEqual([null, "shell"]);
     // Leaving repair mode ends the tools.
-    runFeature("home.cut-surfaces");
+    runFeature("repair.cut-surfaces");
     await flush();
     expect(await closeRepair()).toBe(true);
     expect(r().editTool).toBeNull();
@@ -1120,7 +1325,7 @@ describe("Home repair commands", () => {
 
   it("collects cut points in the insert order, has Rust route the line, and cuts along it as one undo step", async () => {
     await enter();
-    runFeature("home.cut-surfaces");
+    runFeature("repair.cut-surfaces");
     await flush();
     ipc.fetchCutPath.mockImplementation(async (_mesh: MeshData, points: { at: number[] }[]) => ({
       pieces: points.slice(1).map(() => new Float32Array(6)),
@@ -1189,36 +1394,36 @@ describe("Home repair commands", () => {
 
   it("refuses triangle edits with no selection, and extracts the selected shell", async () => {
     await enter();
-    runFeature("home.flip-triangles");
+    runFeature("repair.flip-selected");
     await flush();
     expect(lastToast()).toBe(SELECT_TRIANGLES_FIRST);
     selectTriangles([0], "replace");
     ipc.runRepair.mockClear();
-    runFeature("home.flip-triangles");
+    runFeature("repair.flip-selected");
     await settle();
     expect(actions()).toEqual(["flip_selected_triangles"]);
 
     ipc.runRepair.mockClear();
     selectTriangles([0], "replace");
-    runFeature("home.delete-triangles");
+    runFeature("repair.remove-triangles");
     await settle();
     expect(actions()).toEqual(["remove_selected_triangles"]);
 
     const before = s().parts.length;
     selectTriangles([0], "replace");
-    runFeature("home.extract-triangles");
+    runFeature("repair.extract-copy");
     await flush();
     expect(s().parts).toHaveLength(before + 1);
     expect(lastToast()).toMatch(/Added "Part \(extracted\)"/);
 
     selectTriangles([0], "replace");
-    runFeature("home.extract-shells");
+    runFeature("repair.extract-shells");
     await flush();
     expect(s().parts).toHaveLength(before + 2);
 
     s().newProject();
     useRepair.setState({ session: null, busy: null });
-    runFeature("home.extract-shells");
+    runFeature("repair.extract-shells");
     await flush();
     expect(lastToast()).toBe("Select a part to repair.");
   });
@@ -1229,7 +1434,7 @@ describe("Home repair commands", () => {
     await flush();
     expect(useUi.getState().dialog).toEqual({ kind: "repair-script-picker" });
     useUi.getState().closeDialog();
-    runFeature("home.edit-repair-scripts");
+    runFeature("repair.edit-scripts");
     await flush();
     expect(r().panelTab).toBe("scripts");
 
@@ -1248,7 +1453,7 @@ describe("Home repair commands", () => {
     s().select([]);
     const repaired = makeBox([4, 4, 4]);
     ipc.runRepair.mockImplementation(async () => changed(repaired));
-    runFeature("home.batch-repair");
+    runFeature("context.batch-repair");
     await settle();
     expect(s().parts.find((p) => p.name === "One")?.mesh).toBe(repaired);
     expect(s().parts.find((p) => p.name === "Two")?.mesh).not.toBe(repaired);
@@ -1258,7 +1463,7 @@ describe("Home repair commands", () => {
     s().undo();
     s().setPartLocked(first, true);
     ipc.runRepair.mockClear();
-    runFeature("home.batch-repair");
+    runFeature("context.batch-repair");
     await settle();
     expect(lastToast()).toBe("Locked parts were left as they are.");
     expect(ipc.runRepair).not.toHaveBeenCalled();

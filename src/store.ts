@@ -4,6 +4,7 @@ import { cachedProblemEdges, cachedStats, primeMeshCaches } from "./meshCache";
 import { boundsOf, IDENTITY, makeBox, translation, unionBounds } from "./mesh";
 import { IS_MAC, selectHint } from "./platform";
 import type { MeshStats } from "./io/ipc";
+import type { Measurement } from "./measure/types";
 
 export type Vec3 = [number, number, number];
 
@@ -23,6 +24,8 @@ export interface Part {
   transparent: boolean;
   locked: boolean;
   color: string; // CSS hex
+  /** Measure mode's measurements on the part, in its own frame; absent when it has none. A new mesh drops them. */
+  measurements?: readonly Measurement[];
 }
 
 export type Projection = "perspective" | "orthographic";
@@ -83,6 +86,7 @@ export interface NewPart {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  measurements?: readonly Measurement[];
 }
 
 /** Parts to take out (by id) and the parts that take their place. */
@@ -186,6 +190,7 @@ function buildParts(newParts: NewPart[], colorStart: number): Part[] {
       transparent: p.transparent ?? false,
       locked: p.locked ?? false,
       color: p.color ?? PART_COLORS[(colorStart + i) % PART_COLORS.length],
+      ...(p.measurements && p.measurements.length > 0 ? { measurements: p.measurements } : {}),
     }),
   );
 }
@@ -247,6 +252,8 @@ export interface AppState {
   setPartLocked(id: string, locked: boolean): void;
   /** Changes display or naming fields of several parts as one undo step labelled `label`. */
   patchParts(ids: string[], patch: PartPatch, label: string): void;
+  /** Sets the measurements of parts (by id; an empty list removes them) as one undo step labelled `label`. */
+  setMeasurements(changes: ReadonlyMap<string, readonly Measurement[]>, label: string): void;
   /**
    * Sets part matrices (column-major, as Part.matrix). With a label this is one undo step. With
    * null it is a live preview, e.g. during a gizmo drag, that recordChange() later makes one step.
@@ -495,6 +502,19 @@ export const useStore = create<AppState>()((set, get) => {
     patchParts(ids, patch, label) {
       const before = begin();
       const parts = mapParts(before.parts, ids, (p) => patchPart(p, patch));
+      if (parts === before.parts) return;
+      set({ parts });
+      commit(label, before);
+    },
+
+    setMeasurements(changes, label) {
+      const before = begin();
+      const parts = mapParts(before.parts, changes.keys(), (p) => {
+        const list = changes.get(p.id) ?? [];
+        if ((p.measurements ?? []).length === 0 && list.length === 0) return p;
+        const { measurements: _old, ...rest } = p;
+        return list.length > 0 ? { ...rest, measurements: list } : rest;
+      });
       if (parts === before.parts) return;
       set({ parts });
       commit(label, before);

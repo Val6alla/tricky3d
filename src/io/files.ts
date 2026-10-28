@@ -19,6 +19,7 @@ import {
   type Vec3,
 } from "../store";
 import { prompt, startTask, toast, type ObjectsAnswer, type PlaceAnswer, type TaskHandle } from "../ui";
+import { readMeasurements } from "../measure/persist";
 import { viewport } from "../viewport/api";
 import {
   exportMeshes,
@@ -242,6 +243,7 @@ export function projectPart(m: LoadedMesh): NewPart {
     visible: m.visible,
     transparent: m.transparent,
     locked: m.locked,
+    measurements: readMeasurements(m.measurements),
   };
 }
 
@@ -667,6 +669,7 @@ async function writeProject(path: string): Promise<boolean> {
         visible: p.visible,
         transparent: p.transparent,
         locked: p.locked,
+        ...(p.measurements && p.measurements.length > 0 ? { measurements: JSON.stringify(p.measurements) } : {}),
       })),
     );
   } catch (err) {

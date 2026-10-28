@@ -1,0 +1,177 @@
+/* Part library (src/library): the gallery over the view and the form in the right panel. Colours from theme.css. */
+
+.lib-browser {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.lib-categories {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.lib-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.lib-category:hover {
+  background: var(--surface-3);
+}
+
+.lib-category.is-selected {
+  margin-bottom: -1px;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.lib-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.lib-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lib-tile:hover {
+  border-color: var(--border-strong);
+}
+
+.lib-tile.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.lib-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lib-thumb img {
+  display: block;
+}
+
+.lib-thumb-wait {
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: var(--surface-3);
+}
+
+.lib-tile-label {
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.lib-soon {
+  margin: 0;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.lib-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.lib-panel-heading {
+  padding: 8px 10px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.lib-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 0 10px 10px;
+}
+
+.lib-subheading {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lib-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lib-label {
+  font-size: var(--fs-sm);
+}
+
+.lib-problem {
+  color: var(--danger);
+  font-size: var(--fs-xs);
+}
+
+.lib-reset {
+  align-self: flex-start;
+}
+
+.lib-actions {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.lib-busy {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}

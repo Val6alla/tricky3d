@@ -3,6 +3,8 @@ mod commands;
 pub mod formats;
 pub mod grants;
 pub mod jobs;
+pub mod library;
+pub mod measure;
 pub mod mesh;
 pub mod migrate;
 mod open_dialog;
@@ -11,6 +13,7 @@ mod power;
 pub mod progress;
 pub mod project;
 pub mod repair;
+pub mod stats;
 pub mod workers;
 
 use tauri::menu::{Menu, MenuEvent, MenuItem};
@@ -88,6 +91,7 @@ pub fn run() {
         .manage(Grants::default())
         .manage(RepairJobs::default())
         .manage(CutCache::default())
+        .manage(measure::MeasureCache::default())
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::import_mesh,
@@ -113,6 +117,14 @@ pub fn run() {
             commands::repair_scripts_save,
             commands::repair_script_import,
             commands::repair_script_export,
+            commands::library_catalog,
+            commands::library_primitive,
+            commands::measure_pick,
+            commands::measure_fit,
+            commands::measure_evaluate,
+            commands::measure_reset,
+            commands::platform_stats,
+            commands::export_text,
         ]);
     #[cfg(target_os = "macos")]
     let builder = builder.menu(macos_menu).on_menu_event(on_menu_event);

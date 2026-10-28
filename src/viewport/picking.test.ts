@@ -14,6 +14,8 @@ const ipc = vi.hoisted(() => ({
   checkMeshes: vi.fn(),
 }));
 vi.mock("../repair/ipc", async (importOriginal) => ({ ...(await importOriginal<typeof import("../repair/ipc")>()), ...ipc }));
+const view = vi.hoisted(() => ({ centreOn: vi.fn() }));
+vi.mock("./api", () => ({ viewport: view }));
 
 import { makeBox } from "../mesh";
 import { enterRepair, runAction, selectTriangles } from "../repair/session";
@@ -109,7 +111,8 @@ beforeEach(() => {
   ipc.cancelRepair.mockResolvedValue(undefined);
   useRepair.setState({ catalog: { actions: [], scripts: [] }, session: null, busy: null, selectTool: "triangle" });
   useStore.getState().newProject();
-  useUi.setState({ toasts: [], dialog: null, contextMenu: null });
+  useUi.setState({ toasts: [], dialog: null, contextMenu: null, viewTool: null });
+  view.centreOn.mockReset();
 });
 
 afterEach(() => {
@@ -260,5 +263,31 @@ describe("attachPicking box selection", () => {
     painted.release(220, 320);
     expect(brush.drawn).toEqual([]);
     expect(selected()).toEqual([2, 5]);
+  });
+});
+
+describe("attachPicking with Zoom to › Area and Point", () => {
+  it("zooms into a rectangle dragged from anywhere, once, and centres on a clicked point, once", () => {
+    const [id] = useStore.getState().addParts([{ name: "Part", mesh: makeBox([20, 20, 20]) }], "Add Part");
+    const onPart = { partId: id, point: new Vector3(1, 2, 3) };
+    const { box, selected: asked } = recordBox();
+    const { canvas, click, drag } = stubCanvas();
+    attachPicking(canvas, () => onPart, () => null, () => false, box);
+
+    // From a part, which would otherwise not start a rectangle; a plain click selects nothing and waits for the drag.
+    useStore.getState().clearSelection();
+    useUi.getState().setViewTool("zoom-area");
+    click(0);
+    expect(useStore.getState().selection).toEqual([]);
+    expect(useUi.getState().viewTool).toBe("zoom-area");
+    drag([110, 220], [300, 400]);
+    expect(asked).toEqual([[{ left: 100, top: 200, right: 290, bottom: 380 }, "replace"]]);
+
+    useUi.getState().setViewTool("zoom-point");
+    click(0);
+    expect(view.centreOn).toHaveBeenCalledWith([1, 2, 3]);
+    expect(useUi.getState().viewTool).toBeNull();
+    // The part was not selected by that click.
+    expect(useStore.getState().selection).toEqual([]);
   });
 });

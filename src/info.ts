@@ -221,6 +221,12 @@ const count = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 /** Whole numbers with thousands separators: 1,234,567. */
 export const formatCount = (n: number) => count.format(n);
 
+/** Two decimals, as the panel shows millimetres: 1,234.50. */
+export const formatFixed2 = (n: number) => fixed2.format(n);
+
+/** Three decimals, as the panel shows cm³ and cm²: 12.000. */
+export const formatFixed3 = (n: number) => fixed3.format(n);
+
 const value = (label: string, text: string): InfoRow => ({ label, text, status: "value" });
 const none = (label: string, warning?: string): InfoRow => ({ label, text: "—", status: "none", warning });
 const loading = (label: string): InfoRow => ({ label, text: "…", status: "loading" });

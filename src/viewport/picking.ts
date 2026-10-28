@@ -3,10 +3,12 @@ import { isBooleanOpen, selectInList } from "../boolean/session";
 import { addCutPoint } from "../repair/cut/session";
 import { useBoolean } from "../boolean/store";
 import { IS_MAC } from "../platform";
+import { isMeasureOpen, measureClick, type MeasureHit } from "../measure/session";
 import { isRepairing, selectAt, selectNone, selectTriangles } from "../repair/session";
 import { useRepair } from "../repair/store";
 import { selectMode, useStore, type SelectMode, type Vec3 } from "../store";
 import { useUi } from "../ui";
+import { viewport } from "./api";
 import { rectBetween, type ScreenRect } from "./boxSelect";
 
 /** Further than this (px) between press and release is a drag (orbit, pan), not a click. */
@@ -55,6 +57,12 @@ export interface BoxSelector {
  * copy) draws a selection rectangle; on release `box` selects what it covers, with the same modifiers as a click
  * (Shift adds, the toggle key toggles; the keys held at release count). Esc or a lost pointer drops the rectangle.
  * Not on macOS with Option (that drag pans) or Control (that press is a right click), nor while a repair run goes.
+ *
+ * Zoom to › Area and Point (the UI store's viewTool) come first in any mode: the next left drag draws the rectangle to
+ * zoom into (`box.select` zooms), and the next left click on a part centres the view on the point hit.
+ *
+ * In Measure mode a left click on a part goes to the measurement in progress (`measure` says what was hit), and no
+ * drag draws a rectangle.
  */
 export function attachPicking(
   canvas: HTMLCanvasElement,
@@ -62,6 +70,7 @@ export function attachPicking(
   pickTriangle: TrianglePickFn,
   onGizmo: () => boolean,
   box: BoxSelector,
+  measure: (clientX: number, clientY: number) => MeasureHit | null = () => null,
 ): () => void {
   const presses = new Map<number, { x: number; y: number }>();
   /** A left press on empty space: a box once it moves past the click slop. */
@@ -75,7 +84,12 @@ export function attachPicking(
       return;
     }
     presses.set(e.button, { x: e.clientX, y: e.clientY });
-    if (e.button !== 0 || (IS_MAC && (e.altKey || e.ctrlKey)) || useRepair.getState().busy) return;
+    if (e.button !== 0 || (IS_MAC && (e.altKey || e.ctrlKey))) return;
+    if (useUi.getState().viewTool === "zoom-area") {
+      drag = { pointer: e.pointerId, x: e.clientX, y: e.clientY, drawing: false };
+      return;
+    }
+    if (useRepair.getState().busy) return;
     if (isRepairing() && useRepair.getState().editTool === null && useRepair.getState().selectTool === "brush") {
       brush = { pointer: e.pointerId, x: e.clientX, y: e.clientY, moved: false, painted: false, last: -1, mode: selectMode(e) };
       return;
@@ -138,7 +152,7 @@ export function attachPicking(
       dropBox();
       if (ended.drawing && e.pointerId === ended.pointer) {
         presses.delete(0);
-        if (!useRepair.getState().busy) box.select(rectOf(ended, e), selectMode(e));
+        if (useUi.getState().viewTool === "zoom-area" || !useRepair.getState().busy) box.select(rectOf(ended, e), selectMode(e));
         return;
       }
     }
@@ -146,6 +160,20 @@ export function attachPicking(
     presses.delete(e.button);
     if (!press || Math.hypot(e.clientX - press.x, e.clientY - press.y) >= CLICK_SLOP) return;
     const menu = e.button === 2 || (e.button === 0 && IS_MAC && e.ctrlKey);
+    const viewTool = useUi.getState().viewTool;
+    if (viewTool !== null && e.button === 0 && !menu) {
+      // A click with Area does nothing: it waits for its drag.
+      if (viewTool === "zoom-point") centreAt(e);
+      return;
+    }
+    if (isMeasureOpen()) {
+      if (menu) openPartMenuAt(e);
+      else if (e.button === 0) {
+        const hit = measure(e.clientX, e.clientY);
+        if (hit) void measureClick(hit);
+      }
+      return;
+    }
     if (isRepairing()) {
       if (useRepair.getState().busy) return;
       const tool = useRepair.getState().editTool;
@@ -170,6 +198,7 @@ export function attachPicking(
    */
   function boxStartsAt(e: PointerEvent): boolean {
     if (isBooleanOpen()) return useBoolean.getState().tool === "zoom-area";
+    if (isMeasureOpen()) return false;
     if (isRepairing() && useRepair.getState().editTool !== null) return false;
     if (isRepairing() && useRepair.getState().selectTool === "area") return true;
     return emptyAt(e);
@@ -179,6 +208,14 @@ export function attachPicking(
   function rectOf(from: { x: number; y: number }, e: PointerEvent): ScreenRect {
     const r = canvas.getBoundingClientRect();
     return rectBetween(from.x - r.left, from.y - r.top, e.clientX - r.left, e.clientY - r.top);
+  }
+
+  /** Zoom to › Point: the point under the pointer on a part (in repair mode on the working copy) becomes the centre. */
+  function centreAt(e: PointerEvent) {
+    const point = isRepairing() ? pickTriangle(e.clientX, e.clientY)?.point : pick(e.clientX, e.clientY)?.point.toArray();
+    if (!point) return;
+    useUi.getState().setViewTool(null);
+    viewport.centreOn([point[0], point[1], point[2]]);
   }
 
   function selectPartAt(e: PointerEvent) {

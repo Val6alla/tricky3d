@@ -270,3 +270,27 @@
   top: 1px;
   right: 1px;
 }
+
+/* Split buttons (Undo, Redo): the button and its arrow share one outline-free row. */
+.rb-split {
+  display: flex;
+  align-items: stretch;
+}
+
+.rb-split-small {
+  height: 22px;
+}
+
+.rb-split-main.rb-small {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.rb-split-arrow {
+  justify-content: center;
+  width: 16px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  color: var(--text-faint);
+}

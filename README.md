@@ -46,8 +46,11 @@ You can also watch the running app from outside and list its connections while y
 | Repair scripts: Simple, Default and Extended repair, your own scripts, and `.repair` script files saved by Netfabb | Ready |
 | Triangle selection and editing: select by triangle, surface, shell, brush or criteria; delete and flip triangles; move points; cut the surface open along a drawn line | Ready |
 | Repair of many parts at once | Ready |
+| Part library: box, cylinder, sphere, torus, helix and 8 more solids, made to the sizes you type | Ready |
+| Platform statistics: a sortable table of every part, the platform's packing density, export to CSV | Ready |
+| Measuring: distances, angles, radii, positions and wall thickness between points, edges, circles, spheres and surfaces, saved with the project | Ready |
 | Bridging a gap between two open edges | Coming soon |
-| Measuring, wall thickness and other analysis | Coming soon |
+| Overhang, skin, centre of gravity and other analysis | Coming soon |
 | Mirror, hollow, simplify, smooth, remesh and labels | Coming soon |
 | Auto-arrange, packing and copies | Coming soon |
 | Recent files and autosave | Coming soon |

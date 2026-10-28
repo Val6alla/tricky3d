@@ -28,6 +28,21 @@ describe("visibleRange", () => {
   });
 });
 
+describe("measurement rows in the windowed list", () => {
+  const kinds = (rows: { kind: string; index: number; measure?: number }[]) =>
+    rows.map((r) => (r.kind === "repair" ? `R${r.index}` : r.kind === "measurement" ? `M${r.index}.${r.measure}` : String(r.index)));
+
+  it("lists each part's measurements under it, after its Part repair row, and windows them", () => {
+    expect(rowCount(3, -1, [0, 2, 1])).toBe(6);
+    expect(rowCount(3, 1, [0, 2, 1])).toBe(7);
+    expect(kinds(rowsInRange(3, -1, 0, 6, [0, 2, 1]))).toEqual(["0", "1", "M1.0", "M1.1", "2", "M2.0"]);
+    expect(kinds(rowsInRange(3, 1, 0, 7, [0, 2, 1]))).toEqual(["0", "1", "R1", "M1.0", "M1.1", "2", "M2.0"]);
+    expect(kinds(rowsInRange(3, 1, 3, 6, [0, 2, 1]))).toEqual(["M1.0", "M1.1", "2"]);
+    // No measurements: the same rows as before.
+    expect(rowsInRange(10, 3, 2, 6, [0, 0, 0])).toEqual(rowsInRange(10, 3, 2, 6));
+  });
+});
+
 describe("the Part repair row in the windowed list", () => {
   const kinds = (rows: { kind: string; index: number }[]) => rows.map((r) => (r.kind === "repair" ? `R${r.index}` : String(r.index)));
 

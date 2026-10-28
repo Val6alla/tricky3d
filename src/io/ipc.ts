@@ -44,6 +44,8 @@ export interface LoadedMesh {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  /** Measure mode's measurements, as the project file holds them (JSON); checked by src/measure/persist.ts. */
+  measurements?: string;
 }
 
 export interface ImportResult {
@@ -72,6 +74,8 @@ export interface MeshOut {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  /** JSON of the part's measurements (projects only). */
+  measurements?: string;
 }
 
 interface MeshInfo {
@@ -82,6 +86,7 @@ interface MeshInfo {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  measurements?: string;
 }
 
 function loadedMeshes(buffer: ArrayBuffer) {

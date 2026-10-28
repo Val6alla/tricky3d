@@ -1,11 +1,13 @@
-// Home › Repair commands. Each one uses the open repair session, or opens one on the selected part first, then
-// runs a repair action in Rust through runAction: off the window's thread, with progress and Cancel, and one inner
-// undo step when the mesh changed. The local edits and the selections that need the whole mesh (Select by criteria,
-// Find overlapping triangles) are Home-only actions in src-tauri/src/repair; this file only picks which one to run.
+// Repair commands that used to sit on the Home tab and now live in the Repair tab and the repair right-click menu
+// (Home › Prepare keeps Run repair script, and the part menu Repair many parts at once). Each one uses the open repair
+// session, or opens one on the selected part first, then runs a repair action in Rust through runAction: off the
+// window's thread, with progress and Cancel, and one inner undo step when the mesh changed. The local edits and the
+// selections that need the whole mesh (Select by criteria, Find overlapping triangles) are actions of their own in
+// src-tauri/src/repair; this file only picks which one to run.
 import { CLOSE_BOOLEAN_FIRST, isBooleanOpen } from "../boolean/session";
 import { browserOnly } from "../io/files";
 import { meshOperationRunning, runMeshOperation, WAIT_MESSAGE } from "../ops/meshOps";
-import { canUndo, useStore, type Replacement } from "../store";
+import { useStore, type Replacement } from "../store";
 import { toast, useUi } from "../ui";
 import { checkFromStatus, primeCheck } from "./badges";
 import { toggleCutMode } from "./cut/session";
@@ -16,21 +18,15 @@ import {
   CLOSE_REPAIR_FIRST,
   SELECT_PART_FIRST,
   SELECT_TRIANGLES_FIRST,
-  extractSelection,
   extractShells,
-  canUndoRepair,
   hideSelectedTriangles,
   isRepairing,
   refreshStatus,
-  requestApply,
   runAction,
-  showSelectionInfo,
-  undoRepair,
-  runActions,
   withRepairSession as openRepairSession,
 } from "./session";
 import { useRepair } from "./store";
-import type { ActionId, EditTool, RepairStatus, SelectTool } from "./types";
+import type { ActionId, RepairStatus } from "./types";
 
 const DEFAULT_SCRIPT = "builtin.default";
 
@@ -98,47 +94,9 @@ export function shellList(): Promise<void> {
   });
 }
 
-export function applyRepairFromHome(): void {
-  if (isRepairing()) requestApply();
-  else toast("No repair in progress. Click Repair first.");
-}
-
-export function undoFromHome(): void {
-  if (isBooleanOpen()) {
-    toast(CLOSE_BOOLEAN_FIRST);
-    return;
-  }
-  if (isRepairing()) {
-    if (canUndoRepair()) undoRepair();
-    else toast("Nothing to undo.");
-    return;
-  }
-  const store = useStore.getState();
-  if (canUndo(store)) store.undo();
-  else toast("Nothing to undo.");
-}
-
-/** A select tool is pressed while it takes the viewport's clicks: not while Move nodes or Cut surfaces does. */
-const toolIs = (tool: SelectTool) => (r: { session: unknown; selectTool: SelectTool; editTool: EditTool | null }) =>
-  r.session !== null && r.selectTool === tool && r.editTool === null;
-
-export const homeSelectActive = toolIs;
-
-export function pickRepairTool(tool: SelectTool): Promise<void> {
-  return withRepairSession(() => {
-    useRepair.getState().setSelectTool(tool);
-  });
-}
-
 /** Selects every damaged triangle; the action's message says how many. */
 export function selectByCriteria(): Promise<void> {
   return withRepairSession(() => runAction("select_problem_triangles", {}, new Uint32Array(0)));
-}
-
-export function selectionInfo(): Promise<void> {
-  return withRepairSession(() => {
-    showSelectionInfo();
-  });
 }
 
 /** Selects the triangles that cross or repeat others over the whole part, and highlights the crossing ones. */
@@ -152,14 +110,6 @@ export function hideTriangles(): Promise<void> {
     if (result.kind === "hidden") toast(`Hidden ${result.count} triangles. Click Hide selected triangles again to show all.`);
     else if (result.kind === "shown") toast("All triangles shown.");
     else toast(SELECT_TRIANGLES_FIRST);
-  });
-}
-
-export function closeHoles(): Promise<void> {
-  return withRepairSession(async () => {
-    const selected = (useRepair.getState().session?.selectedCount ?? 0) > 0;
-    if (selected) await runAction("close_defined_holes");
-    else await runActions("Close holes", ["close_trivial_holes", "close_all_holes"]);
   });
 }
 
@@ -180,10 +130,6 @@ export function offsetHoleEdge(): Promise<void> {
   return withRepairSession(() => runAction("grow_hole_band"));
 }
 
-export function stitchEdges(): Promise<void> {
-  return withRepairSession(() => runAction("stitch_triangles"));
-}
-
 const cleanup = (id: Parameters<typeof runAction>[0]) => () => withRepairSession(() => runAction(id));
 
 export const removeDuplicateFaces = cleanup("remove_double_triangles");
@@ -191,10 +137,7 @@ export const removeDegenerate = cleanup("remove_degenerate_faces");
 export const mergeDuplicatePoints = cleanup("sanitize_duplicate_nodes");
 export const removeTinyShells = cleanup("remove_tiny_shells");
 export const fixSelfIntersections = cleanup("remove_self_intersections");
-export const splitInconsistentEdges = cleanup("split_non_oriented_edges");
-export const splitNonManifoldEdges = cleanup("split_non_manifold_edges");
 export const removeProblemAreas = cleanup("remove_problem_areas");
-export const fixFlipped = cleanup("fix_flipped_triangles");
 export const invertShells = cleanup("invert_negative_shells");
 export const wrapSurface = cleanup("wrap_part_surface");
 
@@ -227,32 +170,9 @@ export function moveNodes(): Promise<void> {
   return withRepairSession(toggleMoveNodes);
 }
 
-/** One smoothing step over the selection, or over the whole part. The selection stays, to smooth it again. */
-export function smoothTriangles(): Promise<void> {
-  return withRepairSession(() => runAction("smooth_triangles"));
-}
-
-export function deleteTriangles(): Promise<void> {
-  return editSelected("remove_selected_triangles");
-}
-
-export function flipTriangles(): Promise<void> {
-  return editSelected("flip_selected_triangles");
-}
-
 /** Cut surfaces: the cutting mode, with its panel on the right. A second click leaves it. */
 export function cutSurfaces(): Promise<void> {
   return withRepairSession(toggleCutMode);
-}
-
-export function extractTriangles(): Promise<void> {
-  return withRepairSession(async () => {
-    if ((useRepair.getState().session?.selectedCount ?? 0) === 0) {
-      toast(SELECT_TRIANGLES_FIRST);
-      return;
-    }
-    await extractSelection(false);
-  });
 }
 
 export function extractSelectedShells(): Promise<void> {

@@ -6,6 +6,7 @@ import { IS_MAC } from "../platform";
 import { selectNone, selectTriangles } from "../repair/session";
 import { useRepair, type RepairState } from "../repair/store";
 import { PART_COLORS, useStore, type AppState, type Part, type Projection, type SelectMode } from "../store";
+import { useUi } from "../ui";
 import type { ViewportApi, ZoomTarget } from "./api";
 import { buildAxes } from "./axes";
 import { anyTriangleInRect, projectVertices, trianglesInRect, type ScreenRect } from "./boxSelect";
@@ -27,6 +28,11 @@ import { readTheme, watchColorScheme } from "./theme";
 import { createToolLayer } from "./toolLayer";
 import { pickTriangle } from "./triPick";
 import { createViewCube } from "./viewCube";
+import { createMeasureLayer, type MeasureItem } from "./measureLayer";
+import { worldPerPixel } from "./gizmoMath";
+import { valueText } from "../measure/format";
+import type { MeasureHit } from "../measure/session";
+import { useMeasure } from "../measure/store";
 
 export interface ViewportEngine {
   api: ViewportApi;
@@ -91,7 +97,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   let axes = buildAxes(initial.platform, theme);
   const brackets = createBrackets(theme);
   const planePreview = createPlanePreview(theme, requestRender);
-  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group);
+  const measure = createMeasureLayer(theme, host);
+  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group);
   renderer.localClippingEnabled = true;
   const clipLayer = createClipLayer(parts, requestRender);
   const gizmo = createGizmo({ scene, camera, canvas, host, orbit: controls, requestRender });
@@ -121,6 +128,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     const gizmoReach = gizmo.beforeRender(width, height);
     repair.beforeRender(camera, height * renderer.getPixelRatio());
     tools.beforeRender(camera, height);
+    measure.beforeRender(camera, width, height);
     const previewReach = planePreview.reach();
     if (gizmoReach || previewReach) {
       clipSphere.copy(sceneSphere);
@@ -206,6 +214,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   /** The part in repair mode, or null. */
   const repairingId = () => useRepair.getState().session?.partId ?? null;
   const booleanOpen = () => useBoolean.getState().session !== null;
+  const measureOpen = () => useMeasure.getState().session !== null;
 
   /** How the mode draws the parts: see PartsLook. */
   function look(): PartsLook {
@@ -232,7 +241,26 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
    * In Boolean operations too: the parts stay where they are while the mode works on them.
    */
   function syncGizmo(s: AppState) {
-    gizmo.sync(repairingId() || booleanOpen() ? { ...s, selection: [] } : s);
+    gizmo.sync(repairingId() || booleanOpen() || measureOpen() ? { ...s, selection: [] } : s);
+  }
+
+  /** Measure mode: the measurements of the shown parts with their results and labels, and the clicks in progress. */
+  function syncMeasure() {
+    const m = useMeasure.getState();
+    if (!m.session) {
+      measure.sync(null);
+      return;
+    }
+    const items: MeasureItem[] = [];
+    for (const part of useStore.getState().parts) {
+      if (!part.visible) continue;
+      for (const measurement of part.measurements ?? []) {
+        const entry = m.results[measurement.id];
+        const result = entry?.result ?? null;
+        items.push({ id: measurement.id, result, text: result ? valueText(measurement, result) : "", error: entry?.error ?? null, selected: m.session.selected === measurement.id });
+      }
+    }
+    measure.sync({ items, pending: [...m.session.picks, ...m.session.points], options: m.options });
   }
 
   /** The working copy in the repaired part's colour and the view's shading. True when anything drawn changed. */
@@ -314,6 +342,10 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       switchProjection(s.view.projection);
       dirty = true;
     }
+    if (s.parts !== prev.parts && measureOpen()) {
+      syncMeasure();
+      dirty = true;
+    }
     if (dirty) requestRender();
   }
 
@@ -385,6 +417,16 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     return true;
   }
 
+  /** Measure mode: the part under the pointer, the triangle and world point hit, and about 8 px there in mm. */
+  function pickForMeasure(clientX: number, clientY: number): MeasureHit | null {
+    if (!aim(clientX, clientY)) return null;
+    const hit = raycaster.intersectObjects(parts.pickTargets(), false).find((h) => !clipLayer.isClipped(h.point));
+    const partId: unknown = hit?.object.userData.partId;
+    if (!hit || typeof partId !== "string" || hit.faceIndex === undefined || hit.faceIndex === null) return null;
+    const { x, y, z } = hit.point;
+    return { partId, triangle: hit.faceIndex, point: [x, y, z], tolerance: 8 * worldPerPixel(camera, hit.point, height) };
+  }
+
   function pickPart(clientX: number, clientY: number): PickHit | null {
     if (!aim(clientX, clientY)) return null;
     // Geometry hidden by a clip plane cannot be clicked; the first hit that is drawn counts.
@@ -424,7 +466,12 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
    * unless a modifier is held.
    */
   function selectBox(rect: ScreenRect, mode: SelectMode) {
-    // Boolean operations only draws a rectangle for Zoom to area (src/viewport/picking.ts).
+    // Boolean operations only draws a rectangle for Zoom to area (src/viewport/picking.ts); Zoom to › Area too.
+    if (useUi.getState().viewTool === "zoom-area") {
+      useUi.getState().setViewTool(null);
+      zoomToRect(rect);
+      return;
+    }
     if (booleanOpen()) {
       zoomToRect(rect);
       return;
@@ -474,6 +521,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     syncTools();
     brackets.applyTheme(theme);
     planePreview.applyTheme(theme);
+    measure.applyTheme(theme);
+    syncMeasure();
     rulers.applyTheme(theme);
     cube.applyTheme(theme);
     requestRender();
@@ -506,6 +555,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   updateSceneBounds(initial);
   updateSelection(initial);
   syncGizmo(initial);
+  syncMeasure();
   controls.target.set(initial.platform[0] / 2, initial.platform[1] / 2, initial.platform[2] / 2);
 
   controls.addEventListener("change", requestRender);
@@ -513,6 +563,11 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const unsubscribeStore = useStore.subscribe(onStoreChange);
   const unsubscribeRepair = useRepair.subscribe(onRepairChange);
   const unsubscribeBoolean = useBoolean.subscribe(onBooleanChange);
+  const unsubscribeMeasure = useMeasure.subscribe((m, prev) => {
+    if ((m.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    syncMeasure();
+    requestRender();
+  });
   const unwatchTheme = watchColorScheme(onThemeChange);
   const unsubscribeCut = useCut.subscribe(() => {
     syncTools();
@@ -532,10 +587,17 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     marker: (at) => tools.setMarker(at),
     requestRender,
   });
-  const detachPicking = attachPicking(canvas, pickPart, pickWorkingCopy, () => gizmo.isActive() || editTools.isActive(), {
-    draw: drawBox,
-    select: selectBox,
-  });
+  const detachPicking = attachPicking(
+    canvas,
+    pickPart,
+    pickWorkingCopy,
+    () => gizmo.isActive() || editTools.isActive(),
+    {
+      draw: drawBox,
+      select: selectBox,
+    },
+    pickForMeasure,
+  );
   const detachWheel = attachWheelNavigation(host, controls, motion.cancel, IS_MAC);
   const detachOptionPan = IS_MAC ? attachOptionDragPan(host, controls, () => gizmo.isActive()) : () => {};
   const unwatchPixelRatio = watchPixelRatio(resize);
@@ -561,6 +623,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       unsubscribeStore();
       unsubscribeRepair();
       unsubscribeBoolean();
+      unsubscribeMeasure();
+      measure.dispose();
       controls.removeEventListener("change", requestRender);
       controls.removeEventListener("start", motion.cancel);
       gizmo.dispose();

@@ -16,6 +16,7 @@ use crate::bundle::{self, Bundle};
 use crate::formats::{ExportFormat, ImportFormat};
 use crate::grants::Grants;
 use crate::jobs::{self, CutCache, RepairCheck, RepairJobs};
+use crate::measure::{self, MeasureCache};
 use crate::mesh::MeshStats;
 use crate::open_dialog;
 use crate::progress::Progress;
@@ -346,6 +347,94 @@ pub fn repair_cut_reset(cache: State<'_, CutCache>) {
     cache.clear();
 }
 
+// ---------------------------------------------------------------------------------------------
+// Part library (src/library/ipc.ts).
+
+/// Built in memory in an instant, so it runs right here.
+#[tauri::command]
+pub fn library_catalog() -> Vec<crate::library::Primitive> {
+    crate::library::catalog()
+}
+
+#[tauri::command]
+pub async fn library_primitive(
+    window: Window,
+    id: String,
+    params: Map<String, Value>,
+    job: u64,
+) -> Result<Response, String> {
+    heavy(move || jobs::library_primitive(&id, &params, job, &window.state::<RepairJobs>()))
+        .await
+        .map(Response::new)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Measure mode (src/measure/ipc.ts).
+
+#[tauri::command]
+pub async fn measure_pick(window: Window, request: Request<'_>) -> Result<jobs::PickReply, String> {
+    let bundle = bundle_of(&request, "measure there")?;
+    heavy(move || jobs::measure_pick(bundle, &window.state::<MeasureCache>())).await
+}
+
+/// A few numbers, so it runs right here.
+#[tauri::command]
+pub fn measure_fit(
+    kind: String,
+    points: Vec<measure::Feature>,
+) -> Result<measure::Feature, String> {
+    jobs::measure_fit(&kind, &points)
+}
+
+/// A few numbers, so it runs right here.
+#[tauri::command]
+pub fn measure_evaluate(
+    op: measure::Op,
+    features: Vec<measure::Feature>,
+    matrix: Vec<f64>,
+) -> Result<measure::Evaluation, String> {
+    let matrix: crate::mesh::Matrix = matrix
+        .try_into()
+        .map_err(|_| "Could not measure: the part's matrix is not 16 numbers.".to_string())?;
+    measure::evaluate(op, &features, &matrix)
+}
+
+/// Only drops the cached meshes, so it runs right here.
+#[tauri::command]
+pub fn measure_reset(cache: State<'_, MeasureCache>) {
+    cache.clear();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Platform statistics (src/stats/ipc.ts).
+
+#[tauri::command]
+pub async fn platform_stats(
+    window: Window,
+    request: Request<'_>,
+) -> Result<jobs::StatsReply, String> {
+    let bundle = bundle_of(&request, "work out the platform statistics")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::platform_stats(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::STATS_PROGRESS, progress);
+        })
+    })
+    .await
+}
+
+/// Export to CSV: `path` must be a file picked in the save dialog (pick_save_file).
+#[tauri::command]
+pub async fn export_text(
+    grants: State<'_, Grants>,
+    path: String,
+    text: String,
+) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    grants.check_write(&path, "csv", "write")?;
+    blocking(move || jobs::export_text(&path, &text)).await
+}
+
 /// The app's config folder, which holds the user's repair scripts. `action` starts the message.
 fn config_dir(app: &AppHandle, action: &str) -> Result<PathBuf, String> {
     app.path()
@@ -452,6 +541,7 @@ mod tests {
             visible: true,
             transparent: false,
             locked: false,
+            measurements: None,
             mesh: &mesh,
         };
         project::save_file(&project_file, [200.0; 3], &[part]).unwrap();

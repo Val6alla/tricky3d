@@ -246,8 +246,8 @@ describe("shortcuts on the window", () => {
 
   it("copy and paste with Ctrl+C and Ctrl+V, except in a text field, a dialog, repair mode or Boolean operations", () => {
     const send = keyboard();
-    expect(shortcutFor(press("c", "KeyC", { ctrlKey: true }), false)).toBe("home.copy");
-    expect(shortcutFor(press("v", "KeyV", { metaKey: true }), true)).toBe("home.paste");
+    expect(shortcutFor(press("c", "KeyC", { ctrlKey: true }), false)).toBe("context.copy");
+    expect(shortcutFor(press("v", "KeyV", { metaKey: true }), true)).toBe("context.paste");
     expect(shortcutFor(press("C", "KeyC", { ctrlKey: true, shiftKey: true }), false)).toBeNull();
 
     s().addTestCube();

@@ -25,6 +25,8 @@ pub struct PartOut<'a> {
     pub visible: bool,
     pub transparent: bool,
     pub locked: bool,
+    /// Measure mode's measurements on the part, as the window's JSON (src/measure), or None.
+    pub measurements: Option<&'a str>,
     pub mesh: &'a Mesh,
 }
 
@@ -37,6 +39,8 @@ pub struct Part {
     pub visible: Option<bool>,
     pub transparent: Option<bool>,
     pub locked: Option<bool>,
+    /// The measurements' JSON as saved; the window checks it.
+    pub measurements: Option<String>,
     pub mesh: Mesh,
 }
 
@@ -59,6 +63,9 @@ pub fn write<W: Write + Seek>(w: W, platform: [f64; 3], parts: &[PartOut]) -> io
             metadata.push(("tricky3d:visible", p.visible.to_string()));
             metadata.push(("tricky3d:transparent", p.transparent.to_string()));
             metadata.push(("tricky3d:locked", p.locked.to_string()));
+            if let Some(json) = p.measurements {
+                metadata.push(("tricky3d:measurements", json.to_string()));
+            }
             ObjectOut {
                 name: p.name,
                 mesh: p.mesh,
@@ -90,6 +97,9 @@ pub fn save_file(path: &Path, platform: [f64; 3], parts: &[PartOut]) -> Result<(
     write_atomic(path, |w| write(w, platform, parts))
         .map_err(|e| format!("Could not save \"{file}\": {}.", write_error(&e)))
 }
+
+/// Longest measurements text a part may carry (bytes); anything longer is not ours.
+const MAX_MEASUREMENTS: usize = 4 << 20;
 
 /// The names a project field may have in the metadata: ours, then the pre-rename one.
 fn keys(local: &str) -> [String; 2] {
@@ -144,6 +154,8 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Project, String> {
                 visible: flag("visible"),
                 transparent: flag("transparent"),
                 locked: flag("locked"),
+                measurements: field("measurements")
+                    .filter(|m| !m.is_empty() && m.len() <= MAX_MEASUREMENTS),
                 mesh: item.mesh,
             }
         })

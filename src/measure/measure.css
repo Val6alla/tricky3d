@@ -1,0 +1,268 @@
+/* Measure mode (src/measure): the right panel, and the value labels over the view (src/viewport/measureLayer.ts). */
+
+.ms-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ms-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ms-tab {
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ms-tab.is-selected {
+  margin-bottom: -1px;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ms-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.ms-next {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: var(--fs-sm);
+}
+
+.ms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-item {
+  display: flex;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.ms-item.is-selected {
+  border-color: var(--vp-measure-selected);
+  box-shadow: inset 0 0 0 1px var(--vp-measure-selected);
+}
+
+.ms-item-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-item-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.ms-item-part,
+.ms-item-detail {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.ms-item-value {
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 3px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ms-delete:hover {
+  background: var(--surface-3);
+  color: var(--danger);
+}
+
+.ms-heading {
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ms-text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.ms-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.ms-tool-group {
+  display: inline-flex;
+  width: 18px;
+  color: var(--text-faint);
+}
+
+.ms-tool {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ms-tool:hover {
+  background: var(--surface-3);
+}
+
+.ms-tool.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ms-tool-tag {
+  font-size: 8px;
+  line-height: 9px;
+}
+
+.ms-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ms-row {
+  display: flex;
+  gap: 14px;
+}
+
+.ms-percent {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.ms-percent input {
+  width: 100%;
+  min-width: 0;
+}
+
+.ms-percent-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-actions {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.ms-actions .dlg-btn {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Value labels over the view. */
+.ms-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ms-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--vp-measure);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  will-change: transform;
+}
+
+.ms-label.is-selected {
+  border-color: var(--vp-measure-selected);
+  box-shadow: 0 0 0 1px var(--vp-measure-selected);
+  font-weight: 600;
+}
+
+.ms-label.is-error {
+  border-color: var(--warn);
+  color: var(--warn);
+}

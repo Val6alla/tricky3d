@@ -61,6 +61,11 @@
   --vp-cut-current: #d4006f;
   --vp-cut-line: #e8202a;
   --vp-node: #18b4f0;
+  /* Measure mode's markers, lines and arrows over the parts in both themes, the measurement picked in the list (not the
+     part selection's orange, which it is often drawn on), and the clicks of a measurement in progress. */
+  --vp-measure: #1d6ee6;
+  --vp-measure-selected: #8b3dff;
+  --vp-measure-pending: #e0368c;
   /* Boolean operations' green and red lists, drawn on the parts in both themes, and the lighter shade of the part
      selected in the lists. The panel's list headings use the same tokens. */
   --vp-boolean-main: #3aa655;
