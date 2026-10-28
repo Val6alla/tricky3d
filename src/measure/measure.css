@@ -135,53 +135,130 @@
   text-transform: uppercase;
 }
 
+/* The Description: a line per thing to pick, then what is measured. */
 .ms-text {
-  margin: 0;
   font-size: var(--fs-sm);
   line-height: 1.45;
 }
 
-.ms-tool-row {
+.ms-text p {
+  margin: 0;
+}
+
+/* The Tools tab's three boxes. Description takes the height left over. */
+.ms-box {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px;
-}
-
-.ms-tool-group {
-  display: inline-flex;
-  width: 18px;
-  color: var(--text-faint);
-}
-
-.ms-tool {
-  display: inline-flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 32px;
-  padding: 0;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 4px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+}
+
+.ms-box > legend {
+  margin: 0;
+  padding: 0 4px;
+}
+
+.ms-box-grow {
+  flex: 1 0 auto;
+}
+
+/* One row of eight group buttons: 6 × 31 + 2 × 22 = 230 px, which fits the default 280 px panel. Narrower panels wrap;
+   wider ones space the buttons out up to about 8 px apart. */
+.ms-groups {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 0;
+  max-width: 290px;
+}
+
+.ms-group {
+  display: flex;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.ms-group:hover,
+.ms-group.is-open {
+  border-color: var(--border);
+}
+
+.ms-group.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ms-group-main,
+.ms-group-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text);
   cursor: pointer;
 }
 
-.ms-tool:hover {
-  background: var(--surface-3);
+.ms-group-main {
+  width: 20px;
 }
 
-.ms-tool.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.ms-group-arrow {
+  width: 9px;
+  color: var(--text-muted);
+}
+
+.ms-group-main:hover,
+.ms-group-arrow:hover,
+.ms-group.is-open .ms-group-arrow {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.ms-group.is-active .ms-group-main {
   color: var(--accent);
 }
 
-.ms-tool-tag {
-  font-size: 8px;
-  line-height: 9px;
+/* What the tool works out, then the things it measures between, side by side. In a narrow panel the things wrap
+   under the first one, not under the label. */
+.ms-chosen {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 18px;
+}
+
+.ms-chosen-op {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.ms-chosen-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-width: 0;
+}
+
+.ms-chosen-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.ms-chosen-item svg {
+  color: var(--accent);
 }
 
 .ms-fieldset {

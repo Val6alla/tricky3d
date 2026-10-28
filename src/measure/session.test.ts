@@ -45,7 +45,7 @@ beforeEach(() => {
     const value = a && b && a.p && b.p ? Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2]) : 0;
     return { kind: "distance", value, components: [value, 0, 0], line: null, apex: null, arms: null, normal: null, anchor: [matrix[12], 0, 0], features, note: op === "distance" ? null : op };
   });
-  useMeasure.setState({ session: null, results: {}, busy: false, options: DEFAULT_OPTIONS });
+  useMeasure.setState({ session: null, results: {}, busy: false, options: DEFAULT_OPTIONS, lastTool: "point-point", lastTools: {} });
   s().newProject();
   useUi.setState({ toasts: [], dialog: null, ribbonTab: "home" });
 });
@@ -70,7 +70,7 @@ describe("the measure tools", () => {
     ]);
     const tool = toolById("point-edge")!;
     expect(chosenText(tool)).toBe("Distance: Point, Edge");
-    expect(describeTool(tool)).toMatch(/^Click a point, then an edge\. The distance/);
+    expect(describeTool(tool)).toEqual(["Pick a point.", "Pick a straight edge.", "Measures the shortest distance from the point to the line the edge lies on, extended past its ends."]);
     expect(nextClickText(toolById("sphere-radius")!, 0, 2)).toBe("Click point 3 of 4 on the 4-point sphere (1 of 1).");
     expect(clicksFor("circle3")).toBe(3);
     for (const t of TOOLS) expect([t.id, t.needs.length > 0 && t.needs.length <= 3]).toEqual([t.id, true]);

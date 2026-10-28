@@ -15,11 +15,11 @@ import { browserOnly, errorMessage } from "../io/files";
 import { CLOSE_LIBRARY_FIRST, isLibraryOpen } from "../library/session";
 import { meshOperationRunning, WAIT_MESSAGE } from "../ops/meshOps";
 import { CLOSE_REPAIR_FIRST, isRepairing } from "../repair/session";
-import { useStore, type Part, type Vec3 } from "../store";
+import { saveSetting, useStore, type Part, type Vec3 } from "../store";
 import { toast, useUi } from "../ui";
 import { forgetMeasureMeshes, measureEvaluate, measureFit, measurePick } from "./ipc";
-import { emptySession, useMeasure, type MeasurePanelTab, type MeasureSession, type PendingFeature, type ResultEntry } from "./store";
-import { DEFAULT_TOOL, clicksFor, toolById, type MeasureTool } from "./tools";
+import { emptySession, LAST_TOOL_KEY, useMeasure, type MeasurePanelTab, type MeasureSession, type PendingFeature, type ResultEntry } from "./store";
+import { DEFAULT_TOOL, clicksFor, toolById, toolForGroup, type MeasureTool, type ToolGroup } from "./tools";
 import type { Measurement } from "./types";
 
 /** Main-document commands that would move or change the parts refuse with this while the mode is open. */
@@ -71,11 +71,11 @@ function watchParts() {
 }
 
 /**
- * Home › Measure and Analyze › Measure: opens the Measurement tab and panel with `tool` picked (Distance point to point
- * the first time). Refused while repair mode, Boolean operations, the Part library or a mesh operation is busy with the
- * parts; a second call picks the tool.
+ * Home › Measure and Analyze › Measure: opens the Measurement tab and panel with `tool` picked (the tool used last, also
+ * in an earlier run of the app; Distance point to point the first time). Refused while repair mode, Boolean operations,
+ * the Part library or a mesh operation is busy with the parts; a second call picks the tool.
  */
-export function openMeasure(tool: string = state().session?.tool ?? DEFAULT_TOOL): void {
+export function openMeasure(tool: string = state().lastTool): void {
   const ui = useUi.getState();
   if (isMeasureOpen()) {
     pickMeasureTool(tool);
@@ -87,7 +87,9 @@ export function openMeasure(tool: string = state().session?.tool ?? DEFAULT_TOOL
   if (isLibraryOpen()) return toast(CLOSE_LIBRARY_FIRST);
   if (meshOperationRunning()) return toast(WAIT_MESSAGE);
   if (browserOnly("Measuring")) return;
-  useMeasure.setState({ session: emptySession(toolById(tool) ? tool : DEFAULT_TOOL), busy: false });
+  const picked = toolById(tool) ? tool : DEFAULT_TOOL;
+  useMeasure.setState({ session: emptySession(picked), busy: false });
+  rememberTool(picked);
   watchParts();
   tabBefore = ui.ribbonTab === "measure" ? null : ui.ribbonTab;
   ui.closeContextMenu();
@@ -110,6 +112,14 @@ export function closeMeasure(): void {
 // ---------------------------------------------------------------------------------------------
 // Tools and the panel
 
+/** Measure opens on the tool from now on, in this run and the next, and its group's button in the Tools tab picks it. */
+function rememberTool(id: string) {
+  const tool = toolById(id);
+  if (!tool) return;
+  useMeasure.setState((s) => ({ lastTool: id, lastTools: { ...s.lastTools, [tool.group]: id } }));
+  saveSetting(LAST_TOOL_KEY, id);
+}
+
 /** A tool from the ribbon or the Tools tab: it starts a new measurement (the clicks so far are dropped). */
 export function pickMeasureTool(id: string): void {
   if (!toolById(id)) return;
@@ -118,6 +128,12 @@ export function pickMeasureTool(id: string): void {
     return;
   }
   setSession({ tool: id, picks: [], points: [], owner: null });
+  rememberTool(id);
+}
+
+/** A group's button in the Tools tab: the tool last picked from that group, or its first. */
+export function pickMeasureGroup(group: ToolGroup): void {
+  pickMeasureTool(toolForGroup(group, state().lastTools).id);
 }
 
 /** Esc: drops the clicks of the measurement in progress. True when there were any. */

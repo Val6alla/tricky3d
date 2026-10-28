@@ -83,7 +83,7 @@ import {
 } from "./repair/home";
 import { useRepair, type RepairState } from "./repair/store";
 import { CLOSE_LIBRARY_FIRST, closePartLibrary, createPart, isLibraryOpen, openPartLibrary } from "./library/session";
-import { GROUP_ICONS } from "./measure/icons";
+import { GROUP_ICONS, toolIcon } from "./measure/icons";
 import { CLOSE_MEASURE_FIRST, closeMeasure, currentTool, isMeasureOpen, openMeasure, pickMeasureTool } from "./measure/session";
 import type { MeasureState } from "./measure/store";
 import { GROUP_LABELS, TOOLS, describe, nextClickText, type ToolGroup } from "./measure/tools";
@@ -537,12 +537,12 @@ function toolEntries(group: ToolGroup, parent?: string): Entry[] {
   return TOOLS.filter((t) => t.group === group).map((t) => ({
     id: `measure.${t.id}`,
     label: t.label,
-    icon: GROUP_ICONS[group],
+    icon: toolIcon(t),
     status: "ready",
     run: () => pickMeasureTool(t.id),
     ...(parent ? { parent } : { size: "large" as const }),
     measureActive: measureToolIs(t.id),
-    hint: describe(t),
+    hint: describe(t).join(" "),
   }));
 }
 

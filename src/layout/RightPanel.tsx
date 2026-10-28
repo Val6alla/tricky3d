@@ -18,7 +18,7 @@ const BooleanPanel = lazy(() => import("../boolean/BooleanPanel").then((m) => ({
 const LibraryPanel = lazy(() => import("../library/LibraryPanel").then((m) => ({ default: m.LibraryPanel })));
 const MeasurePanel = lazy(() => import("../measure/MeasurePanel").then((m) => ({ default: m.MeasurePanel })));
 
-const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
+export const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
 
 const SECTIONS: { id: PanelSection; title: string }[] = [
   { id: "clip", title: "Clip planes" },

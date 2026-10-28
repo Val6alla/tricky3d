@@ -3,8 +3,9 @@
 // src/measure/session.ts is the only code that changes the session and the results; the options have a setter for the
 // panel. The measurements themselves live with their parts in the main store (Part.measurements).
 import { create } from "zustand";
+import { loadSetting } from "../store";
 import type { MeasureFeature, MeasureResult, SnapMode } from "./types";
-import { DEFAULT_TOOL } from "./tools";
+import { DEFAULT_TOOL, toolById, type ToolGroup } from "./tools";
 
 /** A feature of the measurement in progress: in its owner's frame, and in world space for drawing. */
 export interface PendingFeature {
@@ -65,17 +66,32 @@ export interface MeasureState {
   results: Record<string, ResultEntry>;
   /** A click is being worked out in Rust. */
   busy: boolean;
+  /** The tool used last, which Measure opens on. Kept when the mode closes, and remembered for the next app start. */
+  lastTool: string;
+  /** The tool last picked from each group, which its button in the Tools tab picks again. Kept when the mode closes. */
+  lastTools: Partial<Record<ToolGroup, string>>;
 
   setOptions(patch: Partial<MeasureOptions>): void;
 }
 
 export const emptySession = (tool = DEFAULT_TOOL): MeasureSession => ({ tool, picks: [], points: [], owner: null, selected: null, panelTab: "measurements" });
 
+/** Where the tool used last is remembered between app starts. */
+export const LAST_TOOL_KEY = "tricky3d.measureTool";
+
+/** The tool remembered from the last run, or Distance point to point when none is (or it is no tool any more). */
+function savedTool(): string {
+  const id = loadSetting(LAST_TOOL_KEY);
+  return id !== null && toolById(id) ? id : DEFAULT_TOOL;
+}
+
 export const useMeasure = create<MeasureState>()((set) => ({
   session: null,
   options: DEFAULT_OPTIONS,
   results: {},
   busy: false,
+  lastTool: savedTool(),
+  lastTools: {},
   setOptions(patch) {
     set((s) => ({ options: { ...s.options, ...patch } }));
   },

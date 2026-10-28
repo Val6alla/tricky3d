@@ -1,17 +1,19 @@
 // Measure mode's right panel: the Measurements list (every measurement with its value; a click highlights it, the
-// cross deletes it), the Tools tab (every tool as an icon, what the one picked needs and does), and the Options
-// (snapping, the axes of a distance, radius or diameter, marker and arrow sizes). Advanced, Reset and Cancel at the
-// bottom.
-import { useMemo, type ReactNode } from "react";
-import { X } from "lucide-react";
+// cross deletes it), the Tools tab (a button per group of tools with the tools in a dropdown, what the one picked
+// measures between and what to click), and the Options (snapping, the axes of a distance, radius or diameter, marker
+// and arrow sizes). Advanced, Reset and Cancel at the bottom.
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, X } from "lucide-react";
 import { anyEnabled, useClip } from "../clip";
+import { Menu } from "../menus/Menu";
+import { submenuEntries } from "../menus/entries";
 import { useStore } from "../store";
 import { toast } from "../ui";
 import { detailLines, valueText } from "./format";
-import { GROUP_ICONS } from "./icons";
-import { allMeasurements, closeMeasure, deleteMeasurement, pickMeasureTool, resetMeasurements, selectMeasurement, setPanelTab } from "./session";
+import { CHOSEN_ICONS, GROUP_ICONS } from "./icons";
+import { allMeasurements, closeMeasure, deleteMeasurement, pickMeasureGroup, resetMeasurements, selectMeasurement, setPanelTab } from "./session";
 import { useMeasure, type MeasurePanelTab } from "./store";
-import { GROUP_LABELS, TOOLS, chosenText, describe, nextClickText, toolById, type ToolGroup } from "./tools";
+import { GROUP_LABELS, TOOLS, chosenItems, chosenOp, chosenText, describe, nextClickText, toolById, toolForGroup, type MeasureTool, type ToolGroup } from "./tools";
 import type { SnapMode } from "./types";
 import "./measure.css";
 
@@ -92,65 +94,113 @@ function MeasurementsTab() {
   );
 }
 
-const GROUP_ORDER: ToolGroup[] = ["point", "edge", "circle", "circle3", "sphere4", "surface", "wall", "angle3"];
+/** The Tools tab's row of group buttons, in the Measurement tab's order. */
+export const GROUP_ORDER: ToolGroup[] = ["point", "edge", "circle", "circle3", "sphere4", "surface", "wall", "angle3"];
+
+/** Groups of more than one tool have an arrow beside their button that lists them; Wall thickness and 3-point angle don't. */
+const hasDropdown = (group: ToolGroup) => TOOLS.filter((t) => t.group === group).length > 1;
 
 function ToolsTab() {
-  const toolId = useMeasure((s) => s.session?.tool ?? "");
-  const tool = toolById(toolId);
+  const tool = toolById(useMeasure((s) => s.session?.tool ?? ""));
+  const lastTools = useMeasure((s) => s.lastTools);
+  return <ToolsView tool={tool} lastTools={lastTools} />;
+}
+
+/**
+ * The Tools tab for the tool picked: Tool selection (one button per group, with the group's own icon, picking the tool
+ * `lastTools` says, and the group's tools in a dropdown), then Chosen tools (what the tool works out and the things it
+ * measures between, side by side) and Description (a line per thing to pick, then what is measured).
+ */
+export function ToolsView({ tool, lastTools }: { tool: MeasureTool | undefined; lastTools: Partial<Record<ToolGroup, string>> }) {
   return (
     <>
-      <h3 className="ms-heading">Tool selection</h3>
-      {GROUP_ORDER.map((group) => {
-        const Icon = GROUP_ICONS[group];
-        return (
-          <div key={group} className="ms-tool-row" role="group" aria-label={GROUP_LABELS[group]}>
-            <span className="ms-tool-group" title={GROUP_LABELS[group]}>
-              <Icon size={14} aria-hidden />
+      <Box title="Tool selection">
+        <div className="ms-groups" role="toolbar" aria-label="Measurement tools">
+          {GROUP_ORDER.map((group) => (
+            <GroupButton key={group} group={group} active={tool?.group === group} last={lastTools[group]} />
+          ))}
+        </div>
+      </Box>
+      <Box title="Chosen tools">
+        {tool && (
+          <p className="ms-chosen" aria-label={chosenText(tool)}>
+            <span className="ms-chosen-op">{chosenOp(tool)}:</span>
+            <span className="ms-chosen-items">
+              {chosenItems(tool).map((item, i) => {
+                const Icon = CHOSEN_ICONS[item.icon];
+                return (
+                  <span key={i} className="ms-chosen-item">
+                    <Icon size={16} strokeWidth={1.75} aria-hidden />
+                    {item.label}
+                  </span>
+                );
+              })}
             </span>
-            {TOOLS.filter((t) => t.group === group).map((t) => (
-              <button key={t.id} type="button" className={`ms-tool${t.id === toolId ? " is-active" : ""}`} aria-pressed={t.id === toolId} title={t.label} onClick={() => pickMeasureTool(t.id)}>
-                <Icon size={15} aria-hidden />
-                <span className="ms-tool-tag">{tagOf(t.id)}</span>
-              </button>
+          </p>
+        )}
+      </Box>
+      <Box title="Description" grow>
+        {tool && (
+          <div className="ms-text">
+            {describe(tool).map((line, i) => (
+              <p key={i}>{line}</p>
             ))}
           </div>
-        );
-      })}
-      {tool && (
-        <>
-          <h3 className="ms-heading">Chosen tools</h3>
-          <p className="ms-text">{chosenText(tool)}</p>
-          <h3 className="ms-heading">Description</h3>
-          <p className="ms-text">
-            <strong>{tool.label}.</strong> {describe(tool)}
-          </p>
-        </>
-      )}
+        )}
+      </Box>
     </>
   );
 }
 
-/** A short tag under a tool's icon: what it is measured against ("E" for an edge, "XY" for that plane...). */
-function tagOf(id: string): string {
-  const tail = id.split("-").slice(1).join("-");
-  const tags: Record<string, string> = {
-    point: "P",
-    edge: "E",
-    circle: "C",
-    circle3: "3C",
-    sphere: "S",
-    surface: "F",
-    position: "Pos",
-    "edge-angle": "∠E",
-    "surface-angle": "∠F",
-    yz: "YZ",
-    xz: "XZ",
-    xy: "XY",
-    centres: "CC",
-    radius: "R",
-    "circle3-angle": "∠",
-  };
-  return tags[tail] ?? (id === "wall" ? "T" : id === "angle3" ? "∠3" : "");
+function GroupButton({ group, active, last }: { group: ToolGroup; active: boolean; last: string | undefined }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [menuAt, setMenuAt] = useState<HTMLElement | null>(null);
+  const dropdown = hasDropdown(group);
+  const tool = toolForGroup(group, { [group]: last });
+  const Icon = GROUP_ICONS[group];
+  const name = dropdown ? `${GROUP_LABELS[group]}: ${tool.label}` : GROUP_LABELS[group];
+  const listName = `${GROUP_LABELS[group]} tools`;
+  return (
+    <div ref={wrap} className={`ms-group${active ? " is-active" : ""}${menuAt ? " is-open" : ""}`} tabIndex={-1}>
+      <button
+        type="button"
+        className="ms-group-main"
+        aria-label={name}
+        aria-pressed={active}
+        title={name}
+        onClick={() => {
+          setMenuAt(null);
+          pickMeasureGroup(group);
+        }}
+      >
+        <Icon size={18} strokeWidth={1.75} aria-hidden />
+      </button>
+      {dropdown && (
+        <button
+          type="button"
+          className="ms-group-arrow"
+          aria-label={listName}
+          aria-haspopup="menu"
+          aria-expanded={menuAt !== null}
+          title={listName}
+          onClick={() => setMenuAt(menuAt ? null : wrap.current)}
+        >
+          <ChevronDown size={10} strokeWidth={2.25} aria-hidden />
+        </button>
+      )}
+      {menuAt && <Menu entries={submenuEntries(`measure.${group}`)} anchor={{ el: menuAt }} label={listName} onClose={() => setMenuAt(null)} />}
+    </div>
+  );
+}
+
+/** A titled box, as the Tools tab's three sections. */
+function Box({ title, grow, children }: { title: string; grow?: boolean; children: ReactNode }) {
+  return (
+    <fieldset className={`ms-box${grow ? " ms-box-grow" : ""}`}>
+      <legend className="ms-heading">{title}</legend>
+      {children}
+    </fieldset>
+  );
 }
 
 const SNAPS: { id: SnapMode; label: string; hint: string; clip?: boolean }[] = [

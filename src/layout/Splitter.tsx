@@ -12,7 +12,8 @@ const KEY_STEP = 16;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-function loadWidth(size: PanelSize): number {
+/** The width stored for this panel, kept within its limits; the initial width when none is stored or storage fails. */
+export function loadWidth(size: PanelSize): number {
   try {
     const raw = localStorage.getItem(size.storageKey);
     const n = raw === null ? NaN : Number(raw);
@@ -28,6 +29,16 @@ function saveWidth(key: string, width: number) {
   } catch {
     // Storage can be unavailable; the width then lasts for this session only.
   }
+}
+
+/** The width after dragging the handle `dx` px (rightwards positive) from a width of `start`, within the limits. */
+export function dragWidth(edge: SplitterProps["edge"], size: PanelSize, start: number, dx: number): number {
+  return clamp(edge === "right" ? start + dx : start - dx, size.min, size.max);
+}
+
+/** The width after an arrow key on the handle: a step wider towards the outside of the panel, narrower inwards. */
+export function keyWidth(edge: SplitterProps["edge"], size: PanelSize, width: number, key: "ArrowLeft" | "ArrowRight"): number {
+  return dragWidth(edge, size, width, key === "ArrowRight" ? KEY_STEP : -KEY_STEP);
 }
 
 /** Panel width state, restored from localStorage. The Splitter saves it. */
@@ -52,8 +63,6 @@ export function Splitter({ edge, size, width, onResize, label }: SplitterProps) 
   const drag = useRef<{ x: number; start: number; last: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const fit = (w: number) => clamp(w, size.min, size.max);
-
   // Live updates during a drag skip storage; it is written once the width settles.
   function commit(w: number) {
     onResize(w);
@@ -72,7 +81,7 @@ export function Splitter({ edge, size, width, onResize, label }: SplitterProps) 
     const d = drag.current;
     if (!d) return;
     const dx = e.clientX - d.x;
-    d.last = fit(edge === "right" ? d.start + dx : d.start - dx);
+    d.last = dragWidth(edge, size, d.start, dx);
     onResize(d.last);
   }
 
@@ -87,8 +96,7 @@ export function Splitter({ edge, size, width, onResize, label }: SplitterProps) 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    const outward = (e.key === "ArrowRight") === (edge === "right");
-    commit(fit(width + (outward ? KEY_STEP : -KEY_STEP)));
+    commit(keyWidth(edge, size, width, e.key));
   }
 
   return (

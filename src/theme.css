@@ -1,5 +1,7 @@
 /* tricky3D palette. Neutral slate surfaces with a teal accent; light and dark follow the OS.
-   Every component reads colours from these tokens. The viewport reads the --vp-* tokens at runtime. */
+   Every component reads colours from these tokens. The viewport reads the --vp-* tokens at runtime.
+   In the light theme, --text-subtle, the Soon pills (--soon on --soon-bg) and white on --accent are set to at least
+   4.5:1 against what they sit on. */
 :root {
   color-scheme: light dark;
 
@@ -20,12 +22,14 @@
   --text: #1b2028;
   --text-muted: #5d6877;
   --text-faint: #8a94a2;
-  --accent: #0b8a8f;
-  --accent-hover: #097478;
+  /* Small secondary text that must stay readable: ribbon group captions, units beside fields. */
+  --text-subtle: #66717e;
+  --accent: #0a7f84;
+  --accent-hover: #08696d;
   --accent-text: #ffffff;
-  --accent-soft: rgba(11, 138, 143, 0.12);
-  --focus-ring: rgba(11, 138, 143, 0.45);
-  --soon: #8a94a2;
+  --accent-soft: rgba(10, 127, 132, 0.12);
+  --focus-ring: rgba(10, 127, 132, 0.45);
+  --soon: #5a6573;
   --soon-bg: #e3e7ec;
   --danger: #c93c3c;
   --warn: #b7791f;
@@ -85,6 +89,7 @@
     --text: #e4e8ee;
     --text-muted: #9aa5b3;
     --text-faint: #6c7785;
+    --text-subtle: #6c7785;
     --accent: #2bb3b1;
     --accent-hover: #46c7c4;
     --accent-text: #0b1214;

@@ -131,7 +131,8 @@ const IMPORT_PLACEMENT_KEY = "tricky3d.importPlacement";
 const SHOW_PLATFORM_KEY = "tricky3d.showPlatform";
 const ALWAYS_SHOW_GIZMO_KEY = "tricky3d.alwaysShowGizmo";
 
-function loadSetting(key: string): string | null {
+/** A remembered setting ("tricky3d." keys in the window's storage), or null when there is none or no storage. */
+export function loadSetting(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -139,7 +140,7 @@ function loadSetting(key: string): string | null {
   }
 }
 
-function saveSetting(key: string, value: string) {
+export function saveSetting(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -393,11 +394,13 @@ export const useStore = create<AppState>()((set, get) => {
     duplicateParts(ids) {
       const wanted = new Set(ids);
       const sources = get().parts.filter((p) => wanted.has(p.id));
+      // Every copy moves along +X past the whole group plus a 5 mm gap, as Paste does: the copies keep their places
+      // relative to each other, and none lands on an original.
+      const box = unionBounds(sources.map((p) => boundsOf(p.mesh, p.matrix)));
+      const dx = box ? box.max[0] - box.min[0] + 5 : 10;
       const copies = sources.map((p): NewPart => {
-        const b = boundsOf(p.mesh, p.matrix);
-        const dx = b ? b.max[0] - b.min[0] + 5 : 10;
         const m = [...p.matrix];
-        m[12] += dx; // shift the copy along +X, past the original plus a 5 mm gap
+        m[12] += dx;
         return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color };
       });
       return get().addParts(copies, "Duplicate");
