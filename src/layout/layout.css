@@ -241,6 +241,34 @@
   color: var(--accent);
 }
 
+/* "Measurement": one of a part's measurements, lined up like "Part repair". Its cross shows on hover or focus. */
+.ptree-measurement {
+  padding-left: 45px;
+}
+
+.ptree-measurement .ptree-repair-icon {
+  color: var(--vp-measure);
+}
+
+.ptree-measurement.is-selected {
+  background: var(--accent-soft);
+}
+
+.ptree-measure-delete {
+  margin-left: auto;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.ptree-measurement:hover .ptree-measure-delete,
+.ptree-measurement:focus-visible .ptree-measure-delete {
+  opacity: 1;
+}
+
+.ptree-measure-delete:hover {
+  color: var(--danger);
+}
+
 .ptree-rename {
   flex: 1 1 auto;
   min-width: 0;

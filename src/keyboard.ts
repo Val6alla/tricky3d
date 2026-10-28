@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { IS_MAC, blockedReason, featureById, runFeature } from "./features";
 import { isMenuOpen } from "./menus/Menu";
+import { dropPending } from "./measure/session";
 import { isRepairing } from "./repair/session";
 import { useStore, type GizmoMode } from "./store";
 import { finishScale } from "./transformTools";
@@ -37,8 +38,8 @@ export function shortcutFor(e: KeyPress, isMac: boolean, repairing = false): str
     if (key === "y") return "modify.redo";
     if (key === "s") return "file.save";
     if (key === "o") return "file.open";
-    if (key === "c") return "home.copy";
-    if (key === "v") return "home.paste";
+    if (key === "c") return "context.copy";
+    if (key === "v") return "context.paste";
     return null;
   }
   if (repairing) return repairShortcut(key, e.shiftKey, isMac);
@@ -115,6 +116,16 @@ function onKeyDown(e: KeyboardEvent) {
   // Dialogs and open menus (the context menu included) handle their own keys (Esc closes them).
   if (useUi.getState().dialog !== null || isMenuOpen()) return;
 
+  // Esc first drops a Zoom to tool still waiting for its drag or click, then a measurement half made.
+  if (e.key === "Escape" && useUi.getState().viewTool !== null) {
+    e.preventDefault();
+    useUi.getState().setViewTool(null);
+    return;
+  }
+  if (e.key === "Escape" && dropPending()) {
+    e.preventDefault();
+    return;
+  }
   const action = shortcutFor(e, IS_MAC, isRepairing());
   if (!action || controlKeepsKey(e, action)) return;
   // A held toggle would flip on every auto-repeat. The other shortcuts set the same state again, stop at their

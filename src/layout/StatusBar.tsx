@@ -1,5 +1,6 @@
 import { useBoolean } from "../boolean/store";
-import { BOOLEAN_TOOLS, EDIT_TOOLS, REPAIR_TOOLS } from "../features";
+import { BOOLEAN_TOOLS, EDIT_TOOLS, REPAIR_TOOLS, VIEW_TOOLS, measureStatus } from "../features";
+import { useMeasure } from "../measure/store";
 import { formatCount } from "../info";
 import { useRepair } from "../repair/store";
 import { useStore, type Vec3 } from "../store";
@@ -57,8 +58,12 @@ export function StatusBar() {
   const selectedTriangles = useRepair((r) => r.session?.selectedCount ?? 0);
   const triangles = useRepair((r) => r.session?.selection.length ?? 0);
   const hoverHint = useUi((s) => s.hoverHint);
+  const viewTool = useUi((s) => s.viewTool);
+  // Re-renders as the tool and the clicks change; measureStatus reads the rest itself.
+  useMeasure((m) => [m.session?.tool, m.session?.picks.length, m.session?.points.length].join());
+  const measureTool = measureStatus(useMeasure.getState());
   const tasks = useUi((s) => s.tasks);
-  const tool = editTool ? EDIT_TOOLS[editTool] : repairTool ? REPAIR_TOOLS[repairTool] : booleanTool ? BOOLEAN_TOOLS[booleanTool] : partTool;
+  const tool = viewTool ? VIEW_TOOLS[viewTool] : measureTool ? measureTool : editTool ? EDIT_TOOLS[editTool] : repairTool ? REPAIR_TOOLS[repairTool] : booleanTool ? BOOLEAN_TOOLS[booleanTool] : partTool;
   const hint = hoverHint ?? tool.hint;
 
   return (

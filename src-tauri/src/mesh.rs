@@ -401,7 +401,7 @@ pub fn stats(mesh: &Mesh) -> MeshStats {
     analyze(mesh, &mut |_| {}).stats
 }
 
-fn volume_and_area(mesh: &Mesh) -> (f64, f64) {
+pub(crate) fn volume_and_area(mesh: &Mesh) -> (f64, f64) {
     let mut volume = 0.0;
     let mut area = 0.0;
     for t in mesh.indices.as_chunks::<3>().0 {

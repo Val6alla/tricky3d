@@ -2,13 +2,13 @@
 // feature, give it a run() and set status: "ready".
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity, AlignStartHorizontal, AlignStartVertical, ArrowBigUp, ArrowDownLeft, ArrowDownToDot, ArrowDownToLine,
+  Activity, AlignStartHorizontal, AppWindow, Atom, Compass, Construction, FileCode, History, Printer, Sheet, SunDim, Zap, AlignStartVertical, ArrowBigUp, ArrowDownLeft, ArrowDownToDot, ArrowDownToLine,
   ArrowDownUp, ArrowLeftRight, ArrowUpFromLine, Axis3d, BadgeInfo, Ban, Blend, Blocks, Box, Boxes, Bridge, Brush,
-  BrushCleaning, Camera, ChartArea, CheckCheck, ChevronsDownUp, CircleDashed, CircleDot, CircleFadingPlus, CirclePlay,
+  Camera, ChartArea, CheckCheck, ChevronsDownUp, CircleDashed, CircleDot, CircleFadingPlus, CirclePlay,
   CirclePlus, CircleSmall, ClipboardList, ClipboardPaste, Combine, Contrast, Copy, CopyCheck, CopyPlus, CopyX,
   Crosshair, Cuboid, Cylinder, Dices, Diff, Dot, DraftingCompass, Drill, Eraser, Expand, Eye, EyeOff, FileAxis3d,
   FileClock, FileOutput, FilePen, FilePlus, FileSearch, FileSliders, FileStack, FileText, Focus, FolderOpen,
-  FolderOutput, Fullscreen, Gem, Globe, Grid2x2, Grid3x2, Grid3x3, Group, Hammer, HandGrab, Hexagon, Image, Images,
+  FolderOutput, Fullscreen, Gem, Globe, Grid2x2, Grid3x2, Grid3x3, Group, HandGrab, Hexagon, Image, Images,
   ImageUp, Import, Info, IterationCcw, Keyboard, Languages, Layers, Layers2, LayoutDashboard, LayoutGrid,
   LayoutTemplate, Library, LibraryBig, Link, Link2, List, ListChecks, ListFilter, ListOrdered, LocateFixed,
   MessageSquareWarning, Minimize, Minimize2, MousePointer2, Move, Move3d, MoveDiagonal2, Network, OctagonAlert,
@@ -17,12 +17,12 @@ import {
   RectangleHorizontal, Redo2, RefreshCcw, Rotate3d, Rows3, Ruler, RulerDimensionLine, Save, SaveAll, Scale3d, Scan,
   ScanLine, ScanSearch, Scissors, ScissorsLineDashed, ScrollText, Search, Settings, Settings2, Shapes, Shrink,
   SlidersHorizontal, Spline, SplinePointer, Split, Square, SquareArrowDown, SquareArrowOutUpRight, SquareCheckBig,
-  SquareDashed, SquareDashedBottom, SquareDashedMousePointer, SquareMinus, SquarePlus, SquareSquare, SquareStack,
+  SquareDashed, SquareDashedBottom, SquareMinus, SquarePlus, SquareSquare, SquareStack,
   SquareX, SquaresIntersect, SquaresUnite, Stamp, SwatchBook, Tag, Tags, Target, TextCursorInput, Timer, ToggleLeft,
   Trash, Triangle, TriangleAlert, TriangleDashed, TriangleRight, Type, Undo2, Unlink, Unlink2, VectorSquare,
   WandSparkles, WavesHorizontal, Waypoints, Wrench, X,
 } from "lucide-react";
-import { confirmDiscard, exportAs, exportSelection, importPart, openFile, saveProject, saveProjectAs } from "./io/files";
+import { browserOnly, confirmDiscard, exportAs, exportSelection, importPart, openFile, saveProject, saveProjectAs } from "./io/files";
 import type { ExportFormat } from "./io/ipc";
 import { boundsOf, unionBounds, type Bounds } from "./mesh";
 import { acceptBoolean, CLOSE_BOOLEAN_FIRST, closeBooleanMode, isBooleanOpen, openBooleanMode, zoomToBooleanPart } from "./boolean/session";
@@ -57,27 +57,19 @@ import { ensureMeshChecks } from "./repair/badges";
 import {
   addPoint,
   addTriangle,
-  applyRepairFromHome,
   batchRepair,
-  closeHoles,
   closeHolesCurved,
   cutSurfaces,
   damageWarnings,
-  deleteTriangles,
   editRepairScripts,
   extractSelectedShells,
-  extractTriangles,
   findOverlaps,
-  fixFlipped,
   fixSelfIntersections,
-  flipTriangles as flipHomeTriangles,
   hideTriangles,
-  homeSelectActive,
   invertShells,
   mergeDuplicatePoints,
   moveNodes,
   offsetHoleEdge,
-  pickRepairTool,
   problemCounts,
   refineTriangles,
   removeDegenerate,
@@ -86,27 +78,40 @@ import {
   removeTinyShells,
   runRepairScript,
   selectByCriteria,
-  selectionInfo as homeSelectionInfo,
   shellList,
-  smoothTriangles,
-  splitInconsistentEdges,
-  splitNonManifoldEdges,
-  stitchEdges,
-  undoFromHome,
   wrapSurface,
 } from "./repair/home";
 import { useRepair, type RepairState } from "./repair/store";
+import { CLOSE_LIBRARY_FIRST, closePartLibrary, createPart, isLibraryOpen, openPartLibrary } from "./library/session";
+import { GROUP_ICONS, toolIcon } from "./measure/icons";
+import { CLOSE_MEASURE_FIRST, closeMeasure, currentTool, isMeasureOpen, openMeasure, pickMeasureTool } from "./measure/session";
+import type { MeasureState } from "./measure/store";
+import { GROUP_LABELS, TOOLS, describe, nextClickText, type ToolGroup } from "./measure/tools";
 import type { ActionId, EditTool, SelectTool } from "./repair/types";
 import { canRedo, canUndo, useStore, type AppState, type Part, type Tool, type Vec3, type ViewSettings } from "./store";
 import { centreOnPlatform, placeOnPlatform, startTransform } from "./transformTools";
-import { toast, useUi } from "./ui";
+import { toast, useUi, type ViewTool } from "./ui";
 import { viewport, type ViewPreset, type ZoomTarget } from "./viewport/api";
 
 /**
  * "repair" is the contextual ribbon tab shown in repair mode, "repair-context" the repair right-click menu, "boolean"
- * the contextual tab of Boolean operations, and "quick" the quick-action strip at the bottom of the right panel.
+ * the contextual tab of Boolean operations, "library" the Part library's, "measure" the Measurement tab, and "quick" the
+ * quick-action strip at the bottom of the right panel.
  */
-export type TabId = "file" | "home" | "analyze" | "modify" | "arrange" | "view" | "context" | "repair" | "repair-context" | "boolean" | "quick";
+export type TabId =
+  | "file"
+  | "home"
+  | "analyze"
+  | "modify"
+  | "arrange"
+  | "view"
+  | "context"
+  | "repair"
+  | "repair-context"
+  | "boolean"
+  | "library"
+  | "measure"
+  | "quick";
 export type FeatureStatus = "ready" | "soon";
 
 export interface Feature {
@@ -121,6 +126,11 @@ export interface Feature {
   run?: () => void;
   /** Id of the menu entry this item appears in. Items with a parent are not rendered directly in the group. */
   parent?: string;
+  /**
+   * A split button: the button itself runs, and its arrow opens these rows, built when it opens (Undo and Redo list
+   * the steps they would take back or bring back).
+   */
+  dropdown?: () => (Feature | "-")[];
   /** One sentence for the tooltip and status bar. */
   hint?: string;
   /** Display string, e.g. "Ctrl+Z". Shortcuts themselves are bound in src/keyboard.ts. */
@@ -133,6 +143,10 @@ export interface Feature {
   repairActive?: (r: RepairState) => boolean;
   /** Pressed state for Boolean operations' viewport tools, from the Boolean store. */
   booleanActive?: (b: BooleanState) => boolean;
+  /** Pressed while this Zoom to tool waits for its drag or click (the UI store's viewTool). */
+  viewTool?: ViewTool;
+  /** Pressed state for Measure mode's tools, from the measure store. */
+  measureActive?: (m: MeasureState) => boolean;
   /** Repair mode: greyed out and not runnable while no triangle of the working copy is selected. */
   needsTriangles?: boolean;
   /** Repair context menu: acts on the triangle under the cursor; greyed out when the menu did not open on one. */
@@ -166,10 +180,18 @@ export const REPAIR_TAB: RibbonTab = { id: "repair", label: "Repair", contextual
 /** The contextual tab of Boolean operations. Modify › Boolean selects it (src/boolean/session.ts). */
 export const BOOLEAN_TAB: RibbonTab = { id: "boolean", label: "Boolean operations", contextual: true, icon: SquaresUnite };
 
-/** The tabs the ribbon shows: the fixed ones, and Repair or Boolean operations after them while that mode is open. */
-export function ribbonTabs(repairing: boolean, booleanOpen = false): RibbonTab[] {
+/** The contextual tab of the Part library. Home › Part library selects it (src/library/session.ts). */
+export const LIBRARY_TAB: RibbonTab = { id: "library", label: "Part library", contextual: true, icon: Library };
+
+/** The contextual tab of Measure. Home › Measure and Analyze › Measure select it (src/measure/session.ts). */
+export const MEASURE_TAB: RibbonTab = { id: "measure", label: "Measurement", contextual: true, icon: Ruler };
+
+/** The tabs the ribbon shows: the fixed ones, and the open mode's contextual tab after them. */
+export function ribbonTabs(repairing: boolean, booleanOpen = false, libraryOpen = false, measureOpen = false): RibbonTab[] {
   if (repairing) return [...TABS, REPAIR_TAB];
-  return booleanOpen ? [...TABS, BOOLEAN_TAB] : TABS;
+  if (booleanOpen) return [...TABS, BOOLEAN_TAB];
+  if (libraryOpen) return [...TABS, LIBRARY_TAB];
+  return measureOpen ? [...TABS, MEASURE_TAB] : TABS;
 }
 
 export const DEFAULT_TAB: TabId = "modify";
@@ -209,9 +231,12 @@ async function openProject() {
   if (await closeModes()) await openFile();
 }
 
-/** Leaves repair mode and Boolean operations, asking about their changes; false when one stays open. */
+/** Leaves repair mode, Boolean operations and the Part library, asking about changes; false when one stays open. */
 async function closeModes(): Promise<boolean> {
-  return (await closeRepair()) && (await closeBooleanMode());
+  if (!((await closeRepair()) && (await closeBooleanMode()))) return false;
+  closePartLibrary();
+  closeMeasure();
+  return true;
 }
 
 /**
@@ -260,11 +285,75 @@ function redo() {
   else toast("Nothing to redo.");
 }
 
+/** How many steps the Undo and Redo arrows list. */
+export const HISTORY_ROWS = 15;
+
+/**
+ * The labels of the steps Undo (or Redo) would take, next one first: repair mode's own steps while it is open, none
+ * in Boolean operations (they wait until it closes), else the project's.
+ */
+export function historyLabels(kind: "undo" | "redo"): string[] {
+  if (isBooleanOpen()) return [];
+  const session = useRepair.getState().session;
+  if (session) return kind === "undo" ? session.past.map((p) => p.label).reverse() : session.future.map((p) => p.label);
+  const history = store().history;
+  return kind === "undo" ? history.past.map((e) => e.label).reverse() : history.future.map((e) => e.label);
+}
+
+/** Undo or Redo `count` steps at once, as one click on a row of the arrow's list. */
+function repeatHistory(kind: "undo" | "redo", count: number) {
+  for (let i = 0; i < count; i++) {
+    const before = isRepairing() ? useRepair.getState().session : store().history;
+    if (kind === "undo") undo();
+    else redo();
+    // Stop at a step that did not go through (a run in progress, nothing left).
+    if ((isRepairing() ? useRepair.getState().session : store().history) === before) break;
+  }
+}
+
+/** The Undo or Redo arrow's rows: one per step, the newest first; a row takes back (or brings back) it and the ones above. */
+export function historyMenu(kind: "undo" | "redo"): Feature[] {
+  const labels = historyLabels(kind).slice(0, HISTORY_ROWS);
+  const verb = kind === "undo" ? "Undo" : "Redo";
+  const icon = kind === "undo" ? Undo2 : Redo2;
+  if (labels.length === 0) {
+    const label = isBooleanOpen() ? CLOSE_BOOLEAN_FIRST : `Nothing to ${kind}.`;
+    return [{ id: `home.${kind}.none`, tab: "home", group: "History", label, icon, status: "ready", run: () => toast(label) }];
+  }
+  return labels.map((label, i) => ({
+    id: `home.${kind}.step-${i + 1}`,
+    tab: "home",
+    group: "History",
+    label: `${verb} ${label}`,
+    icon,
+    status: "ready",
+    hint: i === 0 ? `${verb} this change.` : `${verb} this change and the ${i === 1 ? "one" : i} ${kind === "undo" ? "after" : "before"} it.`,
+    run: () => repeatHistory(kind, i + 1),
+  }));
+}
+
+/** Home › Platform statistics: the Platform overview dialog, which measures the parts in Rust as it opens. */
+function openPlatformStats() {
+  if (browserOnly("Platform statistics")) return;
+  if (store().parts.length === 0) toast("There are no parts on the platform.");
+  else ui().openDialog({ kind: "platform-stats" });
+}
+
 const move = () => startTransform("translate");
 const rotate = () => startTransform("rotate");
 const scale = () => startTransform("scale");
 
 const zoomTo = (target: ZoomTarget) => () => viewport.zoomTo(target);
+
+/** The status bar's tool while Zoom to › Area or Point waits for its drag or click. */
+export const VIEW_TOOLS: Record<ViewTool, Tool> = {
+  "zoom-area": { name: "Zoom to area", hint: "Drag a rectangle in the view to zoom into it. Esc cancels." },
+  "zoom-point": { name: "Zoom to point", hint: "Click a point on a part: the view centres on it and turns around it from now on. Esc cancels." },
+};
+
+/** Zoom to › Area and Point: the next drag or click in the view does it (src/viewport/picking.ts); a second click stops. */
+const viewTool = (tool: ViewTool) => () => ui().setViewTool(ui().viewTool === tool ? null : tool);
+
 const viewFrom = (preset: ViewPreset) => () => viewport.setViewPreset(preset);
 const setView = (patch: Partial<ViewSettings>) => () => store().setView(patch);
 
@@ -433,6 +522,38 @@ export const BOOLEAN_TOOLS: Record<BooleanTool, Tool> = {
 export const PICK_TRIANGLE_FIRST = "Right-click a triangle to use this.";
 
 // ---------------------------------------------------------------------------------------------
+// Measure mode. src/measure/session.ts does the work; the tools come from src/measure/tools.ts.
+
+const MEASURE_HINT = "Measure distances, angles, radii and wall thickness on the parts.";
+
+/** The tab's six dropdowns; Wall thickness and 3-point angle are buttons of their own. */
+const MENU_GROUPS: ToolGroup[] = ["point", "edge", "circle", "circle3", "sphere4", "surface"];
+
+const measureToolIs = (id: string) => (m: MeasureState) => m.session?.tool === id;
+const groupIs = (group: ToolGroup) => (m: MeasureState) => TOOLS.some((t) => t.group === group && t.id === m.session?.tool);
+
+/** The tools of a group, in a dropdown (`parent`) or as buttons of their own. */
+function toolEntries(group: ToolGroup, parent?: string): Entry[] {
+  return TOOLS.filter((t) => t.group === group).map((t) => ({
+    id: `measure.${t.id}`,
+    label: t.label,
+    icon: toolIcon(t),
+    status: "ready",
+    run: () => pickMeasureTool(t.id),
+    ...(parent ? { parent } : { size: "large" as const }),
+    measureActive: measureToolIs(t.id),
+    hint: describe(t).join(" "),
+  }));
+}
+
+/** The status bar's tool in Measure mode: the tool picked, and what to click next. */
+export function measureStatus(m: MeasureState): Tool | null {
+  if (!m.session) return null;
+  const tool = currentTool();
+  return { name: `Measure: ${tool.label}`, hint: `${nextClickText(tool, m.session.picks.length, m.session.points.length)} Esc starts it again. ${ORBIT_HINT}` };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Export formats. The File menu and the context menu each list them; both lists come from here.
 
 interface ExportEntry {
@@ -504,6 +625,7 @@ export const FEATURES: Feature[] = [
     { id: "file.import-options", label: "Import options", icon: FileSliders, status: "soon" },
     { id: "file.formats", label: "Supported formats…", icon: FileAxis3d, status: "ready", run: () => ui().openDialog({ kind: "formats" }), hint: "File formats tricky3D can read and write." },
     { id: "file.export", label: "Export part", icon: FileOutput, status: "ready", hint: "Save the selected parts as a mesh file." },
+    { id: "file.export-any", label: "Export…", icon: FileOutput, status: "ready", run: exportSelection, parent: "file.export", group: "Any format", hint: "Save the selected parts; the file name's extension picks the format." },
     { id: "file.batch-export", label: "Export many parts at once", icon: FolderOutput, status: "soon" },
     { id: "file.part-library", label: "Add to part library", icon: LibraryBig, status: "soon" },
     { id: "file.3mf-colours", label: "3MF colours and materials", icon: SwatchBook, status: "soon" },
@@ -514,90 +636,90 @@ export const FEATURES: Feature[] = [
     { id: "file.about", label: "About tricky3D", icon: Info, status: "ready", run: () => ui().openDialog({ kind: "about" }), hint: "Version, licence and credits." },
   ]),
 
-  // Home --------------------------------------------------------------------------------------
-  ...group("home", "Part", [
+  // Home: the reference tool's layout, left to right. The repair tools that used to live here are in the Repair
+  // tab and the repair right-click menu, where the reference has them.
+  ...group("home", "Edit", [
+    { id: "home.save", label: "Save", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), size: "large", hint: "Save the project with all parts." },
+    { id: "home.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, dropdown: () => historyMenu("undo"), shortcut: mod("Z"), hint: "Undo the last change. The arrow lists the recent changes, to undo several at once." },
+    { id: "home.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, dropdown: () => historyMenu("redo"), shortcut: mod("Shift+Z"), hint: "Redo the change you undid. The arrow lists the changes you can redo." },
+  ]),
+  ...group("home", "Add parts", [
+    { id: "home.my-machines", label: "My machines", icon: Printer, status: "soon", size: "large" },
     { id: "home.add-part", label: "Add part", icon: PackagePlus, status: "ready", size: "large", hint: "Import a mesh file or add a test cube." },
     { id: "home.import", label: "Import from file…", icon: Import, status: "ready", run: importPart, parent: "home.add-part", hint: "Add parts from mesh files." },
     { id: "home.add-test-cube", label: "Add test cube", icon: Box, status: "ready", run: () => store().addTestCube(), parent: "home.add-part", hint: "Add a 20 mm cube to the platform." },
-    { id: "home.export", label: "Export", icon: FileOutput, status: "ready", run: exportSelection, size: "large", hint: "Save the selected parts as a mesh file." },
+    { id: "home.part-library", label: "Part library", icon: Library, status: "ready", run: () => void openPartLibrary(), size: "large", hint: "Add a box, cylinder, sphere or another shape, made to the sizes you set." },
+    { id: "home.platform-statistics", label: "Platform statistics", icon: Sheet, status: "ready", run: openPlatformStats, size: "large", outsideRepair: true, hint: "List every part with its size, volume and mesh counts, and the platform's packing density." },
   ]),
-  ...group("home", "Repair", [
-    { id: "home.repair", label: "Repair", icon: Wrench, status: "ready", run: repairPart, size: "large", outsideRepair: true, hint: REPAIR_HINT },
-
-    { id: "home.repair-status", label: "Status", icon: Activity, status: "ready" },
-    { id: "home.damage-warnings", label: "Damage warnings", icon: TriangleAlert, status: "ready", run: () => void damageWarnings(), parent: "home.repair-status", hint: "Show what is wrong with the selected part." },
-    { id: "home.problem-counts", label: "Problem counts", icon: ClipboardList, status: "ready", run: () => void problemCounts(), parent: "home.repair-status", hint: "Count the holes, borders and other problems." },
-    { id: "home.shell-list", label: "Shell list", icon: List, status: "ready", run: () => void shellList(), parent: "home.repair-status", hint: "Open the shell list for the part being repaired." },
-    { id: "home.apply-repair", label: "Keep or replace the original", icon: CheckCheck, status: "ready", run: applyRepairFromHome, parent: "home.repair-status", hint: "Keep the repaired part, or put it back if nothing is being repaired." },
-    { id: "home.repair-undo", label: "Undo while repairing", icon: Undo2, status: "ready", run: undoFromHome, parent: "home.repair-status", hint: "Undo the last repair step, or the last change outside repair mode." },
-
-    { id: "home.repair-select", label: "Select", icon: MousePointer2, status: "ready" },
-    { id: "home.select-area", label: "Select in a rectangle or circle", icon: SquareDashedMousePointer, status: "ready", run: () => void pickRepairTool("area"), parent: "home.repair-select", repairActive: homeSelectActive("area"), hint: "Drag a rectangle anywhere to select triangles." },
-    { id: "home.select-triangles", label: "Select triangles", icon: Triangle, status: "ready", run: () => void pickRepairTool("triangle"), parent: "home.repair-select", repairActive: homeSelectActive("triangle"), hint: "Click one triangle at a time." },
-    { id: "home.select-surface", label: "Select surface", icon: VectorSquare, status: "ready", run: () => void pickRepairTool("surface"), parent: "home.repair-select", repairActive: homeSelectActive("surface"), hint: "Click a triangle to select its surface." },
-    { id: "home.select-shell", label: "Select shell", icon: Cuboid, status: "ready", run: () => void pickRepairTool("shell"), parent: "home.repair-select", repairActive: homeSelectActive("shell"), hint: "Click a triangle to select its shell." },
-    { id: "home.select-brush", label: "Brush select", icon: Brush, status: "ready", run: () => void pickRepairTool("brush"), parent: "home.repair-select", repairActive: homeSelectActive("brush"), hint: "Drag across triangles to select them." },
-    { id: "home.select-criteria", label: "Select by criteria", icon: ListFilter, status: "ready", run: () => void selectByCriteria(), parent: "home.repair-select", hint: "Select every damaged triangle." },
-    { id: "home.selection-info", label: "Selection info", icon: BadgeInfo, status: "ready", run: () => void homeSelectionInfo(), parent: "home.repair-select", hint: "Show how many triangles are selected, and their area." },
-    { id: "home.select-overlaps", label: "Find overlapping triangles", icon: Layers2, status: "ready", run: () => void findOverlaps(), parent: "home.repair-select", group: "Find", hint: "Select triangles that cross or repeat." },
-    { id: "home.hide-triangles", label: "Hide selected triangles", icon: EyeOff, status: "ready", run: () => void hideTriangles(), parent: "home.repair-select", group: "Find", hint: "Hide the selected triangles, or show them all again." },
-
-    { id: "home.repair-holes", label: "Holes", icon: CircleDashed, status: "ready" },
-    { id: "home.close-holes", label: "Close holes", icon: CircleDot, status: "ready", run: () => void closeHoles(), parent: "home.repair-holes", hint: "Fill the holes, or the ones the selection marks." },
-    { id: "home.close-holes-curved", label: "Close holes along the curvature", icon: Spline, status: "ready", run: () => void closeHolesCurved(), parent: "home.repair-holes", hint: "Fill the holes with patches that carry on the curve of the surface round them, flat holes too." },
-    { id: "home.bridge-gap", label: "Bridge a gap", icon: Bridge, status: "soon", parent: "home.repair-holes" },
-    { id: "home.offset-hole-edge", label: "Grow a band from a hole edge", icon: CircleFadingPlus, status: "ready", run: () => void offsetHoleEdge(), parent: "home.repair-holes", hint: "Add a band of triangles along an open edge." },
-    { id: "home.stitch", label: "Stitch open edges", icon: Link, status: "ready", run: () => void stitchEdges(), parent: "home.repair-holes", hint: "Stitch open edges that lie together." },
-
-    { id: "home.repair-cleanup", label: "Clean up", icon: BrushCleaning, status: "ready" },
-    { id: "home.remove-duplicate-faces", label: "Remove duplicate triangles", icon: CopyX, status: "ready", run: () => void removeDuplicateFaces(), parent: "home.repair-cleanup", hint: "Remove triangles that repeat the same three points." },
-    { id: "home.remove-degenerate", label: "Collapse degenerate triangles", icon: TriangleDashed, status: "ready", run: () => void removeDegenerate(), parent: "home.repair-cleanup", hint: "Collapse triangles that have no area." },
-    { id: "home.merge-duplicate-points", label: "Merge duplicate points", icon: Dot, status: "ready", run: () => void mergeDuplicatePoints(), parent: "home.repair-cleanup", hint: "Merge points that sit on top of each other." },
-    { id: "home.remove-tiny-shells", label: "Delete small shells", icon: Shrink, status: "ready", run: () => void removeTinyShells(), parent: "home.repair-cleanup", hint: "Delete shells that are too small to keep." },
-    { id: "home.self-intersections", label: "Fix self-intersections", icon: SquaresIntersect, status: "ready", run: () => void fixSelfIntersections(), parent: "home.repair-cleanup", hint: "Remove triangles that cut through the part." },
-    { id: "home.split-inconsistent-edges", label: "Split inconsistent edges", icon: Unlink, status: "ready", run: () => void splitInconsistentEdges(), parent: "home.repair-cleanup", hint: "Split edges whose triangles disagree about direction." },
-    { id: "home.split-nonmanifold-edges", label: "Split non-manifold edges", icon: Unlink2, status: "ready", run: () => void splitNonManifoldEdges(), parent: "home.repair-cleanup", hint: "Split edges that more than two triangles share." },
-    { id: "home.remove-problem-areas", label: "Cut out damaged areas", icon: Eraser, status: "ready", run: () => void removeProblemAreas(), parent: "home.repair-cleanup", hint: "Cut out the damaged parts of the surface." },
-
-    { id: "home.repair-orientation", label: "Orientation", icon: ArrowDownUp, status: "ready" },
-    { id: "home.fix-flipped", label: "Fix triangle orientation", icon: ArrowDownUp, status: "ready", run: () => void fixFlipped(), parent: "home.repair-orientation", hint: "Turn flipped triangles to face out." },
-    { id: "home.invert-shells", label: "Turn inside-out shells", icon: IterationCcw, status: "ready", run: () => void invertShells(), parent: "home.repair-orientation", hint: "Turn shells whose volume is negative." },
-
-    { id: "home.repair-rebuild", label: "Rebuild", icon: Hammer, status: "ready" },
-    { id: "home.wrap-surface", label: "Keep only the outer surface", icon: Package, status: "ready", run: () => void wrapSurface(), parent: "home.repair-rebuild", hint: "Replace the part with its outer surface." },
-    { id: "home.refine", label: "Subdivide triangles", icon: Grid3x3, status: "ready", run: () => void refineTriangles(), parent: "home.repair-rebuild", hint: "Split each triangle into four." },
-
-    { id: "home.repair-edit", label: "Edit triangles", icon: PenTool, status: "ready" },
-    { id: "home.add-triangle", label: "Add triangle", icon: TriangleRight, status: "ready", run: () => void addTriangle(), parent: "home.repair-edit", hint: "Fill a three-edge hole." },
-    { id: "home.add-point", label: "Add point", icon: Plus, status: "ready", run: () => void addPoint(), parent: "home.repair-edit", hint: "Add a point in the middle of each selected triangle." },
-    { id: "home.move-nodes", label: "Move nodes", icon: Move, status: "ready", run: () => void moveNodes(), parent: "home.repair-edit", repairActive: editIs("move-nodes"), hint: "Drag a point of the surface; the triangles round it follow." },
-    { id: "home.smooth-triangles", label: "Smooth triangles", icon: WavesHorizontal, status: "ready", run: () => void smoothTriangles(), parent: "home.repair-edit", hint: "Smooth the selected triangles, or the whole part, by one step." },
-    { id: "home.delete-triangles", label: "Delete triangles", icon: Trash, status: "ready", run: () => void deleteTriangles(), parent: "home.repair-edit", hint: "Delete the selected triangles." },
-    { id: "home.flip-triangles", label: "Flip triangles", icon: RefreshCcw, status: "ready", run: () => void flipHomeTriangles(), parent: "home.repair-edit", hint: "Flip the selected triangles." },
-    { id: "home.cut-surfaces", label: "Cut surfaces", icon: PenLine, status: "ready", run: () => void cutSurfaces(), parent: "home.repair-edit", repairActive: editIs("cut"), hint: "Draw a line on the surface through clicked points and cut the surface open along it." },
-    { id: "home.extract-triangles", label: "Selected triangles to new part", icon: SquareArrowOutUpRight, status: "ready", run: () => void extractTriangles(), parent: "home.repair-edit", group: "Extract", hint: "Copy the selected triangles into a new part." },
-    { id: "home.extract-shells", label: "Selected shells to new part", icon: PackageOpen, status: "ready", run: () => void extractSelectedShells(), parent: "home.repair-edit", group: "Extract", hint: "Copy the selected shells into a new part." },
-
-    { id: "home.repair-scripts", label: "Scripts", icon: ScrollText, status: "ready" },
-    { id: "home.run-repair-script", label: "Run a repair script", icon: Play, status: "ready", run: () => void runRepairScript(), parent: "home.repair-scripts", hint: "Pick a repair script and run it." },
-    { id: "home.edit-repair-scripts", label: "Edit repair scripts", icon: FilePen, status: "ready", run: () => void editRepairScripts(), parent: "home.repair-scripts", hint: "Open the repair scripts list." },
-    { id: "home.batch-repair", label: "Repair many parts at once", icon: ListChecks, status: "ready", run: () => void batchRepair(), parent: "home.repair-scripts", outsideRepair: true, hint: "Run Default repair on the selected parts, or on every unlocked part." },
+  ...group("home", "Prepare", [
+    { id: "home.repair", label: "Repair part", icon: Wrench, status: "ready", run: repairPart, size: "large", outsideRepair: true, hint: REPAIR_HINT },
+    { id: "home.run-script", label: "Run script", icon: ScrollText, status: "ready", size: "large", hint: "Run a repair script on the selected part." },
+    { id: "home.run-repair-script", label: "Run repair script", icon: Play, status: "ready", run: () => void runRepairScript(), parent: "home.run-script", hint: "Pick a repair script and run it on the selected part." },
+    { id: "home.run-support-script", label: "Run support script", icon: Construction, status: "soon", parent: "home.run-script" },
+    { id: "home.run-lua-script", label: "Run Lua script", icon: FileCode, status: "soon", parent: "home.run-script" },
+    { id: "home.quick-access", label: "Quick access", icon: Zap, status: "soon", parent: "home.run-script", group: "Quick access" },
+    { id: "home.quick-access-recent", label: "Recently run scripts", icon: History, status: "soon", parent: "home.quick-access" },
   ]),
-  ...group("home", "Edit", [
-    { id: "home.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, shortcut: mod("Z"), hint: "Undo the last change." },
-    { id: "home.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, shortcut: mod("Shift+Z"), hint: "Redo the change you undid." },
-    { id: "home.copy", label: "Copy", icon: Copy, status: "ready", run: copyParts, shortcut: mod("C"), outsideRepair: true, hint: "Copy the selected parts to the clipboard." },
-    { id: "home.paste", label: "Paste", icon: ClipboardPaste, status: "ready", run: () => void pasteParts(), shortcut: mod("V"), outsideRepair: true, hint: "Paste the copied parts beside the originals." },
+  ...group("home", "Analyze", [
+    { id: "home.new-analysis", label: "New analysis", icon: ChartArea, status: "soon", size: "large" },
+    { id: "home.analysis-skin", label: "Up-/Down-skin", icon: ArrowDownToDot, status: "soon", parent: "home.new-analysis" },
+    { id: "home.analysis-gravity", label: "Center of gravity", icon: Crosshair, status: "soon", parent: "home.new-analysis" },
+    { id: "home.analysis-standard", label: "Standard analysis", icon: ClipboardList, status: "soon", parent: "home.new-analysis" },
+    { id: "home.analysis-shadow", label: "Shadow area", icon: SunDim, status: "soon", parent: "home.new-analysis" },
+    { id: "home.analysis-support-volume", label: "Support volume", icon: Construction, status: "soon", parent: "home.new-analysis" },
+    { id: "home.analysis-wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "soon", parent: "home.new-analysis" },
+    { id: "home.measure", label: "Measure", icon: Ruler, status: "ready", run: () => openMeasure(), size: "large", hint: MEASURE_HINT },
   ]),
-  ...group("home", "Platform", [
-    { id: "home.platform-size", label: "Platform size", icon: Proportions, status: "ready", run: () => ui().openDialog({ kind: "platform" }), size: "large", hint: "Set the build platform's width, depth and height in mm." },
+  ...group("home", "Modify", [
+    { id: "home.boolean", label: "Boolean", icon: SquaresUnite, status: "ready", run: boolean, size: "large", outsideRepair: true, hint: "Unite the selected parts, subtract some from the others, or keep what they share." },
+    { id: "home.generate-shell", label: "Generate shell", icon: Cylinder, status: "soon" },
+    { id: "home.generate-label", label: "Generate label", icon: Tag, status: "soon" },
+    { id: "home.label-text", label: "Text label", icon: Type, status: "soon", parent: "home.generate-label" },
+    { id: "home.label-image", label: "Image label", icon: Stamp, status: "soon", parent: "home.generate-label" },
+    { id: "home.label-list", label: "Numbered labels from a list", icon: ListOrdered, status: "soon", parent: "home.generate-label" },
+  ]),
+  ...group("home", "Arrange", [
+    { id: "home.scale", label: "Scale", icon: Scale3d, status: "ready", run: scale, size: "large", outsideRepair: true, hint: "Resize the selected parts by a factor or to a size." },
+    { id: "home.rotate", label: "Rotate", icon: Rotate3d, status: "ready", run: rotate, size: "large", outsideRepair: true, hint: "Rotate the selected parts." },
+    { id: "home.move", label: "Move", icon: Move, status: "ready", run: move, size: "large", outsideRepair: true, hint: "Move the selected parts." },
+    { id: "home.orient", label: "Orient", icon: Compass, status: "soon" },
+    { id: "home.duplicate", label: "Duplicate", icon: CopyPlus, status: "soon" },
+    { id: "home.duplicate-count", label: "Duplicate parts", icon: Rows3, status: "soon", parent: "home.duplicate" },
+    { id: "home.duplicate-fill", label: "Fill the platform", icon: Grid3x2, status: "soon", parent: "home.duplicate" },
+    { id: "home.pack", label: "Pack", icon: Blocks, status: "soon" },
+    { id: "home.pack-2d", label: "2D packing", icon: LayoutDashboard, status: "soon", parent: "home.pack" },
+    { id: "home.pack-3d", label: "3D packing", icon: Boxes, status: "soon", parent: "home.pack" },
+  ]),
+  ...group("home", "Support", [
+    { id: "home.generate-supports", label: "Generate supports", icon: Construction, status: "soon", size: "large" },
+    { id: "home.supports-script", label: "Run support script", icon: Play, status: "soon", parent: "home.generate-supports" },
+    { id: "home.supports-manual", label: "Edit supports by hand", icon: PenTool, status: "soon", parent: "home.generate-supports" },
+    { id: "home.manage-supports", label: "Manage supports", icon: Settings2, status: "soon", size: "large" },
+    { id: "home.supports-remove", label: "Remove supports", icon: Trash, status: "soon", parent: "home.manage-supports" },
+    { id: "home.supports-export", label: "Export supports", icon: FileOutput, status: "soon", parent: "home.manage-supports" },
+  ]),
+  ...group("home", "Slice parts", [
+    { id: "home.slice-parts", label: "Slice parts", icon: Layers, status: "soon", size: "large" },
+  ]),
+  ...group("home", "Zoom to", [
+    { id: "home.zoom-everything", label: "Everything", icon: Fullscreen, status: "ready", run: zoomTo("everything"), hint: "Fit the platform and all parts in the view." },
+    { id: "home.zoom-selected", label: "Selected", icon: Focus, status: "ready", run: zoomTo("selected"), shortcut: "F", hint: "Fit the selected parts in the view." },
+    { id: "home.zoom-platform", label: "Platform", icon: Scan, status: "ready", run: zoomTo("platform"), hint: "Fit the build platform in the view." },
+    { id: "home.zoom-area", label: "Area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", hint: "Drag a rectangle in the view to zoom into it." },
+    { id: "home.zoom-parts", label: "All parts", icon: ScanSearch, status: "ready", run: zoomTo("parts"), shortcut: "A", hint: "Fit all parts in the view." },
+    { id: "home.zoom-point", label: "Point", icon: LocateFixed, status: "ready", run: viewTool("zoom-point"), viewTool: "zoom-point", hint: "Click a point on a part: the view centres on it and turns around it from now on." },
+  ]),
+  ...group("home", "Utilities", [
+    { id: "home.open-utility", label: "Open Utility", icon: AppWindow, status: "soon", size: "large" },
+    { id: "home.utility-simulation", label: "Simulation", icon: Atom, status: "soon", parent: "home.open-utility" },
+    { id: "home.utility-lattice", label: "Lattices", icon: Network, status: "soon", parent: "home.open-utility" },
   ]),
 
   // Analyze -----------------------------------------------------------------------------------
   ...group("analyze", "Inspect", [
     { id: "analyze.information", label: "Information", icon: Info, status: "ready", run: () => ui().focusSection("information"), size: "large", outsideRepair: true, hint: "Show size, volume and mesh counts in the right panel." },
-    { id: "analyze.measure", label: "Measure", icon: Ruler, status: "soon", size: "large" },
-    { id: "analyze.wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "soon" },
+    { id: "analyze.measure", label: "Measure", icon: Ruler, status: "ready", run: () => openMeasure(), size: "large", hint: MEASURE_HINT },
+    { id: "analyze.wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "ready", run: () => openMeasure("wall"), hint: "Click a point on a part to measure the wall straight through to the other side." },
     { id: "analyze.shells", label: "Shell analysis", icon: Boxes, status: "soon" },
     { id: "analyze.centre-of-mass", label: "Centre of mass", icon: Crosshair, status: "soon" },
   ]),
@@ -676,8 +798,8 @@ export const FEATURES: Feature[] = [
     { id: "modify.zoom-platform", label: "Platform", icon: Scan, status: "ready", run: zoomTo("platform"), hint: "Fit the build platform in the view." },
     { id: "modify.zoom-parts", label: "All parts", icon: ScanSearch, status: "ready", run: zoomTo("parts"), shortcut: "A", hint: "Fit all parts in the view." },
     { id: "modify.zoom-selected", label: "Selected", icon: Focus, status: "ready", run: zoomTo("selected"), shortcut: "F", hint: "Fit the selected parts in the view." },
-    { id: "modify.zoom-area", label: "Area", icon: ScanLine, status: "soon" },
-    { id: "modify.zoom-point", label: "Point", icon: LocateFixed, status: "soon" },
+    { id: "modify.zoom-area", label: "Area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", hint: "Drag a rectangle in the view to zoom into it." },
+    { id: "modify.zoom-point", label: "Point", icon: LocateFixed, status: "ready", run: viewTool("zoom-point"), viewTool: "zoom-point", hint: "Click a point on a part: the view centres on it and turns around it from now on." },
   ]),
 
   // Arrange -----------------------------------------------------------------------------------
@@ -686,6 +808,7 @@ export const FEATURES: Feature[] = [
     { id: "arrange.rotate", label: "Rotate", icon: Rotate3d, status: "ready", run: rotate, size: "large", outsideRepair: true, hint: "Rotate the selected parts." },
   ]),
   ...group("arrange", "Platform", [
+    { id: "arrange.platform-size", label: "Platform size", icon: Proportions, status: "ready", run: () => ui().openDialog({ kind: "platform" }), size: "large", hint: "Set the build platform's width, depth and height in mm." },
     { id: "arrange.place-on-platform", label: "Place on platform", icon: ArrowDownToLine, status: "ready", run: placeOnPlatform, outsideRepair: true, hint: "Drop the selection so it rests on the platform." },
     { id: "arrange.centre-on-platform", label: "Centre on platform", icon: Target, status: "ready", run: centreOnPlatform, outsideRepair: true, hint: "Move the selection to the middle of the platform." },
     { id: "arrange.front-left", label: "Move to front-left corner", icon: ArrowDownLeft, status: "soon" },
@@ -769,6 +892,9 @@ export const FEATURES: Feature[] = [
     { id: "context.duplicate", label: "Duplicate", icon: Copy, status: "ready", run: duplicateSelection, hint: "Copy the selected parts beside the originals." },
     { id: "context.rename", label: "Rename", icon: Pencil, status: "ready", run: renameSelection, hint: "Give the part a new name." },
     { id: "context.repair", label: "Repair part", icon: Wrench, status: "ready", run: repairPart, outsideRepair: true, hint: REPAIR_HINT },
+    { id: "context.batch-repair", label: "Repair many parts at once", icon: ListChecks, status: "ready", run: () => void batchRepair(), outsideRepair: true, hint: "Run Default repair on the selected parts, or on every unlocked part." },
+    { id: "context.copy", label: "Copy", icon: Copy, status: "ready", run: copyParts, shortcut: mod("C"), outsideRepair: true, hint: "Copy the selected parts to the clipboard." },
+    { id: "context.paste", label: "Paste", icon: ClipboardPaste, status: "ready", run: () => void pasteParts(), shortcut: mod("V"), outsideRepair: true, hint: "Paste the copied parts beside the originals." },
     { id: "context.delete", label: "Delete", icon: Trash, status: "ready", run: deleteSelection, shortcut: "Del", outsideRepair: true, hint: "Remove the selected parts. Locked parts stay." },
     { id: "context.centre-view", label: "Centre view here", icon: Crosshair, status: "ready", run: centreViewHere, hint: "Orbit around this point from now on." },
     { id: "context.toggle-visible", label: "Show/Hide selected", icon: Eye, status: "ready", run: toggleSelectedVisible, hint: "Hide the selected parts, or show them again." },
@@ -790,21 +916,28 @@ export const FEATURES: Feature[] = [
   // Repair (contextual tab, shown in repair mode) ---------------------------------------------
   ...group("repair", "Repair", [
     { id: "repair.script", label: "Repair script", icon: ScrollText, status: "ready", run: pickScript, size: "large", hint: "Pick a repair script and run it on the part." },
+    { id: "repair.edit-scripts", label: "Edit repair scripts", icon: FilePen, status: "ready", run: () => void editRepairScripts(), hint: "Open the repair scripts list." },
   ]),
   ...group("repair", "Info", [
     { id: "repair.selection-info", label: "Show selection info", icon: BadgeInfo, status: "ready", run: showSelectionInfo, size: "large", hint: "Show how many triangles are selected, their area and the shells they touch." },
+    { id: "repair.status", label: "Status", icon: Activity, status: "ready", hint: "What is wrong with the part, and its shells." },
+    { id: "repair.damage-warnings", label: "Damage warnings", icon: TriangleAlert, status: "ready", run: () => void damageWarnings(), parent: "repair.status", hint: "Show what is wrong with the part." },
+    { id: "repair.problem-counts", label: "Problem counts", icon: ClipboardList, status: "ready", run: () => void problemCounts(), parent: "repair.status", hint: "Count the holes, borders and other problems." },
+    { id: "repair.shell-list", label: "Shell list", icon: List, status: "ready", run: () => void shellList(), parent: "repair.status", hint: "Open the shell list for the part being repaired." },
   ]),
   ...group("repair", "Select", [
-    { id: "repair.select-primitive", label: "Primitive", icon: Shapes, status: "soon" },
+    { id: "repair.select-primitive", label: "Primitive", icon: Shapes, status: "ready", run: pickTool("area"), repairActive: toolIs("area"), hint: "Drag a rectangle anywhere to select the triangles facing you." },
     { id: "repair.select-triangle", label: "Triangle", icon: Triangle, status: "ready", run: pickTool("triangle"), repairActive: toolIs("triangle"), hint: "Click to select single triangles." },
     { id: "repair.select-surface", label: "Surface", icon: VectorSquare, status: "ready", run: pickTool("surface"), repairActive: toolIs("surface"), hint: "Click to select a surface: the triangles around it up to the View tab's tolerance angle." },
-    { id: "repair.select-brush", label: "Brush", icon: Brush, status: "soon" },
+    { id: "repair.select-brush", label: "Brush", icon: Brush, status: "ready", run: pickTool("brush"), repairActive: toolIs("brush"), hint: "Drag across the part to select the triangles under the pointer." },
     { id: "repair.select-shell", label: "Shell", icon: Cuboid, status: "ready", run: pickTool("shell"), repairActive: toolIs("shell"), hint: "Click to select a whole shell." },
     { id: "repair.select-all", label: "All", icon: SquareCheckBig, status: "ready", run: selectAll, hint: "Select every triangle." },
     { id: "repair.select-none", label: "None", icon: SquareX, status: "ready", run: selectNone, shortcut: "Esc", hint: "Clear the triangle selection." },
-    { id: "repair.select-overlap", label: "Overlap", icon: Layers2, status: "soon" },
+    { id: "repair.select-overlap", label: "Overlap", icon: Layers2, status: "ready", run: () => void findOverlaps(), hint: "Select the triangles that cross or repeat others, over the whole part." },
     { id: "repair.select-toggle", label: "Toggle", icon: ToggleLeft, status: "ready", run: invertSelection, hint: "Select the unselected triangles and deselect the selected ones." },
-    { id: "repair.select-advanced", label: "Advanced", icon: SlidersHorizontal, status: "soon" },
+    { id: "repair.select-advanced", label: "Advanced", icon: SlidersHorizontal, status: "ready" },
+    { id: "repair.select-criteria", label: "Select damaged triangles", icon: ListFilter, status: "ready", run: () => void selectByCriteria(), parent: "repair.select-advanced", hint: "Select every damaged triangle." },
+    { id: "repair.hide-triangles", label: "Hide selected triangles", icon: EyeOff, status: "ready", run: () => void hideTriangles(), parent: "repair.select-advanced", hint: "Hide the selected triangles, or show them all again." },
   ]),
   ...group("repair", "Refine mesh", [
     { id: "repair.z-comp", label: "Z-comp", icon: ChevronsDownUp, status: "soon" },
@@ -831,11 +964,12 @@ export const FEATURES: Feature[] = [
     { id: "repair.extract", label: "Extract parts", icon: SquareArrowOutUpRight, status: "ready", hint: "Make a new part from the selected triangles." },
     { id: "repair.extract-copy", label: "Extract selected triangles as part", icon: SquareArrowOutUpRight, status: "ready", run: extractCopy, parent: "repair.extract", needsTriangles: true, hint: "Add the selected triangles as a new part and keep them here too." },
     { id: "repair.extract-separate", label: "Separate selection as part", icon: PackageOpen, status: "ready", run: extractSeparate, parent: "repair.extract", needsTriangles: true, hint: "Move the selected triangles out into a new part." },
+    { id: "repair.extract-shells", label: "Selected shells to new part", icon: PackageOpen, status: "ready", run: () => void extractSelectedShells(), parent: "repair.extract", hint: "Copy the shells the selected triangles belong to into a new part." },
   ]),
   ...group("repair", "Zoom to", [
     { id: "repair.zoom-part", label: "Part", icon: ScanSearch, status: "ready", run: zoomToPart, shortcut: "A", hint: "Fit the part in the view." },
     { id: "repair.zoom-selected", label: "Selected", icon: Focus, status: "ready", run: zoomToTriangles, shortcut: "F", hint: "Fit the selected triangles in the view, or the part when none is selected." },
-    { id: "repair.zoom-area", label: "Area", icon: ScanLine, status: "soon" },
+    { id: "repair.zoom-area", label: "Area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", hint: "Drag a rectangle in the view to zoom into it." },
   ]),
   ...group("repair", "Close", [
     { id: "repair.apply", label: "Apply repair", icon: CheckCheck, status: "ready", run: requestApply, size: "large", hint: "Keep the repaired part and leave repair mode." },
@@ -855,6 +989,27 @@ export const FEATURES: Feature[] = [
     { id: "boolean.close", label: "Close Boolean operations", icon: X, status: "ready", run: () => void closeBooleanMode(), size: "large", hint: "Leave Boolean operations without adding a result." },
   ]),
 
+  // Measurement (contextual tab, shown in Measure mode) ---------------------------------------
+  ...group("measure", "New measurement", [
+    ...MENU_GROUPS.flatMap((g): Entry[] => [
+      { id: `measure.${g}`, label: GROUP_LABELS[g], icon: GROUP_ICONS[g], status: "ready", size: "large", measureActive: groupIs(g), hint: `Measurements that start from a ${GROUP_LABELS[g].toLowerCase()}.` },
+      ...toolEntries(g, `measure.${g}`),
+    ]),
+    ...toolEntries("wall"),
+    ...toolEntries("angle3"),
+  ]),
+  ...group("measure", "Exit measurement", [
+    { id: "measure.cancel", label: "Cancel", icon: X, status: "ready", run: closeMeasure, size: "large", hint: "Leave Measure. The measurements stay with their parts and show again next time." },
+  ]),
+
+  // Part library (contextual tab, shown while the library is open) -----------------------------
+  ...group("library", "Create", [
+    { id: "library.create", label: "Create part", icon: PackagePlus, status: "ready", run: () => void createPart(), size: "large", hint: "Add the shape as a new part on the middle of the platform, and close the library." },
+  ]),
+  ...group("library", "Close", [
+    { id: "library.cancel", label: "Cancel", icon: X, status: "ready", run: closePartLibrary, size: "large", hint: "Close the part library without adding a part." },
+  ]),
+
   // Repair context menu (right-click on the working copy), top to bottom ----------------------
   ...group("repair-context", "This triangle", [
     { id: "repair-ctx.add-triangle", label: "Add this triangle to selection", icon: Triangle, status: "ready", run: addUnderCursor("triangle"), underCursor: true, hint: "Add the triangle under the cursor to the selection." },
@@ -864,10 +1019,13 @@ export const FEATURES: Feature[] = [
   ...group("repair-context", "Selection", [
     { id: "repair-ctx.expand", label: "Expand selection", icon: SquarePlus, status: "ready", run: expandSelection, shortcut: "=", needsTriangles: true, hint: "Add every triangle that shares a corner with the selection." },
     { id: "repair-ctx.shrink", label: "Shrink selection", icon: SquareMinus, status: "ready", run: shrinkSelection, shortcut: "-", needsTriangles: true, hint: "Drop the selected triangles that share a corner with an unselected one." },
+    { id: "repair-ctx.select-criteria", label: "Select damaged triangles", icon: ListFilter, status: "ready", run: () => void selectByCriteria(), hint: "Select every damaged triangle." },
+    { id: "repair-ctx.hide-triangles", label: "Hide selected triangles", icon: EyeOff, status: "ready", run: () => void hideTriangles(), hint: "Hide the selected triangles, or show them all again." },
   ]),
   ...group("repair-context", "Mesh", [
     { id: "repair-ctx.reduce", label: "Reduce triangles", icon: Minimize2, status: "soon" },
-    { id: "repair-ctx.refine", label: "Refine triangle mesh", icon: Grid3x3, status: "soon" },
+    { id: "repair-ctx.refine", label: "Refine triangle mesh", icon: Grid3x3, status: "ready", run: () => void refineTriangles(), hint: "Split each selected triangle, or every triangle, into four." },
+    { id: "repair-ctx.insert-point", label: "Add point", icon: Plus, status: "ready", run: () => void addPoint(), needsTriangles: true, hint: "Add a point in the middle of each selected triangle." },
     { id: "repair-ctx.smooth", label: "Smooth triangles", icon: WavesHorizontal, status: "ready", run: repairAction("smooth_triangles"), hint: "Move each point inside the selection, or of the whole part, to the average of its neighbours." },
     { id: "repair-ctx.z-compensation", label: "Z-compensation", icon: ChevronsDownUp, status: "soon" },
     { id: "repair-ctx.remesh", label: "Remesh", icon: LayoutGrid, status: "soon" },
@@ -877,17 +1035,32 @@ export const FEATURES: Feature[] = [
     { id: "repair-ctx.close-trivial", label: "Close trivial holes", icon: CircleSmall, status: "ready", run: repairAction("close_trivial_holes"), hint: "Fill holes bordered by 3 edges, or by 4 edges that are nearly flat." },
     { id: "repair-ctx.close-defined", label: "Close defined holes", icon: CircleDashed, status: "ready", run: repairAction("close_defined_holes"), needsTriangles: true, hint: "Fill the holes that border the selected triangles." },
     { id: "repair-ctx.close-all", label: "Close all holes", icon: CircleDot, status: "ready", run: repairAction("close_all_holes"), hint: "Fill every hole." },
+    { id: "repair-ctx.close-curved", label: "Close holes along the curvature", icon: Spline, status: "ready", run: () => void closeHolesCurved(), hint: "Fill the holes with patches that carry on the curve of the surface round them, flat holes too." },
+    { id: "repair-ctx.fill-three-edge", label: "Fill three-edge holes", icon: TriangleRight, status: "ready", run: () => void addTriangle(), hint: "Fill each hole bordered by three edges with one triangle; with none, close the trivial holes." },
+    { id: "repair-ctx.grow-band", label: "Grow a band from a hole edge", icon: CircleFadingPlus, status: "ready", run: () => void offsetHoleEdge(), hint: "Add a band of triangles along an open edge." },
+    { id: "repair-ctx.bridge-gap", label: "Bridge a gap", icon: Bridge, status: "soon" },
     { id: "repair-ctx.stitch", label: "Stitch triangles", icon: Link, status: "ready", run: repairAction("stitch_triangles"), hint: "Join open edges that lie within 0.010 mm, closing gaps and cracks." },
+  ]),
+  ...group("repair-context", "Clean up", [
+    { id: "repair-ctx.remove-duplicates", label: "Remove duplicate triangles", icon: CopyX, status: "ready", run: () => void removeDuplicateFaces(), hint: "Remove triangles that repeat the same three points." },
+    { id: "repair-ctx.remove-degenerate", label: "Collapse degenerate triangles", icon: TriangleDashed, status: "ready", run: () => void removeDegenerate(), hint: "Collapse triangles that have no area." },
+    { id: "repair-ctx.merge-points", label: "Merge duplicate points", icon: Dot, status: "ready", run: () => void mergeDuplicatePoints(), hint: "Merge points that sit on top of each other." },
+    { id: "repair-ctx.remove-tiny-shells", label: "Delete small shells", icon: Shrink, status: "ready", run: () => void removeTinyShells(), hint: "Delete shells that are too small to keep." },
+    { id: "repair-ctx.self-intersections", label: "Fix self-intersections", icon: SquaresIntersect, status: "ready", run: () => void fixSelfIntersections(), hint: "Remove triangles that cut through the part." },
+    { id: "repair-ctx.remove-problem-areas", label: "Cut out damaged areas", icon: Eraser, status: "ready", run: () => void removeProblemAreas(), hint: "Cut out the damaged parts of the surface." },
+    { id: "repair-ctx.wrap-surface", label: "Keep only the outer surface", icon: Package, status: "ready", run: () => void wrapSurface(), hint: "Replace the part with its outer surface." },
   ]),
   ...group("repair-context", "Triangles", [
     { id: "repair-ctx.remove-selected", label: "Remove selected triangles", icon: Trash, status: "ready", run: removeTriangles, shortcut: "Del", needsTriangles: true, hint: "Delete the selected triangles." },
     { id: "repair-ctx.flip-selected", label: "Flip selected triangles", icon: RefreshCcw, status: "ready", run: flipTriangles, needsTriangles: true, hint: "Turn the selected triangles to face the other way." },
     { id: "repair-ctx.fix-flipped", label: "Fix flipped triangles", icon: ArrowDownUp, status: "ready", run: repairAction("fix_flipped_triangles"), hint: "Turn triangles that face the wrong way, then make each closed shell face outward." },
+    { id: "repair-ctx.invert-shells", label: "Turn inside-out shells", icon: IterationCcw, status: "ready", run: () => void invertShells(), hint: "Turn shells whose volume is negative." },
     { id: "repair-ctx.split-non-oriented", label: "Split non-oriented edges", icon: Unlink, status: "ready", run: repairAction("split_non_oriented_edges"), hint: "Separate edges whose two triangles face opposite ways." },
   ]),
   ...group("repair-context", "Extract", [
     { id: "repair-ctx.extract-copy", label: "Extract selected triangles as part", icon: SquareArrowOutUpRight, status: "ready", run: extractCopy, needsTriangles: true, hint: "Add the selected triangles as a new part and keep them here too." },
     { id: "repair-ctx.extract-separate", label: "Separate selection as part", icon: PackageOpen, status: "ready", run: extractSeparate, needsTriangles: true, hint: "Move the selected triangles out into a new part." },
+    { id: "repair-ctx.extract-shells", label: "Selected shells to new part", icon: PackageOpen, status: "ready", run: () => void extractSelectedShells(), hint: "Copy the shells the selected triangles belong to into a new part." },
   ]),
 ];
 
@@ -895,9 +1068,12 @@ export const FEATURES: Feature[] = [
 export const CONTEXT_MENU: string[] = [
   "context.export",
   "-",
+  "context.copy",
+  "context.paste",
   "context.duplicate",
   "context.rename",
   "context.repair",
+  "context.batch-repair",
   "context.delete",
   "-",
   "context.centre-view",
@@ -961,6 +1137,8 @@ export function blockedReason(
   if (effectiveStatus(f) === "soon") return null;
   if (f.outsideRepair && r.session) return CLOSE_REPAIR_FIRST;
   if (f.outsideRepair && booleanOpen) return CLOSE_BOOLEAN_FIRST;
+  if (f.outsideRepair && isLibraryOpen()) return CLOSE_LIBRARY_FIRST;
+  if (f.outsideRepair && isMeasureOpen()) return CLOSE_MEASURE_FIRST;
   if (f.needsTriangles && (r.session?.selectedCount ?? 0) === 0) return SELECT_TRIANGLES_FIRST;
   if (f.underCursor && typeof triangle !== "number") return PICK_TRIANGLE_FIRST;
   return null;
@@ -1008,7 +1186,7 @@ export function runFeature(id: string) {
 
 /** The tabs whose entries only show in repair mode, and those of either mode. */
 const REPAIR_TABS: readonly TabId[] = ["repair", "repair-context"];
-const MODE_TABS: readonly TabId[] = [...REPAIR_TABS, "boolean"];
+const MODE_TABS: readonly TabId[] = [...REPAIR_TABS, "boolean", "library", "measure"];
 
 /** Registry mistakes that would otherwise only show up by clicking around. Logged in development. */
 export function registryProblems(): string[] {
@@ -1019,10 +1197,11 @@ export function registryProblems(): string[] {
     seen.add(f.id);
     if (f.parent && !byId.has(f.parent)) problems.push(`${f.id}: unknown parent ${f.parent}`);
     if (f.parent && byId.get(f.parent)?.tab !== f.tab) problems.push(`${f.id}: tab differs from its menu`);
-    const inRepair = REPAIR_TABS.includes(f.tab) || (f.tab === "home" && f.group === "Repair");
-    if (!inRepair && (f.repairActive || f.needsTriangles)) problems.push(`${f.id}: repair mode state outside the repair tabs`);
+    if (!REPAIR_TABS.includes(f.tab) && (f.repairActive || f.needsTriangles)) problems.push(`${f.id}: repair mode state outside the repair tabs`);
+    if (f.dropdown && (isMenu(f) || !f.run)) problems.push(`${f.id}: a split button needs a run and no children`);
     if (f.underCursor && f.tab !== "repair-context") problems.push(`${f.id}: only the repair context menu has a triangle under the cursor`);
     if (f.booleanActive && f.tab !== "boolean") problems.push(`${f.id}: Boolean operations state outside its tab`);
+    if (f.measureActive && f.tab !== "measure") problems.push(`${f.id}: Measure state outside its tab`);
     if (MODE_TABS.includes(f.tab) && f.outsideRepair) problems.push(`${f.id}: a mode's entry cannot be blocked in its mode`);
     if (isMenu(f)) {
       if (f.run) problems.push(`${f.id}: a menu cannot have run`);

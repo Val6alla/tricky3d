@@ -16,6 +16,8 @@ import {
 import { submenuEntries, type MenuEntry } from "../menus/entries";
 import { Menu } from "../menus/Menu";
 import { useBoolean } from "../boolean/store";
+import { useLibrary } from "../library/store";
+import { useMeasure } from "../measure/store";
 import { useRepair } from "../repair/store";
 import { useStore } from "../store";
 import { useUi } from "../ui";
@@ -34,8 +36,10 @@ export function Ribbon() {
   const selected = useUi((s) => s.ribbonTab);
   const repairing = useRepair((r) => r.session !== null);
   const booleanOpen = useBoolean((b) => b.session !== null);
+  const libraryOpen = useLibrary((l) => l.session !== null);
+  const measureOpen = useMeasure((m) => m.session !== null);
   const hideSoon = useStore((s) => s.hideSoon);
-  const tabs = ribbonTabs(repairing, booleanOpen);
+  const tabs = ribbonTabs(repairing, booleanOpen, libraryOpen, measureOpen);
   const tab = shownTab(selected, tabs);
   const groups = useMemo(() => groupsFor(tab, hideSoon), [tab, hideSoon]);
   const { stripRef, collapsed } = useCollapsedGroups(groups);
@@ -66,9 +70,7 @@ export function Ribbon() {
               <div className="rb-group-body">
                 {g.columns.map((column) => (
                   <div key={column[0].id} className="rb-col">
-                    {column.map((f) => (
-                      <RibbonButton key={f.id} f={f} />
-                    ))}
+                    {column.map((f) => (f.dropdown ? <SplitButton key={f.id} f={f} /> : <RibbonButton key={f.id} f={f} />))}
                   </div>
                 ))}
               </div>
@@ -181,6 +183,8 @@ export function RibbonButton({ f, entries }: { f: Feature; entries?: MenuEntry[]
   const active = useStore((s) => f.isActive?.(s) ?? false);
   const repairActive = useRepair((r) => f.repairActive?.(r) ?? false);
   const booleanActive = useBoolean((b) => f.booleanActive?.(b) ?? false);
+  const viewActive = useUi((u) => f.viewTool !== undefined && u.viewTool === f.viewTool);
+  const measureActive = useMeasure((m) => f.measureActive?.(m) ?? false);
   const booleanOpen = useBoolean((b) => b.session !== null);
   // Ribbon buttons never act on a triangle under the cursor; that is the repair context menu's.
   const blocked = useRepair((r) => blockedReason(f, r, null, booleanOpen));
@@ -188,8 +192,8 @@ export function RibbonButton({ f, entries }: { f: Feature; entries?: MenuEntry[]
   const soon = effectiveStatus(f) === "soon";
   const submenu = entries !== undefined || isMenu(f);
   const large = f.size === "large";
-  const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.booleanActive !== undefined;
-  const pressed = active || repairActive || booleanActive;
+  const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.booleanActive !== undefined || f.viewTool !== undefined || f.measureActive !== undefined;
+  const pressed = active || repairActive || booleanActive || viewActive || measureActive;
   const Icon = f.icon;
 
   return (
@@ -231,5 +235,49 @@ export function RibbonButton({ f, entries }: { f: Feature; entries?: MenuEntry[]
       </button>
       {menuAt && <Menu entries={entries ?? submenuEntries(f.id)} anchor={{ el: menuAt }} label={f.label} onClose={() => setMenuAt(null)} />}
     </>
+  );
+}
+
+/**
+ * A button with an arrow beside it (Undo, Redo): the button runs, and the arrow opens the rows `f.dropdown` builds at
+ * that moment. A blocked button is greyed out as RibbonButton's are; the arrow still opens, so its list can say why.
+ */
+export function SplitButton({ f }: { f: Feature }) {
+  const booleanOpen = useBoolean((b) => b.session !== null);
+  const blocked = useRepair((r) => blockedReason(f, r, null, booleanOpen));
+  const [menu, setMenu] = useState<{ at: HTMLElement; rows: MenuEntry[] } | null>(null);
+  const Icon = f.icon;
+  const hover = (hint: string | null) => useUi.getState().setHoverHint(hint);
+
+  return (
+    <div className={cx("rb-split", f.size === "large" ? "rb-split-large" : "rb-split-small")}>
+      <button
+        type="button"
+        className={cx("rb-btn", f.size === "large" ? "rb-large" : "rb-small", "rb-split-main", blocked !== null && "is-disabled")}
+        aria-label={f.label}
+        aria-disabled={blocked !== null ? true : undefined}
+        title={tooltipFor(f, blocked)}
+        onClick={() => activate(f)}
+        onMouseEnter={() => hover(hoverHintFor(f, blocked))}
+        onMouseLeave={() => hover(null)}
+      >
+        <Icon className="rb-icon" size={f.size === "large" ? 22 : 16} strokeWidth={1.75} aria-hidden />
+        <span className="rb-label">{f.label}</span>
+      </button>
+      <button
+        type="button"
+        className={cx("rb-btn", "rb-split-arrow", menu !== null && "is-open")}
+        aria-label={`${f.label} several steps`}
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
+        title={`${f.label} several steps`}
+        onClick={(e) => setMenu(menu ? null : { at: e.currentTarget, rows: f.dropdown?.() ?? [] })}
+        onMouseEnter={() => hover(`Pick how far to ${f.label.toLowerCase()}.`)}
+        onMouseLeave={() => hover(null)}
+      >
+        <ChevronDown size={12} aria-hidden />
+      </button>
+      {menu && <Menu entries={menu.rows} anchor={{ el: menu.at }} label={f.label} onClose={() => setMenu(null)} />}
+    </div>
   );
 }

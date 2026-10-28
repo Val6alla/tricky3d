@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { featureById, ribbonTabs, type Feature } from "../features";
-import { RibbonButton, TabList } from "./Ribbon";
+import { RibbonButton, SplitButton, TabList } from "./Ribbon";
 
 // Server rendering reads each store's initial state: not repairing, no triangle selected, the Triangle select tool.
 
@@ -59,8 +59,8 @@ describe("RibbonButton", () => {
   });
 
   it("shows a Soon entry with its pill and not as blocked, and a main command outside repair mode as ready", () => {
-    const soon = renderToStaticMarkup(<RibbonButton f={feature("repair.select-brush")} />);
-    expect(buttonTag(soon, "Brush")).toContain('class="rb-btn rb-small is-soon"');
+    const soon = renderToStaticMarkup(<RibbonButton f={feature("repair.z-comp")} />);
+    expect(buttonTag(soon, "Z-comp")).toContain('class="rb-btn rb-small is-soon"');
     expect(soon).toContain('<span class="soon-pill rb-pill">Soon</span>');
     const cut = buttonTag(renderToStaticMarkup(<RibbonButton f={feature("modify.cut")} />), "Cut");
     expect(cut).toContain('class="rb-btn rb-large"');
@@ -72,5 +72,17 @@ describe("RibbonButton", () => {
     const tag = buttonTag(renderToStaticMarkup(<RibbonButton f={feature("repair.extract")} />), "Extract parts");
     expect(tag).toContain('aria-haspopup="menu"');
     expect(tag).not.toContain("is-disabled");
+  });
+});
+
+describe("SplitButton", () => {
+  it("draws Undo as a button that runs and an arrow that opens its list of steps", () => {
+    const html = renderToStaticMarkup(<SplitButton f={feature("home.undo")} />);
+    const main = buttonTag(html, "Undo");
+    expect(main).toContain('class="rb-btn rb-small rb-split-main"');
+    expect(main).not.toContain("aria-haspopup");
+    const arrow = buttonTag(html, "Undo several steps");
+    expect(arrow).toContain('aria-haspopup="menu"');
+    expect(arrow).toContain('aria-expanded="false"');
   });
 });

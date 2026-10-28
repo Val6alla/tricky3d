@@ -1,6 +1,10 @@
 import { memo, useMemo, useRef, useState, useEffect, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Grid3x3, Layers, Lock, LockOpen, TriangleAlert, Wrench } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Grid3x3, Layers, Lock, LockOpen, Ruler, TriangleAlert, Wrench, X } from "lucide-react";
+import { deleteMeasurement, isMeasureOpen, openMeasure, selectMeasurement } from "../measure/session";
+import { useMeasure } from "../measure/store";
+import { toolById } from "../measure/tools";
+import type { Measurement } from "../measure/types";
 import { badgeText, cachedCheck, useBadges } from "../repair/badges";
 import { enterRepair } from "../repair/session";
 import { useRepair } from "../repair/store";
@@ -12,6 +16,8 @@ const SLICES_KEY = "root:slices";
 const LATTICES_KEY = "root:lattices";
 /** The "Part repair" row's key is this followed by the repaired part's id. */
 const REPAIR_KEY = "repair:";
+/** A "Measurement" row's key is this followed by the measurement's id. */
+const MEASURE_KEY = "measure:";
 
 /** `.ptree-row` height and `.ptree` top padding in layout.css. */
 const ROW_HEIGHT = 26;
@@ -31,22 +37,45 @@ export function visibleRange(count: number, scrollTop: number, height: number): 
   return [first, Math.max(first, end)];
 }
 
-/** A row of the part list: the part at `index`, or ("repair") the "Part repair" row under that part. */
+/**
+ * A row of the part list: the part at `index`, ("repair") the "Part repair" row under that part, or ("measurement") its
+ * measurement number `measure`.
+ */
 export interface ListRow {
-  kind: "part" | "repair";
+  kind: "part" | "repair" | "measurement";
   index: number;
-}
-
-/** How many rows the part list has: one per part, plus "Part repair" while the part at `repairAt` is repaired (-1: none). */
-export function rowCount(parts: number, repairAt: number): number {
-  return repairAt >= 0 && repairAt < parts ? parts + 1 : parts;
+  measure?: number;
 }
 
 /**
- * The list rows [first, end) as parts and the "Part repair" row, which follows the part at `repairAt` (-1: none).
- * Row r after it shows part r − 1, so every row keeps the one height visibleRange counts with.
+ * How many rows the part list has: one per part, plus "Part repair" while the part at `repairAt` is repaired (-1:
+ * none), plus a row per measurement (`measured[i]` under part i).
  */
-export function rowsInRange(parts: number, repairAt: number, first: number, end: number): ListRow[] {
+export function rowCount(parts: number, repairAt: number, measured: readonly number[] = []): number {
+  const extra = measured.reduce((n, m) => n + m, 0);
+  return (repairAt >= 0 && repairAt < parts ? parts + 1 : parts) + extra;
+}
+
+/**
+ * The list rows [first, end) as parts, the "Part repair" row, which follows the part at `repairAt` (-1: none), and
+ * each part's measurement rows after it (and after its "Part repair" row). Every row keeps the one height
+ * visibleRange counts with.
+ */
+export function rowsInRange(parts: number, repairAt: number, first: number, end: number, measured: readonly number[] = []): ListRow[] {
+  if (measured.some((m) => m > 0)) {
+    const rows: ListRow[] = [];
+    let r = 0;
+    for (let i = 0; i < parts && r < end; i++) {
+      const block: ListRow[] = [{ kind: "part", index: i }];
+      if (i === repairAt) block.push({ kind: "repair", index: i });
+      for (let k = 0; k < (measured[i] ?? 0); k++) block.push({ kind: "measurement", index: i, measure: k });
+      for (const row of block) {
+        if (r >= first && r < end) rows.push(row);
+        r++;
+      }
+    }
+    return rows;
+  }
   const count = rowCount(parts, repairAt);
   const extra = count > parts;
   const rows: ListRow[] = [];
@@ -106,10 +135,16 @@ export const PartsTree = memo(function PartsTree() {
 
   const selected = useMemo(() => new Set(selection), [selection]);
   const repairAt = useMemo(() => (repairId === null ? -1 : parts.findIndex((p) => p.id === repairId)), [parts, repairId]);
-  const rows = rowCount(parts.length, repairAt);
+  const measured = useMemo(() => parts.map((p) => p.measurements?.length ?? 0), [parts]);
+  const rows = rowCount(parts.length, repairAt, measured);
   const [first, end] = expanded ? visibleRange(rows, view.top, view.height) : [0, 0];
-  const drawn = rowsInRange(parts.length, repairAt, first, end);
-  const keyOf = (row: ListRow) => (row.kind === "part" ? parts[row.index].id : REPAIR_KEY + parts[row.index].id);
+  const drawn = rowsInRange(parts.length, repairAt, first, end, measured);
+  const keyOf = (row: ListRow) =>
+    row.kind === "part"
+      ? parts[row.index].id
+      : row.kind === "repair"
+        ? REPAIR_KEY + parts[row.index].id
+        : MEASURE_KEY + (parts[row.index].measurements?.[row.measure ?? 0]?.id ?? "");
   const rowKeys = [PARTS_KEY, ...drawn.map(keyOf), ...(hideSoon ? [] : [SLICES_KEY, LATTICES_KEY])];
   // A focused row scrolled out of the drawn range is gone, so Tab enters the tree at the Parts row instead.
   const tabKey = rowKeys.includes(activeKey) ? activeKey : PARTS_KEY;
@@ -162,6 +197,12 @@ export const PartsTree = memo(function PartsTree() {
         drawn.map((row) => {
           const part = parts[row.index];
           const key = keyOf(row);
+          if (row.kind === "measurement") {
+            const measurement = part.measurements?.[row.measure ?? 0];
+            return measurement ? (
+              <MeasurementRow key={key} part={part} measurement={measurement} number={(row.measure ?? 0) + 1} tabbable={tabKey === key} onFocus={() => setActiveKey(key)} />
+            ) : null;
+          }
           return row.kind === "repair" ? (
             <RepairRow key={key} part={part} tabbable={tabKey === key} onFocus={() => setActiveKey(key)} />
           ) : (
@@ -411,6 +452,74 @@ export function RepairRow({ part, tabbable, onFocus }: RepairRowProps) {
     >
       <Wrench size={13} className="ptree-repair-icon" aria-hidden="true" />
       <span className="ptree-name">Part repair</span>
+    </div>
+  );
+}
+
+export interface MeasurementRowProps {
+  part: Part;
+  measurement: Measurement;
+  /** 1-based place among the part's measurements. */
+  number: number;
+  tabbable: boolean;
+  onFocus(): void;
+}
+
+/**
+ * "Measurement": one of a part's measurements, one level under the part. A click picks it (and its part); a
+ * double-click opens Measure, which shows it; the cross deletes it as one undo step.
+ */
+export function MeasurementRow({ part, measurement, number, tabbable, onFocus }: MeasurementRowProps) {
+  const selected = useMeasure((m) => m.session?.selected === measurement.id);
+  const label = toolById(measurement.tool)?.label ?? "Measurement";
+  const pick = () => {
+    useStore.getState().select([part.id], "replace");
+    if (isMeasureOpen()) selectMeasurement(measurement.id);
+  };
+  return (
+    <div
+      className={`ptree-row ptree-measurement${selected ? " is-selected" : ""}`}
+      role="treeitem"
+      aria-level={3}
+      aria-selected={selected}
+      tabIndex={tabbable ? 0 : -1}
+      title={`${label} on ${part.name}. Double-click to show it in Measure.`}
+      onFocus={onFocus}
+      onClick={pick}
+      onDoubleClick={() => {
+        openMeasure();
+        if (isMeasureOpen()) selectMeasurement(measurement.id);
+      }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          pick();
+        } else if (e.key === "Delete") {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteMeasurement(measurement.id);
+        }
+      }}
+    >
+      <Ruler size={13} className="ptree-repair-icon" aria-hidden="true" />
+      <span className="ptree-name">
+        Measurement {number}: {label}
+      </span>
+      <button
+        type="button"
+        className="ptree-icon ptree-measure-delete"
+        tabIndex={-1}
+        aria-label={`Delete measurement ${number}`}
+        title="Delete this measurement."
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteMeasurement(measurement.id);
+        }}
+        onDoubleClick={stop}
+      >
+        <X size={13} />
+      </button>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { useBoolean } from "../boolean/store";
+import { useLibrary } from "../library/store";
+import { useMeasure } from "../measure/store";
 import { useRepair } from "../repair/store";
 import { useUi, type PanelSection } from "../ui";
 import { ClipPanel } from "./ClipPanel";
@@ -13,8 +15,10 @@ import "./layout.css";
 // The mode panels load when a mode first opens, so the app's start parses less code.
 const RepairPanel = lazy(() => import("../repair/panel/RepairPanel").then((m) => ({ default: m.RepairPanel })));
 const BooleanPanel = lazy(() => import("../boolean/BooleanPanel").then((m) => ({ default: m.BooleanPanel })));
+const LibraryPanel = lazy(() => import("../library/LibraryPanel").then((m) => ({ default: m.LibraryPanel })));
+const MeasurePanel = lazy(() => import("../measure/MeasurePanel").then((m) => ({ default: m.MeasurePanel })));
 
-const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
+export const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
 
 const SECTIONS: { id: PanelSection; title: string }[] = [
   { id: "clip", title: "Clip planes" },
@@ -42,7 +46,11 @@ export function RightPanel() {
   const sectionEls = useRef<Partial<Record<PanelSection, HTMLElement | null>>>({});
   const repairing = useRepair((s) => s.session !== null);
   const booleanOpen = useBoolean((s) => s.session !== null);
-  const mode = repairing ? "repair" : booleanOpen ? "boolean" : null;
+  const libraryOpen = useLibrary((s) => s.session !== null);
+  const measureOpen = useMeasure((s) => s.session !== null);
+  const mode = repairing ? "repair" : booleanOpen ? "boolean" : libraryOpen ? "library" : measureOpen ? "measure" : null;
+  // The library's gallery covers the view, so the clip planes have nothing to show.
+  const sections = mode === "library" ? [] : mode ? MODE_SECTIONS : SECTIONS;
 
   // focusSection() is an event, not a state to mirror: react to each new nonce, even for the same section.
   useEffect(
@@ -69,7 +77,7 @@ export function RightPanel() {
     <aside className="side-panel rpanel" style={{ width, minWidth: RIGHT_PANEL_SIZE.min }} aria-label="Inspector">
       <Splitter edge="left" size={RIGHT_PANEL_SIZE} width={width} onResize={setWidth} label="Resize right panel" />
       <div className={`side-panel-content rpanel-content ${mode ? `is-${mode}` : "has-quick"}`}>
-        {(mode ? MODE_SECTIONS : SECTIONS).map(({ id, title }) => (
+        {sections.map(({ id, title }) => (
           <section
             key={id}
             ref={(el) => {
@@ -106,7 +114,17 @@ export function RightPanel() {
           </section>
         ))}
         <Suspense fallback={null}>
-          {mode === "repair" ? <RepairPanel /> : mode === "boolean" ? <BooleanPanel /> : <QuickActions />}
+          {mode === "repair" ? (
+            <RepairPanel />
+          ) : mode === "boolean" ? (
+            <BooleanPanel />
+          ) : mode === "library" ? (
+            <LibraryPanel />
+          ) : mode === "measure" ? (
+            <MeasurePanel />
+          ) : (
+            <QuickActions />
+          )}
         </Suspense>
       </div>
     </aside>

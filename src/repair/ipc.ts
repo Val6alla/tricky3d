@@ -183,8 +183,8 @@ export function cutParams(points: readonly CutPointInput[], options: CutLineOpti
   return { points: points.map((p) => [p.at[0], p.at[1], p.at[2], p.triangle]), ...options };
 }
 
-/** What repair_cut_path rejects with when it holds no working copy under the key sent (MESH_NEEDED in jobs.rs). */
-const MESH_NEEDED = "mesh needed";
+/** What repair_cut_path and measure_pick reject with when they hold no mesh under the key sent (MESH_NEEDED in jobs.rs). */
+export const MESH_NEEDED = "mesh needed";
 /** A number per working copy, for Rust's copy of it (CutCache in jobs.rs). Each run of the window starts its numbers
  *  somewhere else, so a number never names a working copy from before a reload. */
 const meshKeys = new WeakMap<MeshData, number>();

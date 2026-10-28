@@ -136,7 +136,7 @@
 
 .clip-field-unit {
   flex: none;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-size: var(--fs-xs);
 }
 

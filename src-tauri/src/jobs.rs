@@ -14,6 +14,7 @@ use serde_json::{Map, Value, json};
 
 use crate::bundle::{self, Blob, BlobRef, Bundle, Extra, InMesh, OutMesh};
 use crate::formats::{self, ExportFormat, NamedMesh, display_name};
+use crate::measure;
 use crate::mesh::{
     Analysis, IDENTITY, Matrix, Mesh, MeshStats, analyze, analyze_unless_cancelled, bake,
     join_coincident, stats,
@@ -26,6 +27,7 @@ use crate::repair::status::{self, StatusDetail};
 use crate::repair::{
     self, Action, ActionId, Control, RepairError, ScriptOutcome, defaults, shells,
 };
+use crate::stats;
 
 /// `import_mesh`: reads, welds and measures a file; returns the bundle described in src/io/ipc.ts.
 pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<Vec<u8>, String> {
@@ -79,6 +81,9 @@ pub fn open_project(path: &Path, progress: &mut Progress) -> Result<Vec<u8>, Str
                 if let Some(value) = value {
                     info.insert(key.into(), json!(value));
                 }
+            }
+            if let Some(measurements) = &part.measurements {
+                info.insert("measurements".into(), json!(measurements));
             }
             info.insert("stats".into(), json!(analysis.stats));
             out_mesh(info, &part.mesh, analysis)
@@ -188,6 +193,7 @@ pub fn save_project(bundle: Bundle) -> Result<(), String> {
                 .get("locked")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            measurements: m.info.get("measurements").and_then(Value::as_str),
             mesh,
         })
         .collect();
@@ -879,6 +885,258 @@ pub fn repair_check(bundle: Bundle) -> Result<Vec<RepairCheck>, String> {
             })
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------------------------
+// Part library (src/library/ipc.ts)
+
+/// `library_primitive`: the mesh of a Part library primitive (`id` with `params`, key → number) in
+/// a bundle like import's, with its stats and problem edges. Cancel (`repair_cancel` with `job`)
+/// makes it fail with CANCELLED: a fine mesh takes a moment to build and to measure.
+pub fn library_primitive(
+    id: &str,
+    params: &Map<String, Value>,
+    job: u64,
+    jobs: &RepairJobs,
+) -> Result<Vec<u8>, String> {
+    let running = jobs.start(job);
+    let mesh = crate::library::generate(id, params)?;
+    let analysis = analyze_unless_cancelled(&mesh, running.cancel_flag())
+        .ok_or_else(|| CANCELLED.to_string())?;
+    let mut info = Map::new();
+    info.insert("stats".into(), json!(analysis.stats));
+    Ok(bundle::encode(
+        &Map::new(),
+        &[out_mesh(info, &mesh, &analysis)],
+    ))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Measure mode (src/measure/ipc.ts)
+
+/// `PickReply` in src/measure/ipc.ts: the feature in the owning part's frame, the same in world
+/// space, and a surface's outline (world, x, y, z, x, y, z per segment).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PickReply {
+    pub feature: measure::Feature,
+    pub world: measure::Feature,
+    pub outline: Vec<f64>,
+}
+
+fn matrix_field(meta: &Map<String, Value>, key: &str) -> Option<Matrix> {
+    let values: Vec<f64> = meta
+        .get(key)?
+        .as_array()?
+        .iter()
+        .map(Value::as_f64)
+        .collect::<Option<_>>()?;
+    Matrix::try_from(values.as_slice())
+        .ok()
+        .filter(|m| m.iter().all(|v| v.is_finite()))
+}
+
+fn field<T: serde::de::DeserializeOwned>(meta: &Map<String, Value>, key: &str) -> Option<T> {
+    serde_json::from_value(meta.get(key)?.clone()).ok()
+}
+
+/// What a squashed-flat part (no inverse) gives the measure commands.
+const FLAT: &str = "The part is squashed flat, so nothing on it can be measured.";
+
+/// `measure_pick`: what a click picks. Meta {meshKey, kind, triangle, hit: world [x, y, z], matrix:
+/// the clicked part's, owner: the matrix of the part the measurement belongs to, snap, tolerance:
+/// world mm, clip: world planes}; one mesh, the clicked part's own (part-local), kept in `cache`
+/// under `meshKey`, or one without triangles to use the one kept (MESH_NEEDED when there is none).
+pub fn measure_pick(bundle: Bundle, cache: &measure::MeasureCache) -> Result<PickReply, String> {
+    const ACTION: &str = "Could not measure there";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let Bundle { meta, meshes } = bundle;
+    let mut meshes = meshes.into_iter();
+    let (Some(input), None) = (meshes.next(), meshes.next()) else {
+        return Err(damaged());
+    };
+    let key = meta
+        .get("meshKey")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)?;
+    let index = if input.mesh.triangle_count() > 0 {
+        input
+            .mesh
+            .check()
+            .map_err(|reason| format!("{ACTION}: the part is damaged ({reason})."))?;
+        let index = Arc::new(measure::MeshIndex::new(input.mesh));
+        cache.put(key, index.clone());
+        index
+    } else {
+        cache.get(key).ok_or_else(|| MESH_NEEDED.to_string())?
+    };
+    let kind: measure::PickKind = field(&meta, "kind").ok_or_else(damaged)?;
+    let snap: measure::Snap = field(&meta, "snap").ok_or_else(damaged)?;
+    let triangle = meta
+        .get("triangle")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)? as u32;
+    let hit: [f64; 3] = field(&meta, "hit").ok_or_else(damaged)?;
+    let tolerance = meta
+        .get("tolerance")
+        .and_then(Value::as_f64)
+        .filter(|t| t.is_finite() && *t >= 0.0)
+        .ok_or_else(damaged)?;
+    let clip: Vec<measure::ClipPlane> = field(&meta, "clip").ok_or_else(damaged)?;
+    let matrix = matrix_field(&meta, "matrix").ok_or_else(damaged)?;
+    let owner = matrix_field(&meta, "owner").ok_or_else(damaged)?;
+    let to_local = measure::invert(&matrix).ok_or(FLAT)?;
+    let to_owner = crate::mesh::multiply(&measure::invert(&owner).ok_or(FLAT)?, &matrix);
+    let scale = crate::mesh::linear_determinant(&matrix)
+        .abs()
+        .cbrt()
+        .max(1e-300);
+    // A world plane n.x + c >= 0 is (A^T n).x_local + (n.t + c) >= 0 in the part's frame.
+    let local_clip: Vec<measure::ClipPlane> = clip
+        .iter()
+        .map(|p| measure::ClipPlane {
+            normal: [0, 1, 2].map(|c| (0..3).map(|r| matrix[c * 4 + r] * p.normal[r]).sum()),
+            constant: (0..3).map(|r| p.normal[r] * matrix[12 + r]).sum::<f64>() + p.constant,
+        })
+        .collect();
+    let click = measure::Click {
+        triangle,
+        hit: crate::mesh::transform_point(&to_local, hit),
+        snap,
+        tolerance: tolerance / scale,
+        clip: &local_clip,
+    };
+    let (feature, outline) = measure::pick(&index, kind, &click)?;
+    let outline = outline
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .flat_map(|p| crate::mesh::transform_point(&matrix, *p))
+        .collect();
+    Ok(PickReply {
+        world: measure::transform(&feature, &matrix)?,
+        feature: measure::transform(&feature, &to_owner)?,
+        outline,
+    })
+}
+
+/// `measure_fit`: the 3-point circle or 4-point sphere through points (each a point feature).
+pub fn measure_fit(kind: &str, points: &[measure::Feature]) -> Result<measure::Feature, String> {
+    let at: Vec<[f64; 3]> = points
+        .iter()
+        .map(|f| match f {
+            measure::Feature::Point { p } => Ok(*p),
+            _ => Err("A circle or sphere is fitted to points only.".to_string()),
+        })
+        .collect::<Result<_, _>>()?;
+    match (kind, at.as_slice()) {
+        ("circle3", &[a, b, c]) => measure::circle_through([a, b, c]),
+        ("sphere4", &[a, b, c, d]) => measure::sphere_through([a, b, c, d]),
+        _ => Err("Pick three points for a circle, or four for a sphere.".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Platform statistics (src/stats/ipc.ts)
+
+/// The Tauri event a platform statistics run reports its progress with: {job, fraction}.
+pub const STATS_PROGRESS: &str = "platform-stats-progress";
+
+/// `StatsProgress` in src/stats/ipc.ts.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct StatsProgress {
+    pub job: u64,
+    /// 0..1 over the whole run.
+    pub fraction: f64,
+}
+
+/// `StatsReply` in src/stats/ipc.ts: a row per part in the order sent, and the Information section
+/// for every part and for the selected ones.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct StatsReply {
+    pub parts: Vec<stats::PartStats>,
+    pub all: stats::Summary,
+    pub selected: stats::Summary,
+}
+
+/// `platform_stats`: meta {"job", "platform": [x, y, z], "selected": [part index]}, one bundle mesh
+/// per part with info {"name", "matrix"}. Each part is measured in its own frame and its matrix
+/// applied to the numbers, as the Information panel does. Cancel (`repair_cancel` with the job)
+/// stops it between and inside parts with CANCELLED.
+pub fn platform_stats(
+    bundle: Bundle,
+    jobs: &RepairJobs,
+    emit: &mut dyn FnMut(&StatsProgress),
+) -> Result<StatsReply, String> {
+    const ACTION: &str = "Could not work out the platform statistics";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let job = bundle
+        .meta
+        .get("job")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)?;
+    let platform = bundle
+        .meta
+        .get("platform")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
+        .and_then(|v| <[f64; 3]>::try_from(v).ok())
+        .filter(|p| p.iter().all(|v| v.is_finite() && *v > 0.0))
+        .ok_or_else(damaged)?;
+    let selected: Vec<usize> = bundle
+        .meta
+        .get("selected")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().map(|v| v.as_u64().map(|i| i as usize)).collect())
+        .ok_or_else(damaged)?;
+    let mut parts = Vec::with_capacity(bundle.meshes.len());
+    for (n, m) in bundle.meshes.iter().enumerate() {
+        let (_, matrix) = checked_part(m, n).map_err(|reason| format!("{ACTION}: {reason}."))?;
+        parts.push((matrix, &m.mesh));
+    }
+    let running = jobs.start(job);
+    let total = parts
+        .iter()
+        .map(|(_, m)| m.triangle_count())
+        .sum::<usize>()
+        .max(1) as f64;
+    let mut done = 0.0;
+    let mut last = Instant::now();
+    let mut rows = Vec::with_capacity(parts.len());
+    for (matrix, mesh) in &parts {
+        let share = mesh.triangle_count() as f64 / total;
+        let start = done;
+        let mut control = Control::new(running.cancel_flag(), |f| {
+            if last.elapsed() >= PROGRESS_INTERVAL {
+                last = Instant::now();
+                emit(&StatsProgress {
+                    job,
+                    fraction: start + f * share,
+                });
+            }
+        });
+        let row = stats::part_stats(mesh, matrix, &mut control).map_err(run_error)?;
+        drop(control);
+        rows.push(row);
+        done += share;
+    }
+    emit(&StatsProgress { job, fraction: 1.0 });
+    let every: Vec<usize> = (0..rows.len()).collect();
+    Ok(StatsReply {
+        all: stats::summary(&rows, &every, platform),
+        selected: stats::summary(&rows, &selected, platform),
+        parts: rows,
+    })
+}
+
+/// `export_text`: writes `text` (UTF-8) to `path`, a file the user picked in a save dialog: the
+/// platform statistics' Export to CSV. The grant is checked by the command.
+pub fn export_text(path: &Path, text: &str) -> Result<(), String> {
+    let file = display_name(path);
+    formats::write_atomic(path, |mut w| {
+        w.write_all(text.as_bytes())?;
+        Ok(w)
+    })
+    .map_err(|e| format!("Could not write \"{file}\": {}.", formats::write_error(&e)))
 }
 
 /// `repair_shells`: the Shells tab of one working copy. Meta {rows}; mesh 0 has empty arrays and

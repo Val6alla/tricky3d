@@ -31,6 +31,8 @@ export type Dialog =
   | { kind: "formats" }
   | { kind: "transform"; mode: TransformMode }
   | { kind: "cut" }
+  /** Home › Platform statistics. */
+  | { kind: "platform-stats" }
   // Prompts answer through resolve; null means the dialog was cancelled.
   | { kind: "place-on-import"; fileName: string; resolve(answer: PlaceAnswer | null): void }
   | { kind: "import-objects"; fileName: string; count: number; resolve(answer: ObjectsAnswer | null): void }
@@ -60,6 +62,9 @@ export interface ContextMenuState {
 
 export type PanelSection = "clip" | "cuts" | "information";
 
+/** A one-shot view tool from Zoom to: the next left drag zooms into its rectangle, or the next click centres the view. */
+export type ViewTool = "zoom-area" | "zoom-point";
+
 /** Long-running work shown in the status bar (imports, saves). */
 export interface Task {
   id: number;
@@ -81,6 +86,8 @@ interface UiState {
   dropActive: boolean;
   /** The ribbon's selected tab. Repair mode and Boolean operations select their contextual tabs. */
   ribbonTab: TabId;
+  /** Zoom to › Area or Point waiting for its drag or click; null otherwise. Esc drops it. */
+  viewTool: ViewTool | null;
 
   dismissToast(id: number): void;
   openDialog(dialog: Exclude<Dialog, null>): void;
@@ -91,6 +98,7 @@ interface UiState {
   setHoverHint(hint: string | null): void;
   setDropActive(active: boolean): void;
   setRibbonTab(tab: TabId): void;
+  setViewTool(tool: ViewTool | null): void;
 }
 
 /** A prompt closed or replaced by anything but its own answer counts as cancelled; a second resolve is a no-op. */
@@ -107,6 +115,7 @@ export const useUi = create<UiState>()((set, get) => ({
   tasks: [],
   dropActive: false,
   ribbonTab: "modify",
+  viewTool: null,
 
   dismissToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
@@ -138,6 +147,9 @@ export const useUi = create<UiState>()((set, get) => ({
   },
   setRibbonTab(tab) {
     set({ ribbonTab: tab, hoverHint: null });
+  },
+  setViewTool(tool) {
+    set({ viewTool: tool });
   },
 }));
 

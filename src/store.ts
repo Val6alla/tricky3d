@@ -4,6 +4,7 @@ import { cachedProblemEdges, cachedStats, primeMeshCaches } from "./meshCache";
 import { boundsOf, IDENTITY, makeBox, translation, unionBounds } from "./mesh";
 import { IS_MAC, selectHint } from "./platform";
 import type { MeshStats } from "./io/ipc";
+import type { Measurement } from "./measure/types";
 
 export type Vec3 = [number, number, number];
 
@@ -23,6 +24,8 @@ export interface Part {
   transparent: boolean;
   locked: boolean;
   color: string; // CSS hex
+  /** Measure mode's measurements on the part, in its own frame; absent when it has none. A new mesh drops them. */
+  measurements?: readonly Measurement[];
 }
 
 export type Projection = "perspective" | "orthographic";
@@ -83,6 +86,7 @@ export interface NewPart {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  measurements?: readonly Measurement[];
 }
 
 /** Parts to take out (by id) and the parts that take their place. */
@@ -127,7 +131,8 @@ const IMPORT_PLACEMENT_KEY = "tricky3d.importPlacement";
 const SHOW_PLATFORM_KEY = "tricky3d.showPlatform";
 const ALWAYS_SHOW_GIZMO_KEY = "tricky3d.alwaysShowGizmo";
 
-function loadSetting(key: string): string | null {
+/** A remembered setting ("tricky3d." keys in the window's storage), or null when there is none or no storage. */
+export function loadSetting(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -135,7 +140,7 @@ function loadSetting(key: string): string | null {
   }
 }
 
-function saveSetting(key: string, value: string) {
+export function saveSetting(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -186,6 +191,7 @@ function buildParts(newParts: NewPart[], colorStart: number): Part[] {
       transparent: p.transparent ?? false,
       locked: p.locked ?? false,
       color: p.color ?? PART_COLORS[(colorStart + i) % PART_COLORS.length],
+      ...(p.measurements && p.measurements.length > 0 ? { measurements: p.measurements } : {}),
     }),
   );
 }
@@ -247,6 +253,8 @@ export interface AppState {
   setPartLocked(id: string, locked: boolean): void;
   /** Changes display or naming fields of several parts as one undo step labelled `label`. */
   patchParts(ids: string[], patch: PartPatch, label: string): void;
+  /** Sets the measurements of parts (by id; an empty list removes them) as one undo step labelled `label`. */
+  setMeasurements(changes: ReadonlyMap<string, readonly Measurement[]>, label: string): void;
   /**
    * Sets part matrices (column-major, as Part.matrix). With a label this is one undo step. With
    * null it is a live preview, e.g. during a gizmo drag, that recordChange() later makes one step.
@@ -386,11 +394,13 @@ export const useStore = create<AppState>()((set, get) => {
     duplicateParts(ids) {
       const wanted = new Set(ids);
       const sources = get().parts.filter((p) => wanted.has(p.id));
+      // Every copy moves along +X past the whole group plus a 5 mm gap, as Paste does: the copies keep their places
+      // relative to each other, and none lands on an original.
+      const box = unionBounds(sources.map((p) => boundsOf(p.mesh, p.matrix)));
+      const dx = box ? box.max[0] - box.min[0] + 5 : 10;
       const copies = sources.map((p): NewPart => {
-        const b = boundsOf(p.mesh, p.matrix);
-        const dx = b ? b.max[0] - b.min[0] + 5 : 10;
         const m = [...p.matrix];
-        m[12] += dx; // shift the copy along +X, past the original plus a 5 mm gap
+        m[12] += dx;
         return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color };
       });
       return get().addParts(copies, "Duplicate");
@@ -495,6 +505,19 @@ export const useStore = create<AppState>()((set, get) => {
     patchParts(ids, patch, label) {
       const before = begin();
       const parts = mapParts(before.parts, ids, (p) => patchPart(p, patch));
+      if (parts === before.parts) return;
+      set({ parts });
+      commit(label, before);
+    },
+
+    setMeasurements(changes, label) {
+      const before = begin();
+      const parts = mapParts(before.parts, changes.keys(), (p) => {
+        const list = changes.get(p.id) ?? [];
+        if ((p.measurements ?? []).length === 0 && list.length === 0) return p;
+        const { measurements: _old, ...rest } = p;
+        return list.length > 0 ? { ...rest, measurements: list } : rest;
+      });
       if (parts === before.parts) return;
       set({ parts });
       commit(label, before);

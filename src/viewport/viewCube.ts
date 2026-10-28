@@ -29,7 +29,7 @@ const TEXTURE_PX = 256;
  * they become right, left, top, bottom, front, back in our Z-up world, and each label reads
  * upright in the matching preset view (top with +Y up, bottom with -Y up).
  */
-const FACES: { label: string; preset: ViewPreset }[] = [
+export const FACES: { label: string; preset: ViewPreset }[] = [
   { label: "RIGHT", preset: "right" },
   { label: "LEFT", preset: "left" },
   { label: "TOP", preset: "top" },
@@ -37,6 +37,9 @@ const FACES: { label: string; preset: ViewPreset }[] = [
   { label: "FRONT", preset: "front" },
   { label: "BACK", preset: "back" },
 ];
+
+/** The cube, one unit wide, its faces in FACES order (BoxGeometry's groups, one material each). */
+export const cubeGeometry = () => new BoxGeometry(1, 1, 1).rotateX(Math.PI / 2);
 
 interface Face {
   label: string;
@@ -71,7 +74,7 @@ export function createViewCube(
   const scene = new Scene();
   const camera = new OrthographicCamera(-HALF_EXTENT, HALF_EXTENT, HALF_EXTENT, -HALF_EXTENT, 0.1, 10);
   const faces = FACES.map(makeFace);
-  const geometry = new BoxGeometry(1, 1, 1).rotateX(Math.PI / 2);
+  const geometry = cubeGeometry();
   const cube = new Mesh(
     geometry,
     faces.map((f) => f.material),

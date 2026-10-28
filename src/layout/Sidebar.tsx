@@ -4,7 +4,7 @@ import { PartsTree } from "./PartsTree";
 import { Splitter, usePanelWidth, type PanelSize } from "./Splitter";
 import "./layout.css";
 
-const SIDEBAR_SIZE: PanelSize = { storageKey: "tricky3d.sidebarWidth", min: 180, max: 480, initial: 260 };
+export const SIDEBAR_SIZE: PanelSize = { storageKey: "tricky3d.sidebarWidth", min: 180, max: 480, initial: 260 };
 
 type DockTab = "machines" | "jobs";
 
