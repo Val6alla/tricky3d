@@ -19,6 +19,7 @@ use crate::jobs::{self, CutCache, RepairCheck, RepairJobs};
 use crate::measure::{self, MeasureCache};
 use crate::mesh::MeshStats;
 use crate::open_dialog;
+use crate::ops::shell::{Estimate, EstimatePart, ShellSettings};
 use crate::progress::Progress;
 use crate::repair::defaults::Catalog;
 use crate::repair::scripts::{Imported, Script, StoredScripts};
@@ -421,6 +422,28 @@ pub async fn platform_stats(
         })
     })
     .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Generate shell (src/shell/ipc.ts).
+
+#[tauri::command]
+pub async fn shell_generate(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "generate the shell")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::shell_generate(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::SHELL_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+/// A few numbers, so it runs right here.
+#[tauri::command]
+pub fn shell_estimate(parts: Vec<EstimatePart>, settings: ShellSettings) -> Estimate {
+    jobs::shell_estimate(&parts, &settings)
 }
 
 /// Export to CSV: `path` must be a file picked in the save dialog (pick_save_file).

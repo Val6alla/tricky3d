@@ -268,6 +268,68 @@ impl Bvh {
         self.visit(touches, &mut f);
     }
 
+    /// The item nearest to `p` and its squared distance, among the items nearer than `limit`
+    /// (squared; infinity for no limit); None when no item is. `distance(i)` is the squared
+    /// distance from `p` to item i, never less than the squared distance to its box. Nearer boxes
+    /// are opened first, and boxes no nearer than the best item found so far are skipped.
+    pub fn nearest(
+        &self,
+        p: P3,
+        limit: f64,
+        mut distance: impl FnMut(u32) -> f64,
+    ) -> Option<(u32, f64)> {
+        let root = self.nodes.first()?;
+        let mut bound = limit;
+        let mut best = None;
+        // Both children are pushed per node, so the stack never holds more than the depth plus one.
+        let mut stack = [(0u32, 0.0f64); 96];
+        let mut top = 0;
+        let d = box_distance(&root.bounds, p);
+        if d < bound {
+            stack[0] = (0, d);
+            top = 1;
+        }
+        while top > 0 {
+            top -= 1;
+            let (n, d) = stack[top];
+            if d >= bound {
+                continue;
+            }
+            let node = &self.nodes[n as usize];
+            if node.is_leaf() {
+                for i in node.start as usize..node.end as usize {
+                    if box_distance(&self.boxes[i], p) >= bound {
+                        continue;
+                    }
+                    let d = distance(self.items[i]);
+                    if d < bound {
+                        bound = d;
+                        best = Some((self.items[i], d));
+                    }
+                }
+                continue;
+            }
+            let (l, r) = (node.left, node.left + 1);
+            let (dl, dr) = (
+                box_distance(&self.nodes[l as usize].bounds, p),
+                box_distance(&self.nodes[r as usize].bounds, p),
+            );
+            // The nearer child goes on top, so it is opened first.
+            let (near, far) = if dl <= dr {
+                ((l, dl), (r, dr))
+            } else {
+                ((r, dr), (l, dl))
+            };
+            for (child, d) in [far, near] {
+                if d < bound {
+                    stack[top] = (child, d);
+                    top += 1;
+                }
+            }
+        }
+        best
+    }
+
     /// Depth-first over the nodes whose box `enter` accepts, calling `f` for the items whose own
     /// box it accepts.
     fn visit(&self, enter: impl Fn(&Aabb) -> bool, f: &mut impl FnMut(u32)) {
@@ -462,6 +524,17 @@ pub fn include(b: &mut Aabb, p: P3) {
     }
 }
 
+/// The squared distance from `p` to box `b` (0 inside it).
+#[inline]
+pub fn box_distance(b: &Aabb, p: P3) -> f64 {
+    (0..3)
+        .map(|k| {
+            let d = (b[0][k] - p[k]).max(p[k] - b[1][k]).max(0.0);
+            d * d
+        })
+        .sum()
+}
+
 fn center(b: &Aabb) -> P3 {
     [0, 1, 2].map(|k| (b[0][k] + b[1][k]) * 0.5)
 }
@@ -581,6 +654,34 @@ mod tests {
                 let found = collected_pairs(&bvh);
                 // Sorted equality also proves no pair came twice.
                 assert_eq!(found, expected, "n {n} grid {grid} size {size}");
+            }
+        }
+    }
+
+    /// The nearest box (by its distance, the least a real item could be) matches a scan of all of
+    /// them, with and without a limit.
+    #[test]
+    fn nearest_matches_brute_force() {
+        let mut rng = Rng(12);
+        for &n in &[0usize, 1, 5, 300, 5000] {
+            let boxes: Vec<Aabb> = grid_boxes(&mut rng, n, 50, 3).iter().map(to_f64).collect();
+            let bvh = Bvh::new(&boxes);
+            for _ in 0..200 {
+                let p = [0, 1, 2].map(|_| rng.int(-10, 60) as f64 + 0.5);
+                let limit = if rng.chance(0.5) {
+                    f64::INFINITY
+                } else {
+                    rng.int(0, 400) as f64
+                };
+                let expected = (0..n)
+                    .map(|i| box_distance(&boxes[i], p))
+                    .filter(|&d| d < limit)
+                    .fold(None, |m: Option<f64>, d| Some(m.map_or(d, |m| m.min(d))));
+                let found = bvh.nearest(p, limit, |i| box_distance(&boxes[i as usize], p));
+                assert_eq!(found.map(|f| f.1), expected, "n {n} p {p:?} limit {limit}");
+                if let Some((i, d)) = found {
+                    assert_eq!(box_distance(&boxes[i as usize], p), d);
+                }
             }
         }
     }

@@ -13,6 +13,9 @@ interface DialogProps {
   okDisabled?: boolean;
   /** A second choice shown in place of Cancel; Esc and a click outside still cancel. */
   secondary?: { label: string; onClick(): void };
+  /** The single button's label without `onOk` (default Close); it, Esc and a click outside call onClose. */
+  closeLabel?: string;
+  closeDisabled?: boolean;
   /** Extra class on the dialog box, e.g. to make it wider. */
   className?: string;
   /** Extra class on the backdrop, e.g. to dim less and move the box aside so the viewport shows a preview. */
@@ -40,7 +43,19 @@ function trapTab(e: KeyboardEvent<HTMLDivElement>, panel: HTMLElement) {
 }
 
 /** Modal frame shared by every dialog: title, body, footer with Cancel and a primary OK. */
-export function Dialog({ title, onClose, onOk, okLabel = "OK", okDisabled = false, secondary, className, backdropClassName, children }: DialogProps) {
+export function Dialog({
+  title,
+  onClose,
+  onOk,
+  okLabel = "OK",
+  okDisabled = false,
+  secondary,
+  closeLabel = "Close",
+  closeDisabled = false,
+  className,
+  backdropClassName,
+  children,
+}: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const pressedBackdrop = useRef(false);
   const titleId = useId();
@@ -102,8 +117,8 @@ export function Dialog({ title, onClose, onOk, okLabel = "OK", okDisabled = fals
               </button>
             </>
           ) : (
-            <button type="button" className="dlg-btn dlg-btn-primary" onClick={onClose}>
-              Close
+            <button type="button" className="dlg-btn dlg-btn-primary" disabled={closeDisabled} onClick={onClose}>
+              {closeLabel}
             </button>
           )}
         </div>

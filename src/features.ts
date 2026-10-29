@@ -83,6 +83,7 @@ import {
 } from "./repair/home";
 import { useRepair, type RepairState } from "./repair/store";
 import { CLOSE_LIBRARY_FIRST, closePartLibrary, createPart, isLibraryOpen, openPartLibrary } from "./library/session";
+import { openGenerateShell } from "./shell/session";
 import { GROUP_ICONS, toolIcon } from "./measure/icons";
 import { CLOSE_MEASURE_FIRST, closeMeasure, currentTool, isMeasureOpen, openMeasure, pickMeasureTool } from "./measure/session";
 import type { MeasureState } from "./measure/store";
@@ -208,6 +209,8 @@ export function shownTab(selected: TabId, tabs: readonly RibbonTab[]): TabId {
 const cut = openCutDialog;
 const boolean = openBooleanMode;
 const splitShells = () => void splitShellsCommand();
+const generateShell = openGenerateShell;
+const SHELL_HINT = "Make a hollow, slimmer or fuller version of the selected part as a new part.";
 const mergeParts = () => void mergePartsCommand();
 
 export { IS_MAC };
@@ -672,7 +675,7 @@ export const FEATURES: Feature[] = [
   ]),
   ...group("home", "Modify", [
     { id: "home.boolean", label: "Boolean", icon: SquaresUnite, status: "ready", run: boolean, size: "large", outsideRepair: true, hint: "Unite the selected parts, subtract some from the others, or keep what they share." },
-    { id: "home.generate-shell", label: "Generate shell", icon: Cylinder, status: "soon" },
+    { id: "home.generate-shell", label: "Generate shell", icon: Cylinder, status: "ready", run: generateShell, outsideRepair: true, hint: SHELL_HINT },
     { id: "home.generate-label", label: "Generate label", icon: Tag, status: "soon" },
     { id: "home.label-text", label: "Text label", icon: Type, status: "soon", parent: "home.generate-label" },
     { id: "home.label-image", label: "Image label", icon: Stamp, status: "soon", parent: "home.generate-label" },
@@ -785,7 +788,7 @@ export const FEATURES: Feature[] = [
     { id: "modify.remove-add-ons", label: "Remove parametric add-ons", icon: PackageMinus, status: "soon" },
   ]),
   ...group("modify", "Hollowing", [
-    { id: "modify.hollow", label: "Generate shell", icon: Cylinder, status: "soon" },
+    { id: "modify.hollow", label: "Generate shell", icon: Cylinder, status: "ready", run: generateShell, outsideRepair: true, hint: SHELL_HINT },
     { id: "modify.perforation", label: "Add perforation", icon: Drill, status: "soon" },
   ]),
   ...group("modify", "Lattices", [

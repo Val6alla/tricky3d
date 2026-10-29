@@ -151,10 +151,14 @@ export interface Made {
   result: AnalyzedMesh;
 }
 
-/** Input parts (by id) and the results that take their place in the parts list (store.replaceParts). */
+/**
+ * Input parts (by id) and the results that take their place in the parts list (store.replaceParts). With nothing
+ * removed, `after` names the part the results go right after (Generate shell), instead of the end.
+ */
 export interface Group {
   removeIds: string[];
   made: Made[];
+  after?: string;
 }
 
 /** One group per replaced part (Split, Cut), so each part's results stay where it was; Merge and Union have one. */
@@ -315,6 +319,7 @@ export function commit(plan: Plan, inputs: readonly Part[], label: string): void
   let next = 0;
   const replacements = plan.groups.map((g) => ({
     remove: g.removeIds,
+    after: g.after,
     add: g.made.map((m) => {
       primeMeshCaches(m.result.mesh, { stats: m.result.stats, edges: m.result.edges });
       return { name: m.name, mesh: m.result.mesh, color: colors[next++] };
