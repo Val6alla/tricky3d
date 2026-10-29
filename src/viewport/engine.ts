@@ -1,4 +1,4 @@
-import { Box3, Matrix4, Object3D, OrthographicCamera, Raycaster, Scene, Sphere, Vector2, Vector3 } from "three";
+import { Box3, Matrix3, Matrix4, Object3D, OrthographicCamera, Raycaster, Scene, Sphere, Vector2, Vector3 } from "three";
 import { useBoolean, type BooleanState } from "../boolean/store";
 import { useCut } from "../repair/cut/store";
 import { boundsOf, centreOf, partBounds, unionBounds, type Bounds } from "../mesh";
@@ -33,6 +33,9 @@ import { worldPerPixel } from "./gizmoMath";
 import { valueText } from "../measure/format";
 import type { MeasureHit } from "../measure/session";
 import { useMeasure } from "../measure/store";
+import { labelWidth, shapeOf } from "../label/session";
+import { useLabel } from "../label/store";
+import { createLabelLayer } from "./labelLayer";
 
 export interface ViewportEngine {
   api: ViewportApi;
@@ -98,7 +101,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const brackets = createBrackets(theme);
   const planePreview = createPlanePreview(theme, requestRender);
   const measure = createMeasureLayer(theme, host);
-  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group);
+  const labels = createLabelLayer(theme, host);
+  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group, labels.group);
   renderer.localClippingEnabled = true;
   const clipLayer = createClipLayer(parts, requestRender);
   const gizmo = createGizmo({ scene, camera, canvas, host, orbit: controls, requestRender });
@@ -129,6 +133,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     repair.beforeRender(camera, height * renderer.getPixelRatio());
     tools.beforeRender(camera, height);
     measure.beforeRender(camera, width, height);
+    labels.beforeRender(camera, width, height);
     const previewReach = planePreview.reach();
     if (gizmoReach || previewReach) {
       clipSphere.copy(sceneSphere);
@@ -241,10 +246,26 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
    * In Boolean operations too: the parts stay where they are while the mode works on them.
    */
   function syncGizmo(s: AppState) {
-    gizmo.sync(repairingId() || booleanOpen() || measureOpen() ? { ...s, selection: [] } : s);
+    gizmo.sync(repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null ? { ...s, selection: [] } : s);
   }
 
   /** Measure mode: the measurements of the shown parts with their results and labels, and the clicks in progress. */
+  /** Label generation: the placed labels with their shapes and widths, and which is selected. */
+  function syncLabels() {
+    const l = useLabel.getState();
+    if (!l.session) {
+      labels.sync(null);
+      return;
+    }
+    const selected = l.session.selected;
+    labels.sync(
+      l.session.labels.map((label) => {
+        const shape = shapeOf(label);
+        return { label, shape: shape?.status === "ready" ? shape.reply : null, width: labelWidth(label) ?? label.height, selected: label.id === selected };
+      }),
+    );
+  }
+
   function syncMeasure() {
     const m = useMeasure.getState();
     if (!m.session) {
@@ -523,6 +544,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     planePreview.applyTheme(theme);
     measure.applyTheme(theme);
     syncMeasure();
+    labels.applyTheme(theme);
+    syncLabels();
     rulers.applyTheme(theme);
     cube.applyTheme(theme);
     requestRender();
@@ -545,6 +568,20 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       const d = camera.getWorldDirection(new Vector3());
       return [d.x, d.y, d.z];
     },
+    surfaceAt(clientX, clientY) {
+      if (!aim(clientX, clientY)) return null;
+      const hit = raycaster.intersectObjects(parts.pickTargets(), false).find((h) => !clipLayer.isClipped(h.point));
+      const partId: unknown = hit?.object.userData.partId;
+      if (!hit || typeof partId !== "string" || !hit.face) return null;
+      // The face normal in world space: through the normal matrix, so a scaled part's normals stay square to it.
+      const n = hit.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+      return { partId, point: [hit.point.x, hit.point.y, hit.point.z], normal: [n.x, n.y, n.z] };
+    },
+    rayAt(clientX, clientY) {
+      if (!aim(clientX, clientY)) return null;
+      const { origin: o, direction: d } = raycaster.ray;
+      return { origin: [o.x, o.y, o.z], direction: [d.x, d.y, d.z] };
+    },
   };
 
   // Initial state (a remount can find repair mode open), then listeners.
@@ -556,6 +593,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   updateSelection(initial);
   syncGizmo(initial);
   syncMeasure();
+  syncLabels();
   controls.target.set(initial.platform[0] / 2, initial.platform[1] / 2, initial.platform[2] / 2);
 
   controls.addEventListener("change", requestRender);
@@ -566,6 +604,11 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const unsubscribeMeasure = useMeasure.subscribe((m, prev) => {
     if ((m.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
     syncMeasure();
+    requestRender();
+  });
+  const unsubscribeLabel = useLabel.subscribe((l, prev) => {
+    if ((l.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    syncLabels();
     requestRender();
   });
   const unwatchTheme = watchColorScheme(onThemeChange);
@@ -625,6 +668,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       unsubscribeBoolean();
       unsubscribeMeasure();
       measure.dispose();
+      unsubscribeLabel();
+      labels.dispose();
       controls.removeEventListener("change", requestRender);
       controls.removeEventListener("start", motion.cancel);
       gizmo.dispose();

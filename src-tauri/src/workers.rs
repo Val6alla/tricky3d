@@ -121,6 +121,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_job_that_panics_ends_with_a_message_and_the_next_job_runs() {
+        use rayon::prelude::*;
+        let stopped = Err("The background task stopped unexpectedly (it panicked).".to_string());
+        assert_eq!(
+            run(|| -> Result<(), String> { panic!("a bug in a job") }),
+            stopped
+        );
+        // A panic in a parallel loop, as repairs run them, reaches the job's thread the same way.
+        let parallel = run(|| {
+            (0..64)
+                .into_par_iter()
+                .for_each(|i| assert_ne!(i, 40, "a bug in a parallel loop"));
+            Ok(())
+        });
+        assert_eq!(parallel, stopped);
+        assert_eq!(run(|| Ok(7)), Ok(7));
+    }
+
+    /// `run` turns a panic into a message only when panics unwind. Tests always unwind, whatever
+    /// the profile says, so the test above cannot see a release profile with `panic = "abort"`,
+    /// which would close the installed app instead: this checks the profile itself.
+    #[test]
+    fn release_builds_unwind() {
+        let manifest = include_str!("../Cargo.toml").replace("\r\n", "\n");
+        let release = manifest
+            .split("[profile.release]\n")
+            .nth(1)
+            .expect("Cargo.toml has a release profile");
+        let section = release.split("\n[").next().unwrap_or_default();
+        assert!(
+            !section.lines().any(|l| l.trim_start().starts_with("panic")),
+            "the release profile must leave panic at its default, unwind:\n{section}"
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     fn jobs_run_below_normal_priority() {

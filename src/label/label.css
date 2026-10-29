@@ -1,0 +1,229 @@
+/* Label generation (src/label): the right panel, the font dialog and the handles over the view. Colours from theme.css. */
+
+.lbl-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+}
+
+/* A name on the left, its control on the right, as the reference lays the panel out. */
+.lbl-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.lbl-row-top {
+  align-items: start;
+}
+
+.lbl-label {
+  font-size: var(--fs-sm);
+}
+
+.lbl-label.is-disabled {
+  color: var(--text-muted);
+}
+
+.lbl-caption {
+  min-height: 160px;
+  resize: vertical;
+  font: inherit;
+}
+
+.lbl-font {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lbl-font-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A number, its unit and what goes beside it (Keep aspect ratio, the depth slider), wrapping in a narrow panel. */
+.lbl-with-unit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.lbl-form .lbl-number {
+  width: 60px;
+  flex: none;
+  text-align: right;
+}
+
+.lbl-slider {
+  flex: 1 1 auto;
+  min-width: 40px;
+}
+
+.lbl-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.lbl-picture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+  padding: 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lbl-picture:hover {
+  border-color: var(--accent);
+}
+
+.lbl-picture-canvas {
+  max-width: 100%;
+  max-height: 140px;
+  image-rendering: pixelated;
+}
+
+.lbl-picture-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+}
+
+.lbl-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--fs-sm);
+}
+
+.lbl-segmented label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lbl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lbl-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lbl-file {
+  align-self: center;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lbl-note,
+.lbl-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.lbl-empty {
+  flex: 1 1 auto;
+  padding: 10px;
+}
+
+.lbl-problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+/* Apply and Cancel side by side across the panel's foot. */
+.lbl-panel .lib-actions {
+  justify-content: stretch;
+}
+
+.lbl-action {
+  flex: 1 1 0;
+}
+
+.lbl-question-text {
+  max-width: 420px;
+  margin: 0;
+}
+
+.lbl-font-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: min(520px, 80vw);
+}
+
+.lbl-font-list {
+  height: auto;
+  min-height: 180px;
+}
+
+.lbl-font-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Handles over the view: page elements kept over their points each frame (src/viewport/labelLayer.ts). */
+.lbl-handle {
+  position: absolute;
+  z-index: 3;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: move;
+  touch-action: none;
+}
+
+.lbl-handle.is-corner {
+  cursor: nesw-resize;
+}
+
+.lbl-handle.is-tag {
+  background: var(--warning, var(--accent));
+  cursor: grab;
+}
+
+.lbl-handle.is-idle {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  opacity: 0.75;
+}
+
+.lbl-handle[hidden] {
+  display: none;
+}

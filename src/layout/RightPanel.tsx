@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "rea
 import { ChevronRight } from "lucide-react";
 import { useBoolean } from "../boolean/store";
 import { useLibrary } from "../library/store";
+import { useLabel } from "../label/store";
 import { useMeasure } from "../measure/store";
 import { useRepair } from "../repair/store";
 import { useUi, type PanelSection } from "../ui";
@@ -17,6 +18,7 @@ const RepairPanel = lazy(() => import("../repair/panel/RepairPanel").then((m) =>
 const BooleanPanel = lazy(() => import("../boolean/BooleanPanel").then((m) => ({ default: m.BooleanPanel })));
 const LibraryPanel = lazy(() => import("../library/LibraryPanel").then((m) => ({ default: m.LibraryPanel })));
 const MeasurePanel = lazy(() => import("../measure/MeasurePanel").then((m) => ({ default: m.MeasurePanel })));
+const LabelPanel = lazy(() => import("../label/LabelPanel").then((m) => ({ default: m.LabelPanel })));
 
 export const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
 
@@ -48,7 +50,8 @@ export function RightPanel() {
   const booleanOpen = useBoolean((s) => s.session !== null);
   const libraryOpen = useLibrary((s) => s.session !== null);
   const measureOpen = useMeasure((s) => s.session !== null);
-  const mode = repairing ? "repair" : booleanOpen ? "boolean" : libraryOpen ? "library" : measureOpen ? "measure" : null;
+  const labelOpen = useLabel((s) => s.session !== null);
+  const mode = repairing ? "repair" : booleanOpen ? "boolean" : libraryOpen ? "library" : labelOpen ? "label" : measureOpen ? "measure" : null;
   // The library's gallery covers the view, so the clip planes have nothing to show.
   const sections = mode === "library" ? [] : mode ? MODE_SECTIONS : SECTIONS;
 
@@ -120,6 +123,8 @@ export function RightPanel() {
             <BooleanPanel />
           ) : mode === "library" ? (
             <LibraryPanel />
+          ) : mode === "label" ? (
+            <LabelPanel />
           ) : mode === "measure" ? (
             <MeasurePanel />
           ) : (

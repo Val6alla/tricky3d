@@ -44,6 +44,7 @@ import { useStore, type MeshData, type Part } from "../store";
 import { toast, useUi } from "../ui";
 import { viewport } from "../viewport/api";
 import { useBoolean, type BooleanBusy, type BooleanList, type BooleanResult, type BooleanSession, type InputSnapshot, type LogKind } from "./store";
+import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
 
 // ---------------------------------------------------------------------------------------------
 // Words and checks (pure)
@@ -218,6 +219,10 @@ export function openBooleanMode(): void {
   }
   if (isRepairing()) {
     toast(CLOSE_REPAIR_FIRST);
+    return;
+  }
+  if (isLabelOpen()) {
+    toast(CLOSE_LABEL_FIRST);
     return;
   }
   if (meshOperationRunning()) {

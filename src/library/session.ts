@@ -22,6 +22,7 @@ import { startTask, toast, useUi } from "../ui";
 import { buildItem, fetchLibraryCatalog, pickPicture, type LibraryItem, type LibraryParam, type NumberParam } from "./ipc";
 import { CATEGORIES, useLibrary, type FieldValue, type LibraryCategory, type LibrarySession } from "./store";
 import { releaseThumbnails, thumbnail } from "./thumbnails";
+import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
 
 /** Main-document commands that would add or change parts refuse with this while the library is open. */
 export const CLOSE_LIBRARY_FIRST = "Close the part library first.";
@@ -177,6 +178,7 @@ export async function openPartLibrary(): Promise<void> {
   if (isRepairing()) return toast(CLOSE_REPAIR_FIRST);
   if (isBooleanOpen()) return toast(CLOSE_BOOLEAN_FIRST);
   if (isMeasureOpen()) return toast(CLOSE_MEASURE_FIRST);
+  if (isLabelOpen()) return toast(CLOSE_LABEL_FIRST);
   if (meshOperationRunning()) return toast(WAIT_MESSAGE);
   if (browserOnly("The part library")) return;
   if (!state().catalog) {

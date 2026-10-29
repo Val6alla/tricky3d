@@ -4,13 +4,13 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity, AlignStartHorizontal, AppWindow, Atom, Compass, Construction, FileCode, History, Printer, Sheet, SunDim, Zap, AlignStartVertical, ArrowBigUp, ArrowDownLeft, ArrowDownToDot, ArrowDownToLine,
   ArrowDownUp, ArrowLeftRight, ArrowUpFromLine, Axis3d, BadgeInfo, Ban, Blend, Blocks, Box, Boxes, Bridge, Brush,
-  Camera, ChartArea, CheckCheck, ChevronsDownUp, CircleDashed, CircleDot, CircleFadingPlus, CirclePlay,
+  Camera, ChartArea, Check, CheckCheck, ChevronsDownUp, CircleDashed, CircleDot, CircleFadingPlus, CirclePlay,
   CirclePlus, CircleSmall, ClipboardList, ClipboardPaste, Combine, Contrast, Copy, CopyCheck, CopyPlus, CopyX,
   Crosshair, Cuboid, Cylinder, Dices, Diff, Dot, DraftingCompass, Drill, Eraser, Expand, Eye, EyeOff, FileAxis3d,
   FileClock, FileOutput, FilePen, FilePlus, FileSearch, FileSliders, FileStack, FileText, Focus, FolderOpen,
   FolderOutput, Fullscreen, Gem, Globe, Grid2x2, Grid3x2, Grid3x3, Group, HandGrab, Hexagon, Image, Images,
   ImageUp, Import, Info, IterationCcw, Keyboard, Languages, Layers, Layers2, LayoutDashboard, LayoutGrid,
-  LayoutTemplate, Library, LibraryBig, Link, Link2, List, ListChecks, ListFilter, ListOrdered, LocateFixed,
+  LayoutTemplate, Library, LibraryBig, Link, Link2, List, ListChecks, ListFilter, ListOrdered, LocateFixed, MapPin,
   MessageSquareWarning, Minimize, Minimize2, MousePointer2, Move, Move3d, MoveDiagonal2, Network, OctagonAlert,
   Package, PackageMinus, PackageOpen, PackagePlus, PaintBucket, Paintbrush, Palette, PanelBottom, PanelLeft,
   PanelRight, PanelsTopLeft, PanelTop, PenLine, PenTool, Pencil, Play, Plus, Proportions, Pyramid, QrCode,
@@ -82,6 +82,22 @@ import {
 } from "./repair/home";
 import { useRepair, type RepairState } from "./repair/store";
 import { CLOSE_LIBRARY_FIRST, closePartLibrary, createPart, isLibraryOpen, openPartLibrary } from "./library/session";
+import {
+  applyLabelMode,
+  CLOSE_LABEL_FIRST,
+  closeLabelMode,
+  isLabelOpen,
+  labelHistory,
+  labelRedo,
+  labelUndo,
+  openLabelMode,
+  pickLabelTool,
+  placeKind,
+  zoomToLabel,
+  zoomToLabelPart,
+} from "./label/session";
+import type { LabelState } from "./label/store";
+import type { LabelKind } from "./label/types";
 import { openGenerateShell } from "./shell/session";
 import { GROUP_ICONS, toolIcon } from "./measure/icons";
 import { CLOSE_MEASURE_FIRST, closeMeasure, currentTool, isMeasureOpen, openMeasure, pickMeasureTool } from "./measure/session";
@@ -111,6 +127,7 @@ export type TabId =
   | "boolean"
   | "library"
   | "measure"
+  | "label"
   | "quick";
 export type FeatureStatus = "ready" | "soon";
 
@@ -147,6 +164,8 @@ export interface Feature {
   viewTool?: ViewTool;
   /** Pressed state for Measure mode's tools, from the measure store. */
   measureActive?: (m: MeasureState) => boolean;
+  /** Pressed state for label generation's tools, from the label store. */
+  labelActive?: (l: LabelState) => boolean;
   /** Repair mode: greyed out and not runnable while no triangle of the working copy is selected. */
   needsTriangles?: boolean;
   /** Repair context menu: acts on the triangle under the cursor; greyed out when the menu did not open on one. */
@@ -186,11 +205,15 @@ export const LIBRARY_TAB: RibbonTab = { id: "library", label: "Part library", co
 /** The contextual tab of Measure. Home › Measure and Analyze › Measure select it (src/measure/session.ts). */
 export const MEASURE_TAB: RibbonTab = { id: "measure", label: "Measurement", contextual: true, icon: Ruler };
 
+/** The contextual tab of label generation. Generate label › any kind selects it (src/label/session.ts). */
+export const LABEL_TAB: RibbonTab = { id: "label", label: "Label generation", contextual: true, icon: Tag };
+
 /** The tabs the ribbon shows: the fixed ones, and the open mode's contextual tab after them. */
-export function ribbonTabs(repairing: boolean, booleanOpen = false, libraryOpen = false, measureOpen = false): RibbonTab[] {
+export function ribbonTabs(repairing: boolean, booleanOpen = false, libraryOpen = false, measureOpen = false, labelOpen = false): RibbonTab[] {
   if (repairing) return [...TABS, REPAIR_TAB];
   if (booleanOpen) return [...TABS, BOOLEAN_TAB];
   if (libraryOpen) return [...TABS, LIBRARY_TAB];
+  if (labelOpen) return [...TABS, LABEL_TAB];
   return measureOpen ? [...TABS, MEASURE_TAB] : TABS;
 }
 
@@ -250,6 +273,10 @@ function undo() {
     toast(CLOSE_BOOLEAN_FIRST);
     return;
   }
+  if (isLabelOpen()) {
+    labelUndo();
+    return;
+  }
   if (isRepairing()) {
     if (canUndoRepair()) undoRepair();
     else toast("Nothing to undo.");
@@ -278,6 +305,10 @@ function redo() {
     toast(CLOSE_BOOLEAN_FIRST);
     return;
   }
+  if (isLabelOpen()) {
+    labelRedo();
+    return;
+  }
   if (isRepairing()) {
     if (canRedoRepair()) redoRepair();
     else toast("Nothing to redo.");
@@ -296,6 +327,7 @@ export const HISTORY_ROWS = 15;
  */
 export function historyLabels(kind: "undo" | "redo"): string[] {
   if (isBooleanOpen()) return [];
+  if (isLabelOpen()) return labelHistory(kind);
   const session = useRepair.getState().session;
   if (session) return kind === "undo" ? session.past.map((p) => p.label).reverse() : session.future.map((p) => p.label);
   const history = store().history;
@@ -304,12 +336,13 @@ export function historyLabels(kind: "undo" | "redo"): string[] {
 
 /** Undo or Redo `count` steps at once, as one click on a row of the arrow's list. */
 function repeatHistory(kind: "undo" | "redo", count: number) {
+  const current = () => (isRepairing() ? useRepair.getState().session : isLabelOpen() ? labelHistory(kind).length : store().history);
   for (let i = 0; i < count; i++) {
-    const before = isRepairing() ? useRepair.getState().session : store().history;
+    const before = current();
     if (kind === "undo") undo();
     else redo();
     // Stop at a step that did not go through (a run in progress, nothing left).
-    if ((isRepairing() ? useRepair.getState().session : store().history) === before) break;
+    if (current() === before) break;
   }
 }
 
@@ -524,6 +557,20 @@ export const BOOLEAN_TOOLS: Record<BooleanTool, Tool> = {
 export const PICK_TRIANGLE_FIRST = "Right-click a triangle to use this.";
 
 // ---------------------------------------------------------------------------------------------
+// Label generation. src/label/session.ts does the work.
+
+const LABEL_HINTS: Record<LabelKind, string> = {
+  text: "Raise text from the selected part's surface or sink it in. Click on the part where it goes.",
+  image: "Raise a picture's dark parts from the selected part's surface or sink them in.",
+  tag: "Add a tag with text that stands out from the selected part on a thin bridge, to break off after printing.",
+  list: "Make one copy of the selected part per list entry, each labelled with its entry: running numbers or a CSV column.",
+};
+
+/** Generate label › a kind: label generation for the selected part, placing that kind first. */
+const label = (kind: LabelKind) => () => openLabelMode(kind);
+const kindIs = (kind: LabelKind) => (l: LabelState) => l.session?.kind === kind;
+
+// ---------------------------------------------------------------------------------------------
 // Measure mode. src/measure/session.ts does the work; the tools come from src/measure/tools.ts.
 
 const MEASURE_HINT = "Measure distances, angles, radii and wall thickness on the parts.";
@@ -664,10 +711,11 @@ export const FEATURES: Feature[] = [
   ...group("home", "Modify", [
     { id: "home.boolean", label: "Boolean", icon: SquaresUnite, status: "ready", run: boolean, size: "large", outsideRepair: true, hint: "Unite the selected parts, subtract some from the others, or keep what they share." },
     { id: "home.generate-shell", label: "Generate shell", icon: Cylinder, status: "ready", run: generateShell, outsideRepair: true, hint: SHELL_HINT },
-    { id: "home.generate-label", label: "Generate label", icon: Tag, status: "soon" },
-    { id: "home.label-text", label: "Text label", icon: Type, status: "soon", parent: "home.generate-label" },
-    { id: "home.label-image", label: "Image label", icon: Stamp, status: "soon", parent: "home.generate-label" },
-    { id: "home.label-list", label: "Numbered labels from a list", icon: ListOrdered, status: "soon", parent: "home.generate-label" },
+    { id: "home.generate-label", label: "Generate label", icon: Tag, status: "ready" },
+    { id: "home.label-text", label: "Text label", icon: Type, status: "ready", run: label("text"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.text },
+    { id: "home.label-image", label: "Image label", icon: Stamp, status: "ready", run: label("image"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.image },
+    { id: "home.label-tag", label: "Tag", icon: Tags, status: "ready", run: label("tag"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.tag },
+    { id: "home.label-list", label: "Numbered labels from a list", icon: ListOrdered, status: "ready", run: label("list"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.list },
   ]),
   ...group("home", "Arrange", [
     { id: "home.scale", label: "Scale", icon: Scale3d, status: "ready", run: scale, size: "large", outsideRepair: true, hint: "Resize the selected parts by a factor or to a size." },
@@ -767,11 +815,11 @@ export const FEATURES: Feature[] = [
     { id: "modify.image-texture", label: "Put an image on the surface", icon: Image, status: "soon", parent: "modify.texture-colour" },
     { id: "modify.image-relief", label: "Raise the surface from an image", icon: ImageUp, status: "soon", parent: "modify.texture-colour" },
     { id: "modify.face-groups", label: "Triangle groups", icon: Group, status: "soon", parent: "modify.texture-colour" },
-    { id: "modify.label", label: "Generate label", icon: Tag, status: "soon" },
-    { id: "modify.label-text", label: "Text label", icon: Type, status: "soon", parent: "modify.label" },
-    { id: "modify.label-image", label: "Image label", icon: Stamp, status: "soon", parent: "modify.label" },
-    { id: "modify.label-list", label: "Numbered labels from a list", icon: ListOrdered, status: "soon", parent: "modify.label" },
-    { id: "modify.label-tags", label: "Labels on breakaway tags", icon: Tags, status: "soon", parent: "modify.label" },
+    { id: "modify.label", label: "Generate label", icon: Tag, status: "ready" },
+    { id: "modify.label-text", label: "Text label", icon: Type, status: "ready", run: label("text"), parent: "modify.label", outsideRepair: true, hint: LABEL_HINTS.text },
+    { id: "modify.label-image", label: "Image label", icon: Stamp, status: "ready", run: label("image"), parent: "modify.label", outsideRepair: true, hint: LABEL_HINTS.image },
+    { id: "modify.label-list", label: "Numbered labels from a list", icon: ListOrdered, status: "ready", run: label("list"), parent: "modify.label", outsideRepair: true, hint: LABEL_HINTS.list },
+    { id: "modify.label-tags", label: "Labels on breakaway tags", icon: Tags, status: "ready", run: label("tag"), parent: "modify.label", outsideRepair: true, hint: LABEL_HINTS.tag },
     { id: "modify.qr-code", label: "QR code", icon: QrCode, status: "soon", parent: "modify.label" },
     { id: "modify.base-plate", label: "Generate base plate", icon: RectangleHorizontal, status: "soon" },
     { id: "modify.remove-add-ons", label: "Remove parametric add-ons", icon: PackageMinus, status: "soon" },
@@ -993,6 +1041,31 @@ export const FEATURES: Feature[] = [
     { id: "measure.cancel", label: "Cancel", icon: X, status: "ready", run: closeMeasure, size: "large", hint: "Leave Measure. The measurements stay with their parts and show again next time." },
   ]),
 
+  // Label generation (contextual tab, shown while the mode is open) ---------------------------
+  ...group("label", "Edit", [
+    { id: "label.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, hint: `${SAVE_HINT} Labels not yet applied are not saved.` },
+    { id: "label.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, dropdown: () => historyMenu("undo"), hint: "Undo the last change to the labels. The arrow lists the recent changes." },
+    { id: "label.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, dropdown: () => historyMenu("redo"), hint: "Redo the change you undid." },
+  ]),
+  ...group("label", "Generate label", [
+    { id: "label.select", label: "Select", icon: MousePointer2, status: "ready", run: () => pickLabelTool("select"), labelActive: (l) => l.session?.tool === "select", size: "large", hint: "Click a label to change it; drag its handles to move, size and turn it." },
+    { id: "label.place", label: "Place label", icon: MapPin, status: "ready", run: () => placeKind(), labelActive: (l) => l.session?.tool === "place", size: "large", hint: "Click on the part to place another label of the kind picked last." },
+    { id: "label.generate", label: "Generate label", icon: Tag, status: "ready", size: "large" },
+    { id: "label.add-text", label: "Text", icon: Type, status: "ready", run: () => placeKind("text"), parent: "label.generate", labelActive: kindIs("text"), hint: LABEL_HINTS.text },
+    { id: "label.add-image", label: "Image", icon: Stamp, status: "ready", run: () => placeKind("image"), parent: "label.generate", labelActive: kindIs("image"), hint: LABEL_HINTS.image },
+    { id: "label.add-tag", label: "Tag", icon: Tags, status: "ready", run: () => placeKind("tag"), parent: "label.generate", labelActive: kindIs("tag"), hint: LABEL_HINTS.tag },
+    { id: "label.add-list", label: "Text from list", icon: ListOrdered, status: "ready", run: () => placeKind("list"), parent: "label.generate", labelActive: kindIs("list"), hint: LABEL_HINTS.list },
+  ]),
+  ...group("label", "Zoom to", [
+    { id: "label.zoom-part", label: "Zoom to part", icon: ScanSearch, status: "ready", run: zoomToLabelPart, size: "large", hint: "Fit the part being labelled in the view." },
+    { id: "label.zoom-label", label: "Zoom to label", icon: Focus, status: "ready", run: zoomToLabel, size: "large", hint: "Fit the selected label in the view, or all of them when none is selected." },
+    { id: "label.zoom-area", label: "Zoom to area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", size: "large", hint: "Drag a rectangle in the view to zoom into it." },
+  ]),
+  ...group("label", "Exit label generation", [
+    { id: "label.apply", label: "Apply to part", icon: Check, status: "ready", run: () => void applyLabelMode(), size: "large", hint: "Put the labels into the part, then choose whether to keep the original." },
+    { id: "label.close", label: "Close label generation", icon: X, status: "ready", run: () => void closeLabelMode(), size: "large", hint: "Leave without applying the labels." },
+  ]),
+
   // Part library (contextual tab, shown while the library is open) -----------------------------
   ...group("library", "Create", [
     { id: "library.create", label: "Create part", icon: PackagePlus, status: "ready", run: () => void createPart(), size: "large", hint: "Add the part on the middle of the platform (or, made from the selection, where it is), and close the library." },
@@ -1130,6 +1203,7 @@ export function blockedReason(
   if (f.outsideRepair && booleanOpen) return CLOSE_BOOLEAN_FIRST;
   if (f.outsideRepair && isLibraryOpen()) return CLOSE_LIBRARY_FIRST;
   if (f.outsideRepair && isMeasureOpen()) return CLOSE_MEASURE_FIRST;
+  if (f.outsideRepair && isLabelOpen()) return CLOSE_LABEL_FIRST;
   if (f.needsTriangles && (r.session?.selectedCount ?? 0) === 0) return SELECT_TRIANGLES_FIRST;
   if (f.underCursor && typeof triangle !== "number") return PICK_TRIANGLE_FIRST;
   return null;
@@ -1177,7 +1251,7 @@ export function runFeature(id: string) {
 
 /** The tabs whose entries only show in repair mode, and those of either mode. */
 const REPAIR_TABS: readonly TabId[] = ["repair", "repair-context"];
-const MODE_TABS: readonly TabId[] = [...REPAIR_TABS, "boolean", "library", "measure"];
+const MODE_TABS: readonly TabId[] = [...REPAIR_TABS, "boolean", "library", "measure", "label"];
 
 /** Registry mistakes that would otherwise only show up by clicking around. Logged in development. */
 export function registryProblems(): string[] {
@@ -1193,6 +1267,7 @@ export function registryProblems(): string[] {
     if (f.underCursor && f.tab !== "repair-context") problems.push(`${f.id}: only the repair context menu has a triangle under the cursor`);
     if (f.booleanActive && f.tab !== "boolean") problems.push(`${f.id}: Boolean operations state outside its tab`);
     if (f.measureActive && f.tab !== "measure") problems.push(`${f.id}: Measure state outside its tab`);
+    if (f.labelActive && f.tab !== "label") problems.push(`${f.id}: label generation state outside its tab`);
     if (MODE_TABS.includes(f.tab) && f.outsideRepair) problems.push(`${f.id}: a mode's entry cannot be blocked in its mode`);
     if (isMenu(f)) {
       if (f.run) problems.push(`${f.id}: a menu cannot have run`);

@@ -4,6 +4,7 @@ import { addCutPoint } from "../repair/cut/session";
 import { useBoolean } from "../boolean/store";
 import { IS_MAC } from "../platform";
 import { isMeasureOpen, measureClick, type MeasureHit } from "../measure/session";
+import { isLabelOpen, labelClick } from "../label/session";
 import { isRepairing, selectAt, selectNone, selectTriangles } from "../repair/session";
 import { useRepair } from "../repair/store";
 import { selectMode, useStore, type SelectMode, type Vec3 } from "../store";
@@ -62,7 +63,8 @@ export interface BoxSelector {
  * zoom into (`box.select` zooms), and the next left click on a part centres the view on the point hit.
  *
  * In Measure mode a left click on a part goes to the measurement in progress (`measure` says what was hit), and no
- * drag draws a rectangle.
+ * drag draws a rectangle. In label generation a left click places a label or selects one (src/label/session.ts
+ * labelClick), and no drag draws a rectangle either; the labels' handles take their own drags.
  */
 export function attachPicking(
   canvas: HTMLCanvasElement,
@@ -166,6 +168,10 @@ export function attachPicking(
       if (viewTool === "zoom-point") centreAt(e);
       return;
     }
+    if (isLabelOpen()) {
+      if (e.button === 0 && !menu) labelClick(viewport.surfaceAt(e.clientX, e.clientY));
+      return;
+    }
     if (isMeasureOpen()) {
       if (menu) openPartMenuAt(e);
       else if (e.button === 0) {
@@ -198,7 +204,7 @@ export function attachPicking(
    */
   function boxStartsAt(e: PointerEvent): boolean {
     if (isBooleanOpen()) return useBoolean.getState().tool === "zoom-area";
-    if (isMeasureOpen()) return false;
+    if (isMeasureOpen() || isLabelOpen()) return false;
     if (isRepairing() && useRepair.getState().editTool !== null) return false;
     if (isRepairing() && useRepair.getState().selectTool === "area") return true;
     return emptyAt(e);

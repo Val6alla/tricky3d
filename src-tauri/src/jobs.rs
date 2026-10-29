@@ -1090,6 +1090,296 @@ pub fn library_build(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Labels (src/label/ipc.ts)
+
+/// The Tauri event a label run reports its progress with.
+pub const LABEL_PROGRESS: &str = "label-progress";
+
+/// `LabelProgress` in src/label/ipc.ts.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LabelProgress {
+    pub job: u64,
+    /// 0..1.
+    pub fraction: f64,
+}
+
+/// The fonts found the first time the window asked, so a label's font id names one of them and
+/// nothing else: the window cannot make tricky3D read any other file.
+#[derive(Default)]
+pub struct Fonts(Mutex<Option<Vec<(crate::label::FontInfo, crate::label::FontSource)>>>);
+
+impl Fonts {
+    /// The bundled font and those in `dirs`, looked through once.
+    pub fn list(&self, dirs: impl FnOnce() -> Vec<PathBuf>) -> Vec<crate::label::FontInfo> {
+        let mut fonts = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        fonts
+            .get_or_insert_with(|| crate::label::font::list(&dirs()))
+            .iter()
+            .map(|f| f.0.clone())
+            .collect()
+    }
+
+    /// The bytes and face index of the font `id`: the bundled one, or one `list` found.
+    pub fn data(&self, id: &str) -> Result<(Vec<u8>, u32), String> {
+        if id == crate::label::BUNDLED_ID {
+            return Ok((crate::label::font::BUNDLED.to_vec(), 0));
+        }
+        let source = self
+            .0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .and_then(|fonts| fonts.iter().find(|f| f.0.id == id).map(|f| f.1.clone()))
+            .ok_or_else(|| {
+                "That font is not available any more. Pick another in Font › ….".to_string()
+            })?;
+        Ok((crate::label::font::load(&source)?, source.index))
+    }
+}
+
+/// `ShapeRequest` in src/label/ipc.ts: what a label's flat shape depends on.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeRequest {
+    kind: crate::label::Kind,
+    #[serde(default)]
+    text: String,
+    /// A list's entries: its widest sets the shape.
+    #[serde(default)]
+    entries: Vec<String>,
+    #[serde(default = "bundled_font")]
+    font: String,
+    #[serde(default = "default_font_size")]
+    font_size: f64,
+    #[serde(default = "half")]
+    threshold: f64,
+}
+
+fn bundled_font() -> String {
+    crate::label::BUNDLED_ID.into()
+}
+
+fn default_font_size() -> f64 {
+    48.0
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+/// A picture sent as a mesh without triangles, info {picture: true, width, height} and an f32
+/// array "gray" (0 black to 1 white, rows from the top), as the Part library sends one.
+fn picture_of(m: &InMesh) -> Option<crate::library::Picture> {
+    let size = |key: &str| m.info.get(key).and_then(Value::as_u64).map(|v| v as usize);
+    let (Some(width), Some(height), Some(Blob::F32(gray))) =
+        (size("width"), size("height"), m.extra("gray"))
+    else {
+        return None;
+    };
+    (width > 0 && height > 0 && width.checked_mul(height) == Some(gray.len())).then(|| {
+        crate::library::Picture {
+            width,
+            height,
+            gray: gray.clone(),
+        }
+    })
+}
+
+/// The shape a request's label is sized by (src/label sizing_shape).
+fn sizing_shape(
+    request: &ShapeRequest,
+    picture: Option<&crate::library::Picture>,
+    fonts: &Fonts,
+) -> Result<crate::label::Shape, String> {
+    crate::label::sizing_shape(
+        request.kind,
+        &request.text,
+        &request.entries,
+        &|| fonts.data(&request.font),
+        request.font_size,
+        picture,
+        request.threshold,
+    )
+}
+
+/// `label_shape`: meta {kind, text, entries, font, fontSize, threshold}, and for an Image label
+/// the picture. The label's flat shape at unit height (a list's widest entry), for the window to
+/// draw while it is placed.
+pub fn label_shape(bundle: Bundle, fonts: &Fonts) -> Result<crate::label::ShapeReply, String> {
+    let request: ShapeRequest = serde_json::from_value(Value::Object(bundle.meta))
+        .map_err(|_| "The label request from the window is damaged.".to_string())?;
+    let picture = bundle.meshes.first().and_then(picture_of);
+    sizing_shape(&request, picture.as_ref(), fonts)?.reply()
+}
+
+/// `label_fit`: meta as `label_shape`'s plus {point, normal, angle} where the label was placed;
+/// the part as a bundle mesh with info {name, matrix}, then an Image label's picture if it has
+/// one (without one the label is sized as a square). The label's starting height and the part's
+/// thickness under the point (src/label/fit.rs).
+pub fn label_fit(bundle: Bundle, fonts: &Fonts) -> Result<crate::label::fit::Fit, String> {
+    const ACTION: &str = "Could not size the label";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let request: ShapeRequest =
+        serde_json::from_value(Value::Object(bundle.meta.clone())).map_err(|_| damaged())?;
+    let vector = |key: &str| -> Option<[f64; 3]> {
+        field::<[f64; 3]>(&bundle.meta, key).filter(|v| v.iter().all(|x| x.is_finite()))
+    };
+    let (Some(point), Some(normal)) = (vector("point"), vector("normal")) else {
+        return Err(damaged());
+    };
+    let angle = bundle
+        .meta
+        .get("angle")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let Bundle { meta: _, meshes } = bundle;
+    let (pictures, parts): (Vec<InMesh>, Vec<InMesh>) = meshes
+        .into_iter()
+        .partition(|m| m.info.get("picture").and_then(Value::as_bool) == Some(true));
+    let picture = pictures.first().and_then(picture_of);
+    let mut parts = world_meshes(
+        Bundle {
+            meta: Map::new(),
+            meshes: parts,
+        },
+        ACTION,
+        false,
+    )?;
+    if parts.len() != 1 {
+        return Err(damaged());
+    }
+    let part = parts.remove(0);
+    let aspect = match (request.kind, &picture) {
+        (crate::label::Kind::Image, None) => 1.0,
+        _ => sizing_shape(&request, picture.as_ref(), fonts)?.aspect,
+    };
+    let frame =
+        crate::label::Frame::label(point, normal, angle.to_radians()).ok_or_else(damaged)?;
+    Ok(crate::label::fit::fit(&part, &frame, aspect))
+}
+
+/// `label_apply`: meta {labels: [Spec as src/label/types.ts sends it], job}; the part as the
+/// first bundle mesh with info {name, matrix}, then each Image label's picture with info
+/// {picture: true, label: its index in labels, width, height} and "gray". The answer: meta
+/// {note}, and one mesh per copy (world space) with info {name: the list entries, stats} and
+/// its problem edges. Cancel (`repair_cancel` with `job`) makes it fail with CANCELLED.
+pub fn label_apply(
+    bundle: Bundle,
+    fonts: &Fonts,
+    jobs: &RepairJobs,
+    emit: &mut dyn FnMut(&LabelProgress),
+) -> Result<Vec<u8>, String> {
+    const ACTION: &str = "Could not add the labels";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let specs: Vec<crate::label::Spec> = bundle
+        .meta
+        .get("labels")
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .ok_or_else(damaged)?;
+    let job = bundle
+        .meta
+        .get("job")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)?;
+    let Bundle { meta: _, meshes } = bundle;
+    let (pictures, parts): (Vec<InMesh>, Vec<InMesh>) = meshes
+        .into_iter()
+        .partition(|m| m.info.get("picture").and_then(Value::as_bool) == Some(true));
+    let mut by_label: Vec<Option<crate::library::Picture>> = vec![None; specs.len()];
+    for m in &pictures {
+        let i = m
+            .info
+            .get("label")
+            .and_then(Value::as_u64)
+            .ok_or_else(damaged)? as usize;
+        let slot = by_label.get_mut(i).ok_or_else(damaged)?;
+        *slot = Some(picture_of(m).ok_or_else(damaged)?);
+    }
+    let mut parts = world_meshes(
+        Bundle {
+            meta: Map::new(),
+            meshes: parts,
+        },
+        ACTION,
+        true,
+    )?;
+    if parts.len() != 1 {
+        return Err(damaged());
+    }
+    let part = parts.remove(0);
+    let running = jobs.start(job);
+    let full_speed = crate::power::FullSpeed::start();
+    let cancel = running.cancel_flag();
+    let mut last: Option<Instant> = None;
+    let mut report = |fraction: f64| {
+        let now = Instant::now();
+        if last.is_some_and(|t| now.duration_since(t) < PROGRESS_INTERVAL) {
+            return;
+        }
+        last = Some(now);
+        emit(&LabelProgress { job, fraction });
+    };
+    // A list reads its font once per entry: keep the bytes of the fonts already read.
+    let cache: RefCell<HashMap<String, (Vec<u8>, u32)>> = RefCell::new(HashMap::new());
+    let font = |id: &str| -> Result<(Vec<u8>, u32), String> {
+        if let Some(hit) = cache.borrow().get(id) {
+            return Ok(hit.clone());
+        }
+        let data = fonts.data(id)?;
+        cache.borrow_mut().insert(id.to_string(), data.clone());
+        Ok(data)
+    };
+    let sources = crate::label::Sources {
+        font: &font,
+        pictures: &by_label,
+    };
+    let mut control = Control::new(cancel, |f| report(0.9 * f));
+    let applied =
+        crate::label::apply(&part, &specs, &sources, &mut control).map_err(run_error)??;
+    drop(control);
+    let mut meshes = Vec::with_capacity(applied.copies.len());
+    let mut analyses = Vec::with_capacity(applied.copies.len());
+    for (_, mesh) in &applied.copies {
+        analyses.push(analyze_unless_cancelled(mesh, cancel).ok_or_else(|| CANCELLED.to_string())?);
+    }
+    for ((name, mesh), analysis) in applied.copies.iter().zip(&analyses) {
+        let mut info = Map::new();
+        info.insert("name".into(), json!(name));
+        info.insert("stats".into(), json!(analysis.stats));
+        meshes.push(out_mesh(info, mesh, analysis));
+    }
+    let mut meta = Map::new();
+    meta.insert("note".into(), json!(applied.note));
+    let answer = bundle::encode(&meta, &meshes);
+    drop(full_speed);
+    drop(running);
+    Ok(answer)
+}
+
+/// Rows at most a CSV file for a list label may be read up to, in bytes.
+pub const MAX_CSV_BYTES: u64 = 16 << 20;
+
+/// A list label's CSV file, read and split into rows of cells.
+pub fn read_csv(path: &Path) -> Result<Vec<Vec<String>>, String> {
+    let name = display_name(path);
+    let fail = |reason: String| format!("Could not read \"{name}\": {reason}.");
+    let size = std::fs::metadata(path)
+        .map_err(|e| fail(formats::read_error(&e)))?
+        .len();
+    if size > MAX_CSV_BYTES {
+        return Err(fail("the file is larger than 16 MB".into()));
+    }
+    let bytes = std::fs::read(path).map_err(|e| fail(formats::read_error(&e)))?;
+    // Spreadsheets on Windows may still write the old Western code page: read those bytes as it.
+    let text = match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(e) => e.into_bytes().into_iter().map(char::from).collect(),
+    };
+    Ok(crate::label::list::parse_csv(&text))
+}
+
+// ---------------------------------------------------------------------------------------------
 // Measure mode (src/measure/ipc.ts)
 
 /// `PickReply` in src/measure/ipc.ts: the feature in the owning part's frame, the same in world

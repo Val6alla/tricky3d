@@ -1,6 +1,6 @@
 [package]
 name = "tricky3d"
-version = "0.1.0"
+version = "0.2.0"
 description = "Free, offline mesh preparation for 3D printing"
 authors = ["tricky3D contributors"]
 license = "GPL-3.0-only"
@@ -36,6 +36,8 @@ robust = "1.2"
 spade = "2.15"
 # Repair runs its per-triangle work (intersection tests, retriangulation, ray casts) on every core.
 rayon = "1.12"
+# Labels (src/label): glyph outlines from the bundled font and the system's fonts.
+ttf-parser = "0.25"
 
 [dev-dependencies]
 # Exact rational arithmetic for the reference implementations the repair tests compare against.
@@ -96,10 +98,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSWindow",
 ] }
 
-# https://tauri.app/concept/size/#cargo-configuration
+# https://tauri.app/concept/size/#cargo-configuration, except `panic = "abort"`: panics must
+# unwind, so a job that panics ends with a message (src/workers.rs run) instead of closing the app.
 [profile.release]
 codegen-units = 1
-lto = true
+lto = "fat"
 opt-level = 3
-panic = "abort"
 strip = true

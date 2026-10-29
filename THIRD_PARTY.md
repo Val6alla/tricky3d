@@ -51,6 +51,7 @@ The icons come from the Lucide icon set (ISC), shipped inside lucide-react. Luci
 | robust | MIT OR Apache-2.0 | dependency (exact geometric predicates for repair) |
 | spade | MIT OR Apache-2.0 | dependency (constrained Delaunay triangulation for Wrap part surface); brings in hashbrown (with allocator-api2), num-traits and smallvec, all MIT OR Apache-2.0 |
 | rayon | MIT OR Apache-2.0 | dependency (runs repair work on every processor core but one); brings in rayon-core and the crossbeam crates, all MIT OR Apache-2.0 |
+| ttf-parser | MIT OR Apache-2.0 | dependency (reads the letters' outlines from the built-in font and the computer's fonts, for labels) |
 | windows-sys | MIT OR Apache-2.0 | Windows-only dependency (power throttling and thread priority for repair work; long folder names, so save dialogs know a folder however it is spelled) |
 | windows | MIT OR Apache-2.0 | Windows-only dependency (the Export save dialog's file type list) |
 | libc | MIT OR Apache-2.0 | macOS and Linux dependency (thread priority for repair work) |
@@ -65,6 +66,106 @@ The icons come from the Lucide icon set (ISC), shipped inside lucide-react. Luci
 - **Windows: Microsoft Edge WebView2 Runtime.** tricky3D draws its window with WebView2. Windows 11 already includes it. So that installing never needs a download, the `.msi` and `.exe` installers carry Microsoft's WebView2 offline installer and run it only when the runtime is missing. WebView2 is Microsoft's software, freely redistributable under Microsoft's license terms. It is installed as its own program, not inside tricky3D's folder. Other apps share it, Microsoft keeps it up to date, and it stays installed if you remove tricky3D. tricky3D contains none of its code.
 - **Linux AppImage: GTK, WebKitGTK and the libraries they use.** An AppImage carries the system libraries it needs so it runs on many distributions. These are mainly LGPL-2.1-or-later (GTK, GLib, WebKitGTK) with permissive licenses for the rest. The `.deb` package uses the copies already installed on the system.
 - **macOS:** tricky3D uses the WebKit that is part of macOS. The `.dmg` carries nothing else.
+
+## Font built into tricky3D
+
+Labels and the Part library's Text, Mold and Whistle use **Noto Sans Regular** (version 2.015) when no other font is picked, so they work on every computer. The font file, `src-tauri/fonts/NotoSans-Regular.ttf`, is built into the tricky3D program unchanged. Noto is a trademark of Google LLC. The font is under the SIL Open Font License 1.1, whose full text follows and is also in `src-tauri/fonts/NotoSans-OFL.txt`.
+
+```text
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+```
 
 <!-- Everything below is generated by scripts/third-party.mjs. Do not edit by hand. -->
 
@@ -238,7 +339,7 @@ Build and test tools. None of them ship in the app.
 | vitest | 5.0.5 | MIT |  |
 | why-is-node-running | 3.2.1 | MIT |  |
 
-### Rust crates (457)
+### Rust crates (458)
 
 The list covers every platform. Each build compiles only the crates for its own platform, and build scripts and macros run at compile time without being shipped.
 
@@ -613,6 +714,7 @@ The list covers every platform. Each build compiles only the crates for its own 
 | tracing-core | 0.1.36 | MIT |
 | tray-icon | 0.25.1 | MIT OR Apache-2.0 |
 | try-lock | 0.2.5 | MIT |
+| ttf-parser | 0.25.1 | MIT OR Apache-2.0 |
 | typed-path | 0.12.3 | MIT OR Apache-2.0 |
 | typeid | 1.0.3 | MIT OR Apache-2.0 |
 | typenum | 1.20.1 | MIT OR Apache-2.0 |

@@ -18,6 +18,7 @@ import { Menu } from "../menus/Menu";
 import { useBoolean } from "../boolean/store";
 import { useLibrary } from "../library/store";
 import { useMeasure } from "../measure/store";
+import { useLabel } from "../label/store";
 import { useRepair } from "../repair/store";
 import { useStore } from "../store";
 import { useUi } from "../ui";
@@ -39,7 +40,8 @@ export function Ribbon() {
   const libraryOpen = useLibrary((l) => l.session !== null);
   const measureOpen = useMeasure((m) => m.session !== null);
   const hideSoon = useStore((s) => s.hideSoon);
-  const tabs = ribbonTabs(repairing, booleanOpen, libraryOpen, measureOpen);
+  const labelOpen = useLabel((l) => l.session !== null);
+  const tabs = ribbonTabs(repairing, booleanOpen, libraryOpen, measureOpen, labelOpen);
   const tab = shownTab(selected, tabs);
   const groups = useMemo(() => groupsFor(tab, hideSoon), [tab, hideSoon]);
   const { stripRef, collapsed } = useCollapsedGroups(groups);
@@ -185,6 +187,7 @@ export function RibbonButton({ f, entries }: { f: Feature; entries?: MenuEntry[]
   const booleanActive = useBoolean((b) => f.booleanActive?.(b) ?? false);
   const viewActive = useUi((u) => f.viewTool !== undefined && u.viewTool === f.viewTool);
   const measureActive = useMeasure((m) => f.measureActive?.(m) ?? false);
+  const labelActive = useLabel((l) => f.labelActive?.(l) ?? false);
   const booleanOpen = useBoolean((b) => b.session !== null);
   // Ribbon buttons never act on a triangle under the cursor; that is the repair context menu's.
   const blocked = useRepair((r) => blockedReason(f, r, null, booleanOpen));
@@ -192,8 +195,9 @@ export function RibbonButton({ f, entries }: { f: Feature; entries?: MenuEntry[]
   const soon = effectiveStatus(f) === "soon";
   const submenu = entries !== undefined || isMenu(f);
   const large = f.size === "large";
-  const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.booleanActive !== undefined || f.viewTool !== undefined || f.measureActive !== undefined;
-  const pressed = active || repairActive || booleanActive || viewActive || measureActive;
+  const toggle =
+    f.isActive !== undefined || f.repairActive !== undefined || f.booleanActive !== undefined || f.viewTool !== undefined || f.measureActive !== undefined || f.labelActive !== undefined;
+  const pressed = active || repairActive || booleanActive || viewActive || measureActive || labelActive;
   const Icon = f.icon;
 
   return (

@@ -43,6 +43,18 @@ describe("measurement rows in the windowed list", () => {
   });
 });
 
+describe("label generation's rows in the windowed list", () => {
+  const kinds = (rows: { kind: string; index: number; measure?: number }[]) =>
+    rows.map((r) => (r.kind === "labels" ? `G${r.index}` : r.kind === "label" ? `L${r.measure}` : r.kind === "measurement" ? `M${r.index}.${r.measure}` : String(r.index)));
+
+  it("puts a Generate label row and one row per placed label under the labelled part, before its measurements", () => {
+    expect(rowCount(3, -1, [0, 1, 0], { at: 1, count: 2 })).toBe(3 + 1 + 3);
+    expect(kinds(rowsInRange(3, -1, 0, 7, [0, 1, 0], { at: 1, count: 2 }))).toEqual(["0", "1", "G1", "L0", "L1", "M1.0", "2"]);
+    // No labels placed yet: just the Generate label row.
+    expect(kinds(rowsInRange(2, -1, 0, 3, [], { at: 0, count: 0 }))).toEqual(["0", "G0", "1"]);
+  });
+});
+
 describe("the Part repair row in the windowed list", () => {
   const kinds = (rows: { kind: string; index: number }[]) => rows.map((r) => (r.kind === "repair" ? `R${r.index}` : String(r.index)));
 

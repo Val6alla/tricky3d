@@ -17,6 +17,10 @@ export interface ViewportApi {
   centreOn(point: Vec3): void;
   /** Unit vector the camera looks along, in world space. */
   viewDirection(): Vec3;
+  /** The part under a page point (clip planes respected), the world point hit and the face's normal there. */
+  surfaceAt(clientX: number, clientY: number): { partId: string; point: Vec3; normal: Vec3 } | null;
+  /** The world ray through a page point. */
+  rayAt(clientX: number, clientY: number): { origin: Vec3; direction: Vec3 } | null;
 }
 
 let current: ViewportApi | null = null;
@@ -32,4 +36,6 @@ export const viewport: ViewportApi = {
   setViewPreset: (preset) => current?.setViewPreset(preset),
   centreOn: (point) => current?.centreOn(point),
   viewDirection: () => current?.viewDirection() ?? [0, 1, 0],
+  surfaceAt: (x, y) => current?.surfaceAt(x, y) ?? null,
+  rayAt: (x, y) => current?.rayAt(x, y) ?? null,
 };
