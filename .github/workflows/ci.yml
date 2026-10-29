@@ -18,13 +18,22 @@ on:
       - "THIRD_PARTY.md"
       - "!LICENSE"
       - "!.github/ISSUE_TEMPLATE/**"
+  # The release workflow runs these checks before it builds the installers.
+  workflow_call:
+    inputs:
+      macos:
+        description: Check on macOS too, whatever the branch
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# A new push to a branch or pull request cancels the run it replaces.
+# A new push to a branch or pull request cancels the run it replaces. When the release workflow
+# calls this one, github.workflow is "Release", so its checks never cancel a branch's own CI run or
+# share the release workflow's group (group names ignore letter case).
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,9 +42,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS minutes cost ten times as much, so macOS runs only for pull requests into main and
-        # for pushes to main. Other branch pushes check Windows and Linux.
-        os: ${{ fromJSON((github.ref == 'refs/heads/main' || github.base_ref == 'main') && '["macos-latest", "windows-latest", "ubuntu-22.04"]' || '["windows-latest", "ubuntu-22.04"]') }}
+        # macOS minutes cost ten times as much, so macOS runs only for pull requests into main, for
+        # pushes to main and for releases. Other branch pushes check Windows and Linux.
+        os: ${{ fromJSON((inputs.macos || github.ref == 'refs/heads/main' || github.base_ref == 'main') && '["macos-latest", "windows-latest", "ubuntu-22.04"]' || '["windows-latest", "ubuntu-22.04"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1

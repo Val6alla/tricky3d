@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { useBoolean } from "../boolean/store";
 import { activate, blockedReason, effectiveStatus, featureById, hoverHintFor, isMenu, tooltipFor, type Feature } from "../features";
 import { useMeasure } from "../measure/store";
+import { useLabel } from "../label/store";
 import { useRepair } from "../repair/store";
 import { useStore } from "../store";
 import { useUi } from "../ui";
@@ -256,13 +257,14 @@ export function MenuItem({ f, open, onHover, onChoose }: ItemProps) {
   const active = useStore((s) => f.isActive?.(s) ?? false);
   const repairActive = useRepair((r) => f.repairActive?.(r) ?? false);
   const measureActive = useMeasure((m) => f.measureActive?.(m) ?? false);
+  const labelActive = useLabel((l) => f.labelActive?.(l) ?? false);
   const triangle = useUi((s) => s.contextMenu?.triangle);
   const booleanOpen = useBoolean((b) => b.session !== null);
   const blocked = useRepair((r) => blockedReason(f, r, triangle, booleanOpen));
   const soon = effectiveStatus(f) === "soon";
   const submenu = isMenu(f);
-  const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.measureActive !== undefined;
-  const checked = active || repairActive || measureActive;
+  const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.measureActive !== undefined || f.labelActive !== undefined;
+  const checked = active || repairActive || measureActive || labelActive;
   const Icon = f.icon;
   return (
     <button

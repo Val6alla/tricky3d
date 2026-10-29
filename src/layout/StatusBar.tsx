@@ -1,5 +1,7 @@
 import { useBoolean } from "../boolean/store";
 import { BOOLEAN_TOOLS, EDIT_TOOLS, REPAIR_TOOLS, VIEW_TOOLS, measureStatus } from "../features";
+import { labelStatus } from "../label/session";
+import { useLabel } from "../label/store";
 import { useMeasure } from "../measure/store";
 import { formatCount } from "../info";
 import { useRepair } from "../repair/store";
@@ -62,8 +64,11 @@ export function StatusBar() {
   // Re-renders as the tool and the clicks change; measureStatus reads the rest itself.
   useMeasure((m) => [m.session?.tool, m.session?.picks.length, m.session?.points.length].join());
   const measureTool = measureStatus(useMeasure.getState());
+  // Label generation: what the next click does.
+  useLabel((l) => `${l.session?.tool}:${l.session?.kind}`);
+  const labelTool = labelStatus();
   const tasks = useUi((s) => s.tasks);
-  const tool = viewTool ? VIEW_TOOLS[viewTool] : measureTool ? measureTool : editTool ? EDIT_TOOLS[editTool] : repairTool ? REPAIR_TOOLS[repairTool] : booleanTool ? BOOLEAN_TOOLS[booleanTool] : partTool;
+  const tool = viewTool ? VIEW_TOOLS[viewTool] : labelTool ? labelTool : measureTool ? measureTool : editTool ? EDIT_TOOLS[editTool] : repairTool ? REPAIR_TOOLS[repairTool] : booleanTool ? BOOLEAN_TOOLS[booleanTool] : partTool;
   const hint = hoverHint ?? tool.hint;
 
   return (

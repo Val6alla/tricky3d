@@ -89,6 +89,20 @@ pub fn picture_filters() -> Vec<Filter> {
     .collect()
 }
 
+/// The format menu for a list label's CSV file.
+pub fn csv_filters() -> Vec<Filter> {
+    [
+        ("Lists (*.csv, *.txt)", vec!["csv", "txt"]),
+        ("All files", vec!["*"]),
+    ]
+    .into_iter()
+    .map(|(name, extensions)| Filter {
+        name: name.into(),
+        extensions,
+    })
+    .collect()
+}
+
 /// Shows the open dialog over `window` with the format menu `filters` and waits until it closes.
 /// Returns the files picked, none when it was cancelled. Blocks, so call it off the main thread.
 pub fn pick(

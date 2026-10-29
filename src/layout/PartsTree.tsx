@@ -1,6 +1,9 @@
 import { memo, useMemo, useRef, useState, useEffect, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Grid3x3, Layers, Lock, LockOpen, Ruler, TriangleAlert, Wrench, X } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Grid3x3, Image, Layers, ListOrdered, Lock, LockOpen, Ruler, Tag, Tags, TriangleAlert, Type, Wrench, X } from "lucide-react";
+import { removeLabel, selectLabel } from "../label/session";
+import { useLabel } from "../label/store";
+import { KIND_LABELS, shapeText, type PlacedLabel } from "../label/types";
 import { deleteMeasurement, isMeasureOpen, openMeasure, selectMeasurement } from "../measure/session";
 import { useMeasure } from "../measure/store";
 import { toolById } from "../measure/tools";
@@ -18,6 +21,9 @@ const LATTICES_KEY = "root:lattices";
 const REPAIR_KEY = "repair:";
 /** A "Measurement" row's key is this followed by the measurement's id. */
 const MEASURE_KEY = "measure:";
+/** The "Generate label" row's key, and a placed label's (followed by its id). */
+const LABELS_KEY = "labels:";
+const LABEL_KEY = "label:";
 
 /** `.ptree-row` height and `.ptree` top padding in layout.css. */
 const ROW_HEIGHT = 26;
@@ -38,21 +44,28 @@ export function visibleRange(count: number, scrollTop: number, height: number): 
 }
 
 /**
- * A row of the part list: the part at `index`, ("repair") the "Part repair" row under that part, or ("measurement") its
- * measurement number `measure`.
+ * A row of the part list: the part at `index`, ("repair") the "Part repair" row under that part, ("measurement") its
+ * measurement number `measure`, ("labels") the "Generate label" row of label generation, or ("label") its placed
+ * label number `measure`.
  */
 export interface ListRow {
-  kind: "part" | "repair" | "measurement";
+  kind: "part" | "repair" | "measurement" | "labels" | "label";
   index: number;
   measure?: number;
 }
 
+/** Label generation's rows: under the part at `at`, a "Generate label" row and `count` labels. */
+export interface LabelRows {
+  at: number;
+  count: number;
+}
+
 /**
  * How many rows the part list has: one per part, plus "Part repair" while the part at `repairAt` is repaired (-1:
- * none), plus a row per measurement (`measured[i]` under part i).
+ * none), plus a row per measurement (`measured[i]` under part i), plus label generation's rows.
  */
-export function rowCount(parts: number, repairAt: number, measured: readonly number[] = []): number {
-  const extra = measured.reduce((n, m) => n + m, 0);
+export function rowCount(parts: number, repairAt: number, measured: readonly number[] = [], labels: LabelRows | null = null): number {
+  const extra = measured.reduce((n, m) => n + m, 0) + (labels && labels.at >= 0 && labels.at < parts ? 1 + labels.count : 0);
   return (repairAt >= 0 && repairAt < parts ? parts + 1 : parts) + extra;
 }
 
@@ -61,13 +74,24 @@ export function rowCount(parts: number, repairAt: number, measured: readonly num
  * each part's measurement rows after it (and after its "Part repair" row). Every row keeps the one height
  * visibleRange counts with.
  */
-export function rowsInRange(parts: number, repairAt: number, first: number, end: number, measured: readonly number[] = []): ListRow[] {
-  if (measured.some((m) => m > 0)) {
+export function rowsInRange(
+  parts: number,
+  repairAt: number,
+  first: number,
+  end: number,
+  measured: readonly number[] = [],
+  labels: LabelRows | null = null,
+): ListRow[] {
+  if (measured.some((m) => m > 0) || labels) {
     const rows: ListRow[] = [];
     let r = 0;
     for (let i = 0; i < parts && r < end; i++) {
       const block: ListRow[] = [{ kind: "part", index: i }];
       if (i === repairAt) block.push({ kind: "repair", index: i });
+      if (i === labels?.at) {
+        block.push({ kind: "labels", index: i });
+        for (let k = 0; k < labels.count; k++) block.push({ kind: "label", index: i, measure: k });
+      }
       for (let k = 0; k < (measured[i] ?? 0); k++) block.push({ kind: "measurement", index: i, measure: k });
       for (const row of block) {
         if (r >= first && r < end) rows.push(row);
@@ -136,15 +160,24 @@ export const PartsTree = memo(function PartsTree() {
   const selected = useMemo(() => new Set(selection), [selection]);
   const repairAt = useMemo(() => (repairId === null ? -1 : parts.findIndex((p) => p.id === repairId)), [parts, repairId]);
   const measured = useMemo(() => parts.map((p) => p.measurements?.length ?? 0), [parts]);
-  const rows = rowCount(parts.length, repairAt, measured);
+  const labelSession = useLabel((l) => l.session);
+  const labelRows = useMemo(() => {
+    const at = labelSession ? parts.findIndex((p) => p.id === labelSession.partId) : -1;
+    return at >= 0 && labelSession ? { at, count: labelSession.labels.length } : null;
+  }, [parts, labelSession]);
+  const rows = rowCount(parts.length, repairAt, measured, labelRows);
   const [first, end] = expanded ? visibleRange(rows, view.top, view.height) : [0, 0];
-  const drawn = rowsInRange(parts.length, repairAt, first, end, measured);
+  const drawn = rowsInRange(parts.length, repairAt, first, end, measured, labelRows);
   const keyOf = (row: ListRow) =>
     row.kind === "part"
       ? parts[row.index].id
       : row.kind === "repair"
         ? REPAIR_KEY + parts[row.index].id
-        : MEASURE_KEY + (parts[row.index].measurements?.[row.measure ?? 0]?.id ?? "");
+        : row.kind === "labels"
+          ? LABELS_KEY
+          : row.kind === "label"
+            ? LABEL_KEY + (labelSession?.labels[row.measure ?? 0]?.id ?? "")
+            : MEASURE_KEY + (parts[row.index].measurements?.[row.measure ?? 0]?.id ?? "");
   const rowKeys = [PARTS_KEY, ...drawn.map(keyOf), ...(hideSoon ? [] : [SLICES_KEY, LATTICES_KEY])];
   // A focused row scrolled out of the drawn range is gone, so Tab enters the tree at the Parts row instead.
   const tabKey = rowKeys.includes(activeKey) ? activeKey : PARTS_KEY;
@@ -197,6 +230,13 @@ export const PartsTree = memo(function PartsTree() {
         drawn.map((row) => {
           const part = parts[row.index];
           const key = keyOf(row);
+          if (row.kind === "labels") return <LabelGroupRow key={key} tabbable={tabKey === key} onFocus={() => setActiveKey(key)} />;
+          if (row.kind === "label") {
+            const label = labelSession?.labels[row.measure ?? 0];
+            return label ? (
+              <LabelRow key={key} label={label} selected={labelSession?.selected === label.id} tabbable={tabKey === key} onFocus={() => setActiveKey(key)} />
+            ) : null;
+          }
           if (row.kind === "measurement") {
             const measurement = part.measurements?.[row.measure ?? 0];
             return measurement ? (
@@ -452,6 +492,71 @@ export function RepairRow({ part, tabbable, onFocus }: RepairRowProps) {
     >
       <Wrench size={13} className="ptree-repair-icon" aria-hidden="true" />
       <span className="ptree-name">Part repair</span>
+    </div>
+  );
+}
+
+/** "Generate label": label generation's placed labels, one level under the part they go on. */
+function LabelGroupRow({ tabbable, onFocus }: { tabbable: boolean; onFocus(): void }) {
+  return (
+    <div
+      className="ptree-row ptree-measurement"
+      role="treeitem"
+      aria-level={3}
+      tabIndex={tabbable ? 0 : -1}
+      title="The labels placed on this part, not yet applied."
+      onFocus={onFocus}
+      onClick={() => selectLabel(null)}
+    >
+      <Tag size={13} className="ptree-repair-icon" aria-hidden="true" />
+      <span className="ptree-name">Generate label</span>
+    </div>
+  );
+}
+
+const LABEL_ICONS: Record<PlacedLabel["kind"], LucideIcon> = { text: Type, image: Image, list: ListOrdered, tag: Tags };
+
+/** A placed label by its caption: a click selects it in the view and shows its options; the cross deletes it. */
+function LabelRow({ label, selected, tabbable, onFocus }: { label: PlacedLabel; selected: boolean; tabbable: boolean; onFocus(): void }) {
+  const Icon = LABEL_ICONS[label.kind];
+  const caption = label.kind === "image" ? (label.picture?.name ?? KIND_LABELS.image) : shapeText(label).split("\n")[0] || KIND_LABELS[label.kind];
+  return (
+    <div
+      className={`ptree-row ptree-measurement ptree-label-row${selected ? " is-selected" : ""}`}
+      role="treeitem"
+      aria-level={4}
+      aria-selected={selected}
+      tabIndex={tabbable ? 0 : -1}
+      title={`${KIND_LABELS[label.kind]}: ${caption}`}
+      onFocus={onFocus}
+      onClick={() => selectLabel(label.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          selectLabel(label.id);
+        } else if (e.key === "Delete") {
+          e.preventDefault();
+          e.stopPropagation();
+          removeLabel(label.id);
+        }
+      }}
+    >
+      <Icon size={13} className="ptree-repair-icon" aria-hidden="true" />
+      <span className="ptree-name">{caption}</span>
+      <button
+        type="button"
+        className="ptree-icon ptree-measure-delete"
+        tabIndex={-1}
+        aria-label={`Delete label ${caption}`}
+        title="Delete this label."
+        onClick={(e) => {
+          e.stopPropagation();
+          removeLabel(label.id);
+        }}
+      >
+        <X size={13} />
+      </button>
     </div>
   );
 }

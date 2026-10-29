@@ -57,6 +57,7 @@ import type {
   ScriptStep,
   SelectTool,
 } from "./types";
+import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
 
 export type { SelectMode } from "./selection";
 
@@ -127,6 +128,10 @@ function watchProject() {
 export function enterRepair(partId: string): void {
   if (isRepairing()) {
     toast(CLOSE_REPAIR_FIRST);
+    return;
+  }
+  if (isLabelOpen()) {
+    toast(CLOSE_LABEL_FIRST);
     return;
   }
   if (repair().busy || meshOperationRunning()) {

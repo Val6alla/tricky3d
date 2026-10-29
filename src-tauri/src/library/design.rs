@@ -180,8 +180,6 @@ pub(super) fn catalog() -> Vec<Item> {
                 count("quiet", "Quiet zone (modules)", 2.0, 0.0, 10.0),
             ],
         ),
-        design("text", "Text", "Letters as a solid.", Vec::new())
-            .soon("it needs the text rendering that comes with labels."),
         design(
             "screw",
             "Screw",
@@ -242,10 +240,6 @@ pub(super) fn catalog() -> Vec<Item> {
                 num("backlash", "Backlash", "mm", 0.1, 0.0, 2.0),
             ],
         ),
-        design("whistle", "Whistle", "A whistle with a label.", Vec::new())
-            .soon("its label needs the text rendering that comes with labels."),
-        design("mold", "Mold", "A mould with a label.", Vec::new())
-            .soon("its label needs the text rendering that comes with labels."),
         design(
             "vase",
             "Vase",

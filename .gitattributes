@@ -1,2 +1,5 @@
 # The .repair test fixture keeps the CRLF line endings the reference tool writes.
 *.repair -text
+
+# Shell scripts keep LF line endings on every checkout, or sh stops at the first carriage return.
+*.sh text eol=lf

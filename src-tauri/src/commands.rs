@@ -498,6 +498,82 @@ pub async fn library_pick_image(window: Window) -> Result<Response, String> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Labels (src/label/ipc.ts).
+
+/// The fonts a label may use: the bundled one first, then those installed on this computer.
+#[tauri::command]
+pub async fn label_fonts(window: Window) -> Result<Vec<crate::label::FontInfo>, String> {
+    blocking(move || {
+        Ok(window
+            .state::<jobs::Fonts>()
+            .list(crate::label::font::system_dirs))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn label_shape(
+    window: Window,
+    request: Request<'_>,
+) -> Result<crate::label::ShapeReply, String> {
+    let bundle = bundle_of(&request, "draw the label")?;
+    heavy(move || jobs::label_shape(bundle, &window.state::<jobs::Fonts>())).await
+}
+
+/// A new label's starting height on the part, and the part's thickness under it.
+#[tauri::command]
+pub async fn label_fit(
+    window: Window,
+    request: Request<'_>,
+) -> Result<crate::label::fit::Fit, String> {
+    let bundle = bundle_of(&request, "size the label")?;
+    heavy(move || jobs::label_fit(bundle, &window.state::<jobs::Fonts>())).await
+}
+
+#[tauri::command]
+pub async fn label_apply(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "add the labels")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::label_apply(
+            bundle,
+            &window.state::<jobs::Fonts>(),
+            &registry,
+            &mut |progress| {
+                let _ = window.emit(jobs::LABEL_PROGRESS, progress);
+            },
+        )
+    })
+    .await
+    .map(Response::new)
+}
+
+/// `CsvFile` in src/label/ipc.ts.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct CsvFile {
+    pub name: String,
+    pub rows: Vec<Vec<String>>,
+}
+
+/// The open dialog for a list label's CSV file, read here; null when it is cancelled. The path
+/// never reaches the window, so nothing is granted.
+#[tauri::command]
+pub async fn label_pick_csv(window: Window) -> Result<Option<CsvFile>, String> {
+    blocking(move || {
+        let Some(path) =
+            open_dialog::pick(&window, "Choose a list", open_dialog::csv_filters(), false)?.pop()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(CsvFile {
+            name: crate::formats::display_name(&path),
+            rows: jobs::read_csv(&path)?,
+        }))
+    })
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
 // Measure mode (src/measure/ipc.ts).
 
 #[tauri::command]

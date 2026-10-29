@@ -181,7 +181,7 @@ fn the_categories_hold_what_the_brief_lists() {
         .filter(|i| i.soon.is_some())
         .map(|i| i.id)
         .collect();
-    assert_eq!(soon, ["text", "whistle", "mold", "mesh_on_spline", "nist"]);
+    assert_eq!(soon, ["mesh_on_spline", "nist"]);
 }
 
 #[test]

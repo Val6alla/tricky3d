@@ -3,6 +3,7 @@ mod commands;
 pub mod formats;
 pub mod grants;
 pub mod jobs;
+pub mod label;
 pub mod library;
 pub mod measure;
 pub mod mesh;
@@ -93,6 +94,7 @@ pub fn run() {
         .manage(RepairJobs::default())
         .manage(CutCache::default())
         .manage(measure::MeasureCache::default())
+        .manage(jobs::Fonts::default())
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::import_mesh,
@@ -123,6 +125,11 @@ pub fn run() {
             commands::library_catalog,
             commands::library_build,
             commands::library_pick_image,
+            commands::label_fonts,
+            commands::label_shape,
+            commands::label_fit,
+            commands::label_apply,
+            commands::label_pick_csv,
             commands::measure_pick,
             commands::measure_fit,
             commands::measure_evaluate,

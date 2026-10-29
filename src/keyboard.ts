@@ -6,6 +6,7 @@ import { isRepairing } from "./repair/session";
 import { useStore, type GizmoMode } from "./store";
 import { finishScale } from "./transformTools";
 import { useUi } from "./ui";
+import { isLabelOpen, labelKey } from "./label/session";
 
 type KeyPress = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">;
 
@@ -124,6 +125,11 @@ function onKeyDown(e: KeyboardEvent) {
     return;
   }
   if (e.key === "Escape" && dropPending()) {
+    e.preventDefault();
+    return;
+  }
+  // Label generation: Esc leaves Place label, then drops the selection; Delete removes the selected label.
+  if (isLabelOpen() && !isTextEntry(e.target) && labelKey(e.key)) {
     e.preventDefault();
     return;
   }

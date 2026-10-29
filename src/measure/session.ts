@@ -21,6 +21,7 @@ import { forgetMeasureMeshes, measureEvaluate, measureFit, measurePick } from ".
 import { emptySession, LAST_TOOL_KEY, useMeasure, type MeasurePanelTab, type MeasureSession, type PendingFeature, type ResultEntry } from "./store";
 import { DEFAULT_TOOL, clicksFor, toolById, toolForGroup, type MeasureTool, type ToolGroup } from "./tools";
 import type { Measurement } from "./types";
+import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
 
 /** Main-document commands that would move or change the parts refuse with this while the mode is open. */
 export const CLOSE_MEASURE_FIRST = "Close Measure first.";
@@ -85,6 +86,7 @@ export function openMeasure(tool: string = state().lastTool): void {
   if (isRepairing()) return toast(CLOSE_REPAIR_FIRST);
   if (isBooleanOpen()) return toast(CLOSE_BOOLEAN_FIRST);
   if (isLibraryOpen()) return toast(CLOSE_LIBRARY_FIRST);
+  if (isLabelOpen()) return toast(CLOSE_LABEL_FIRST);
   if (meshOperationRunning()) return toast(WAIT_MESSAGE);
   if (browserOnly("Measuring")) return;
   const picked = toolById(tool) ? tool : DEFAULT_TOOL;

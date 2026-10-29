@@ -12,6 +12,7 @@ mod design;
 mod expr;
 mod gear;
 mod hull;
+mod lettering;
 mod math;
 mod primitive;
 mod qr;
@@ -320,6 +321,7 @@ pub fn catalog() -> Vec<Item> {
     let mut all = primitive::catalog();
     let mut design = design::catalog();
     design.extend(samples::catalog());
+    design.extend(lettering::catalog());
     design.sort_by_key(|i| DESIGN_ORDER.iter().position(|&id| id == i.id));
     all.extend(design);
     all.extend(math::catalog());
@@ -509,6 +511,7 @@ pub fn make(
     let mesh = match spec.category {
         Category::Primitive => primitive::make(id, &v).map_err(failed)?,
         Category::Design if samples::has(id) => samples::make(id, &v, control)?,
+        Category::Design if lettering::has(id) => lettering::make(id, &v, control)?,
         Category::Design => design::make(id, &v, sources, control)?,
         Category::Mathematical => math::make(id, &v, sources, control)?,
         Category::Quality => quality::make(id, &v, control)?,

@@ -49,9 +49,10 @@ You can also watch the running app from outside and list its connections while y
 | Part library: box, cylinder, sphere, torus, helix and 8 more solids, made to the sizes you type | Ready |
 | Platform statistics: a sortable table of every part, the platform's packing density, export to CSV | Ready |
 | Measuring: distances, angles, radii, positions and wall thickness between points, edges, circles, spheres and surfaces, saved with the project | Ready |
+| Labels: text, a picture, numbered or listed copies, and breakaway tags, raised from or sunk into a part's surface, in a built-in font or one installed on your computer | Ready |
 | Bridging a gap between two open edges | Coming soon |
 | Overhang, skin, centre of gravity and other analysis | Coming soon |
-| Mirror, hollow, simplify, smooth, remesh and labels | Coming soon |
+| Mirror, hollow, simplify, smooth and remesh | Coming soon |
 | Auto-arrange, packing and copies | Coming soon |
 | Recent files and autosave | Coming soon |
 | Screenshots and reports | Coming soon |
@@ -60,8 +61,8 @@ Buttons for features that aren't ready yet carry a "Soon" badge. To hide them, t
 
 ## Known limitations
 
-- **Unsigned builds.** The installers aren't signed with a paid Apple or Microsoft certificate, so macOS and Windows warn you the first time. [Installing](#installing) shows how to allow the app.
-- **Platforms.** Macs need Apple Silicon and macOS 13 or later; there is no build for Intel Macs. Linux builds are for x86-64 only. Most testing happens on Windows, and the macOS and Linux builds get less of it.
+- **Unsigned builds.** The installers aren't signed with a paid Apple or Microsoft certificate, so macOS and Windows warn you the first time. [INSTALL.md](INSTALL.md) shows how to allow the app.
+- **Platforms.** Macs need macOS 13 or later; one app runs on both Apple Silicon and Intel Macs. Linux builds are for x86-64 only. Most testing happens on Windows, and the macOS and Linux builds get less of it.
 - **Units.** STL, OBJ, PLY and OFF files don't say which unit they use, so tricky3D reads them as millimetres. A model drawn in inches needs scaling after import. When a model looks like it was drawn in metres, tricky3D asks.
 - **Extended repair can fill hollow parts.** Wrap part surface rebuilds the outside of a part. On a part with an inner cavity, such as a hollowed resin print, it can fill the cavity. In the last full test on the [Thingi10K](https://ten-thousand-models.appspot.com/) models, this happened on 21 of 5,050 models that needed no repair. Repair a copy and check the result before you print it.
 - **Repair speed.** Extended repair on large, messy models (hundreds of thousands of triangles in many overlapping shells) can take from a few seconds to over a minute. In the same test, it repaired 4,939 of Thingi10K's 4,947 broken models. Seven did not finish within 90 seconds, and one file could not be read.
@@ -87,32 +88,7 @@ tricky3D saves projects as 3MF files, which other 3MF programs can open too.
 
 ## Installing
 
-Download the file for your computer from the [Releases](../../releases) page.
-
-### Mac (Apple Silicon, macOS 13 or later)
-
-1. Download `tricky3D_<version>_aarch64.dmg` with Safari. Chrome may block the download because the app isn't signed with an Apple developer certificate.
-2. Open the `.dmg` and drag tricky3D to the Applications folder.
-3. Open tricky3D from Applications. The first time, macOS can't verify the developer and won't open it. On macOS 15 and later the message says "tricky3D" Not Opened. Click **Done**.
-4. Allow tricky3D once, in one of these ways:
-   - **macOS 15 and later** (this works on 13 and 14 too): open **System Settings › Privacy & Security** and scroll down to the Security section. Next to the message about tricky3D, click **Open Anyway**. Click **Open Anyway** again in the dialog, then confirm with your password or Touch ID. The button stays there for about an hour after you tried to open the app.
-   - **macOS 13 and 14:** right-click (or Control-click) tricky3D in Applications, choose **Open**, then click **Open** in the dialog. Apple removed this shortcut in macOS 15.
-   - **Terminal, any version:** run `xattr -dr com.apple.quarantine /Applications/tricky3D.app`, then open tricky3D as usual.
-
-After that, tricky3D opens like any other app. You need to allow it again after you install a new version.
-
-### Windows
-
-1. Download `tricky3D_<version>_x64-setup.exe` (or the `.msi`). If your browser warns that the file isn't commonly downloaded, choose to keep it.
-2. Run it. Windows SmartScreen may warn that the app is unrecognised, because it is unsigned. Click **More info**, then **Run anyway**.
-
-If Smart App Control blocks the installer instead, Windows can't make an exception for one app. You would have to turn Smart App Control off in **Windows Security › App & browser control**, and on some versions of Windows 11 it can't be turned back on without reinstalling Windows.
-
-The installer includes Microsoft's WebView2 runtime and installs it only if your PC doesn't have it yet, so it never downloads anything.
-
-### Linux
-
-Use the `.AppImage`: make it executable (`chmod +x tricky3D_<version>_amd64.AppImage`) and run it. On Debian and Ubuntu you can install the `.deb` instead (`sudo apt install ./<file>.deb`).
+Download the installer for your computer from the [Releases](../../releases) page: a `.dmg` for Macs with Apple or Intel chips (macOS 13 or later), a `-setup.exe` for Windows, and an `.AppImage` or `.deb` for Linux. The installers aren't signed, so macOS and Windows warn you before the first start. [INSTALL.md](INSTALL.md) shows, step by step, how to install tricky3D and get past that warning on each system.
 
 ## Building from source
 
@@ -142,7 +118,7 @@ node scripts/third-party.mjs --check                 # check THIRD_PARTY.md and 
 cargo deny --manifest-path src-tauri/Cargo.toml check licenses   # check the Rust licenses (install once: cargo install --locked cargo-deny)
 ```
 
-GitHub Actions builds the macOS, Windows and Linux installers (`.github/workflows/release.yml`). Run the workflow by hand from the Actions tab to get test builds as downloads on the run page, or push a tag such as `v0.1.0` to create a draft release.
+GitHub Actions builds the macOS, Windows and Linux installers (`.github/workflows/release.yml`) after running the same checks as CI. Run the workflow by hand from the Actions tab to get test builds as downloads on the run page, or push a tag such as `v0.2.0` to create a draft release with the installers attached. The tag must match the app's version, which `scripts/bump-version.sh` (or `scripts/bump-version.ps1` on Windows) sets in every file that holds it.
 
 ## Contributing
 
