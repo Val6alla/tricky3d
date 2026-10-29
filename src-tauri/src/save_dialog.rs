@@ -339,16 +339,20 @@ mod tests {
 
     /// The real Windows dialog, set up but not shown: the type the part came in is selected, the
     /// name and folder are filled in, and the system asks before replacing (one file) or leaves it
-    /// to the window (one file per part).
+    /// to the window (one file per part). The folder goes in by its short 8.3 name and the dialog
+    /// answers with the long one, so the two are compared as folders, not as text.
     #[cfg(windows)]
     #[test]
     fn the_windows_dialog_selects_the_parts_format_and_asks_before_replacing() {
         use windows::Win32::UI::Shell::{FOS_OVERWRITEPROMPT, SIGDN_FILESYSPATH};
 
-        let folder = std::env::temp_dir()
+        let root = std::env::temp_dir()
             .join("tricky3d-tests")
             .join(format!("save-dialog-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
+        let long = root.join("models with a long name");
+        std::fs::create_dir_all(&long).unwrap();
+        // Its short 8.3 name where the volume keeps them, as in a Windows runner's temp folder.
+        let folder = crate::grants::win::short_name(&long).unwrap();
         let _apartment = windows_dialog::Apartment::enter();
         for (format, each, index) in [("obj", false, 3u32), ("stl", false, 1), ("off", true, 6)] {
             // As commands::pick_export_file asks for it.
@@ -372,10 +376,16 @@ mod tests {
                 windows::Win32::System::Com::CoTaskMemFree(Some(name.0 as *const _));
                 let shown = dialog.GetFolder().unwrap();
                 let text = shown.GetDisplayName(SIGDN_FILESYSPATH).unwrap();
-                assert_eq!(PathBuf::from(text.to_string().unwrap()), folder);
+                let opens_in = PathBuf::from(text.to_string().unwrap());
                 windows::Win32::System::Com::CoTaskMemFree(Some(text.0 as *const _));
+                // Both made canonical: long names, the letter case on disk, one form.
+                assert_eq!(
+                    std::fs::canonicalize(&opens_in).unwrap(),
+                    std::fs::canonicalize(&folder).unwrap(),
+                    "{format}: opens in {opens_in:?}, asked for {folder:?}"
+                );
             }
         }
-        let _ = std::fs::remove_dir_all(&folder);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

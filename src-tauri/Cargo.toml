@@ -43,10 +43,14 @@ num-bigint = "0.4"
 num-rational = "0.4"
 num-traits = "0.2"
 
-# Repair runs opt out of Windows power throttling while they last (src/power.rs). Tauri already
-# builds this crate on Windows.
+# Repair runs opt out of Windows power throttling while they last (src/power.rs), and save dialogs
+# tell folders apart by their long names (src/grants.rs). Tauri already builds this crate on Windows.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+  "Win32_System_WindowsProgramming",
+] }
 # The Export save dialog (src/save_dialog.rs), which selects the part's own format in its type
 # list; the dialog plugin always selects the first type. Tauri already builds this crate on Windows.
 windows = { version = "0.62", features = [

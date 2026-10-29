@@ -51,7 +51,7 @@ The icons come from the Lucide icon set (ISC), shipped inside lucide-react. Luci
 | robust | MIT OR Apache-2.0 | dependency (exact geometric predicates for repair) |
 | spade | MIT OR Apache-2.0 | dependency (constrained Delaunay triangulation for Wrap part surface); brings in hashbrown (with allocator-api2), num-traits and smallvec, all MIT OR Apache-2.0 |
 | rayon | MIT OR Apache-2.0 | dependency (runs repair work on every processor core but one); brings in rayon-core and the crossbeam crates, all MIT OR Apache-2.0 |
-| windows-sys | MIT OR Apache-2.0 | Windows-only dependency (power throttling and thread priority for repair work) |
+| windows-sys | MIT OR Apache-2.0 | Windows-only dependency (power throttling and thread priority for repair work; long folder names, so save dialogs know a folder however it is spelled) |
 | windows | MIT OR Apache-2.0 | Windows-only dependency (the Export save dialog's file type list) |
 | libc | MIT OR Apache-2.0 | macOS and Linux dependency (thread priority for repair work) |
 | objc2, block2 | MIT | macOS-only dependencies (the open panel's file type menu) |

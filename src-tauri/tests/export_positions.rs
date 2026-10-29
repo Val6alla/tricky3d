@@ -782,3 +782,81 @@ fn one_file_per_part_asks_before_replacing_and_writes_nothing_until_then() {
         assert_same_triangles(&reimported(&path), &on_platform(&[part]), name);
     }
 }
+
+/// A file's short 8.3 name, which Windows also answers to; the long one when the volume keeps none.
+#[cfg(windows)]
+fn short_name(path: &Path) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut buf = vec![0u16; 1024];
+    // SAFETY: `wide` is NUL-terminated and `buf` holds 1024 units; both outlive the call.
+    let n = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetShortPathNameW(
+            wide.as_ptr(),
+            buf.as_mut_ptr(),
+            1024,
+        )
+    } as usize;
+    assert!(n > 0 && n < buf.len(), "no short name for {path:?}");
+    PathBuf::from(OsString::from_wide(&buf[..n]))
+}
+
+/// One file per part never writes one part over another through a short 8.3 name. Windows also
+/// answers to "GUN-ST~1.STL" for "gun - stand.stl", so a part with that name would otherwise
+/// replace the file written for the stand a moment before.
+#[cfg(windows)]
+#[test]
+fn one_file_per_part_never_writes_over_its_own_file_through_a_short_name() {
+    let dir = temp_dir("export-each-short-names");
+    let parts = worked_on(&dir);
+    let stand = &parts[0];
+    // The short name the stand's file gets in an empty folder.
+    let probe = dir.join("probe");
+    std::fs::create_dir_all(&probe).unwrap();
+    export_each(&probe.join("x.stl"), "stl-binary", &[stand], false);
+    let long = probe.join(format!("{}.stl", stand.name));
+    let alias = short_name(&long);
+    if alias == long {
+        eprintln!("this volume keeps no short names; nothing to test");
+        return;
+    }
+    let alias_stem = alias.file_stem().unwrap().to_string_lossy().into_owned();
+    let twin = Part {
+        name: alias_stem.clone(),
+        ..parts[1].clone()
+    };
+
+    let folder = dir.join("each");
+    std::fs::create_dir_all(&folder).unwrap();
+    let done = export_each(&folder.join("x.stl"), "stl-binary", &[stand, &twin], false);
+    assert_eq!(
+        done.written,
+        [
+            format!("{}.stl", stand.name),
+            format!("{alias_stem} (2).stl")
+        ]
+    );
+    for (name, part) in done.written.iter().zip([stand, &twin]) {
+        assert_same_triangles(&reimported(&folder.join(name)), &on_platform(&[part]), name);
+    }
+
+    // An old "gun - stand.stl" is there, so both names are, and the answer is Replace: the stand
+    // replaces the old file, and the twin still does not land on the stand's new one.
+    let again = dir.join("again");
+    std::fs::create_dir_all(&again).unwrap();
+    std::fs::write(again.join(format!("{}.stl", stand.name)), b"old").unwrap();
+    let asked = export_each(&again.join("x.stl"), "stl-binary", &[stand, &twin], false);
+    assert_eq!(asked.existing.len(), 2, "{:?}", asked.existing);
+    let done = export_each(&again.join("x.stl"), "stl-binary", &[stand, &twin], true);
+    assert_eq!(
+        done.written,
+        [
+            format!("{}.stl", stand.name),
+            format!("{alias_stem} (2).stl")
+        ]
+    );
+    for (name, part) in done.written.iter().zip([stand, &twin]) {
+        assert_same_triangles(&reimported(&again.join(name)), &on_platform(&[part]), name);
+    }
+}

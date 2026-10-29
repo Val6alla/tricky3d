@@ -178,8 +178,10 @@ pub struct EachResult {
 /// `export_each`: one file per part in the folder of `path` (the file picked in the Export dialog),
 /// each named after its part (formats::part_file_names) with its matrix baked in. Unless the meta
 /// says `replace`, it writes nothing while any of those files is already there and lists them
-/// instead, so the window can ask first. Each file is written whole or not at all, so running it
-/// again after a failure only rewrites files.
+/// instead, so the window can ask first. A part never writes over a file this export wrote for
+/// another part, even through another name the system answers to (a short 8.3 name on Windows).
+/// Each file is written whole or not at all, so running it again after a failure only rewrites
+/// files.
 pub fn export_each(bundle: Bundle) -> Result<EachResult, String> {
     let path = path_field(&bundle.meta)?;
     let file = display_name(&path);
@@ -190,32 +192,50 @@ pub fn export_each(bundle: Bundle) -> Result<EachResult, String> {
         .filter(|f| !f.as_os_str().is_empty())
         .ok_or_else(|| format!("Could not export next to \"{file}\": it names no folder."))?;
     let parts = parts_from(&bundle, &file)?;
-    let names = formats::part_file_names(
-        parts.iter().map(|(name, _, _)| name.as_str()),
-        format.extension(),
-    );
-    let targets: Vec<PathBuf> = names.iter().map(|name| folder.join(name)).collect();
-    if !replace {
-        // Anything by that name counts, a folder or a broken link too: the write would replace it.
-        let existing: Vec<String> = names
-            .iter()
-            .zip(&targets)
-            .filter(|(_, target)| std::fs::symlink_metadata(target).is_ok())
-            .map(|(name, _)| name.clone())
-            .collect();
-        if !existing.is_empty() {
-            return Ok(EachResult {
-                written: Vec::new(),
-                existing,
-            });
-        }
+    let ext = format.extension();
+    let names = formats::part_file_names(parts.iter().map(|(name, _, _)| name.as_str()), ext);
+    // Anything by that name counts, a folder or a broken link too: the write would replace it. The
+    // system answers the way it compares names, so case and short names are its own.
+    let there = |name: &str| std::fs::symlink_metadata(folder.join(name)).is_ok();
+    let existing: Vec<String> = names.iter().filter(|name| there(name)).cloned().collect();
+    if !replace && !existing.is_empty() {
+        return Ok(EachResult {
+            written: Vec::new(),
+            existing,
+        });
     }
-    for ((name, matrix, mesh), target) in parts.iter().zip(&targets) {
+    // Every name planned, in any letter case, as part_file_names counts them.
+    let mut taken: HashSet<String> = names.iter().map(|name| name.to_lowercase()).collect();
+    let mut written = Vec::with_capacity(names.len());
+    // The files written so far, as the system names them (long names, the case on disk).
+    let mut ours: Vec<PathBuf> = Vec::new();
+    for ((name, matrix, mesh), planned) in parts.iter().zip(names) {
+        // A name can reach a file written a moment ago for another part, through another name the
+        // system also answers to, such as a short 8.3 name ("GUN-ST~1.STL" for "gun -
+        // stand.stl"). A file that was not there before may also have been made meanwhile. Neither
+        // is written over: the part takes the next free name. Only files that were there before
+        // are replaced, and only when the window asked (`replace`).
+        let lands_on_ours =
+            || std::fs::canonicalize(folder.join(&planned)).is_ok_and(|file| ours.contains(&file));
+        let file = if there(&planned) && (!existing.contains(&planned) || lands_on_ours()) {
+            let stem = planned.strip_suffix(&format!(".{ext}")).unwrap_or(&planned);
+            let free = (2..)
+                .map(|n| format!("{stem} ({n}).{ext}"))
+                .find(|f| !taken.contains(&f.to_lowercase()) && !there(f))
+                .expect("a free name");
+            taken.insert(free.to_lowercase());
+            free
+        } else {
+            planned
+        };
+        let target = folder.join(&file);
         let baked = bake(mesh, matrix);
-        formats::export_file(target, format, &[NamedMesh { name, mesh: &baked }])?;
+        formats::export_file(&target, format, &[NamedMesh { name, mesh: &baked }])?;
+        ours.extend(std::fs::canonicalize(&target));
+        written.push(file);
     }
     Ok(EachResult {
-        written: names,
+        written,
         existing: Vec::new(),
     })
 }
