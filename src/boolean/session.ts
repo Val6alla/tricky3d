@@ -312,7 +312,8 @@ export function acceptBoolean(): void {
   }
   const inputs = partsOf(result.inputs.map((i) => i.id), parts);
   const removeIds = state().settings.removeOriginals ? inputs.map((p) => p.id) : [];
-  commit({ groups: [{ removeIds, made: [{ name: result.name, result: result.measured }] }] }, inputs, OP_NAMES[result.op]);
+  const from = inputs.map((p) => p.id);
+  commit({ groups: [{ removeIds, from, made: [{ name: result.name, result: result.measured }] }] }, inputs, OP_NAMES[result.op]);
   leave();
 }
 
@@ -568,7 +569,7 @@ function replaceRepaired(part: Part, mesh: MeshData, check: RepairCheck | null) 
   const wasSelected = before?.selected === part.id;
   const { name, color, visible, transparent, locked } = part;
   // The store subscription takes the old id out of the lists; the new one goes back where it was.
-  const [id] = useStore.getState().replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked }] }], "Repair");
+  const [id] = useStore.getState().replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, source: part.source }] }], "Repair");
   const now = session();
   if (!now || !list || id === undefined) return;
   const ids = [...now[list]];

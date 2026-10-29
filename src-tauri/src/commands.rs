@@ -23,6 +23,7 @@ use crate::ops::shell::{Estimate, EstimatePart, ShellSettings};
 use crate::progress::Progress;
 use crate::repair::defaults::Catalog;
 use crate::repair::scripts::{Imported, Script, StoredScripts};
+use crate::save_dialog;
 use crate::workers;
 
 /// `ImportProgress` in src/io/ipc.ts.
@@ -106,11 +107,15 @@ pub async fn open_project(
 ) -> Result<Response, String> {
     let file = PathBuf::from(&path);
     grants.check_read(&file)?;
-    let bytes =
-        heavy(move || jobs::open_project(Path::new(&path), &mut progress_to(on_progress))).await?;
+    let (bytes, sources) = heavy(move || {
+        jobs::open_project_with_sources(Path::new(&path), &mut progress_to(on_progress))
+    })
+    .await?;
     // The opened project is the document now, so Save may write it back, provided the user picked
     // it in the File › Open dialog: an imported or dropped 3MF opens too, but stays read-only.
     grants.adopt_project(&file);
+    // Save and Export open in the folders its parts were imported from, as before it was saved.
+    grants.remember_source_folders(&sources);
     Ok(Response::new(bytes))
 }
 
@@ -127,6 +132,19 @@ pub async fn export_mesh(grants: State<'_, Grants>, request: Request<'_>) -> Res
         grants.check_write(path, extension, "write")?;
     }
     heavy(move || jobs::export_mesh(bundle)).await
+}
+
+/// Export with one file per part: `path` must have been picked for it (pick_export_file with `each`).
+#[tauri::command]
+pub async fn export_each(
+    grants: State<'_, Grants>,
+    request: Request<'_>,
+) -> Result<jobs::EachResult, String> {
+    let bundle = bundle_of(&request, "export")?;
+    if let Some(path) = target_path(&bundle.meta) {
+        grants.check_each(path)?;
+    }
+    heavy(move || jobs::export_each(bundle)).await
 }
 
 #[tauri::command]
@@ -252,31 +270,55 @@ pub async fn pick_open_file(window: Window) -> Result<Option<String>, String> {
     .await
 }
 
-/// The save dialog, opened at `default_path`: a file name, or a path beside a file the user already
-/// picked or dropped. The path picked may be written; null when the dialog is cancelled.
+/// Where a save dialog opens, from the window's `default_path` and `fallback_folder`: the folder of
+/// `default_path` when the user already picked or dropped a file there (or an opened project named it
+/// as a part's source) and it still exists, else `fallback_folder` under the same rule, else none (the
+/// system's choice); and `default_path`'s file name.
+fn save_start(
+    grants: &Grants,
+    default_path: Option<String>,
+    fallback_folder: Option<String>,
+) -> (Option<PathBuf>, Option<String>) {
+    // Rebuilt from their components so a path the window wrote with "/" uses "\" on Windows.
+    let rebuilt = |text: &str| -> PathBuf { Path::new(text).components().collect() };
+    let default_path = default_path
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| rebuilt(&p));
+    let candidates = [
+        default_path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf),
+        fallback_folder
+            .filter(|p| !p.trim().is_empty())
+            .map(|p| rebuilt(&p)),
+    ];
+    let folder = grants.dialog_folder(candidates.iter().flatten());
+    let name = default_path
+        .as_deref()
+        .and_then(Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned());
+    (folder, name)
+}
+
+/// The save dialog, opened as `save_start` says. The path picked may be written; null when the
+/// dialog is cancelled.
 #[tauri::command]
 pub async fn pick_save_file(
     window: Window,
     grants: State<'_, Grants>,
     title: String,
     default_path: Option<String>,
+    fallback_folder: Option<String>,
     filters: Vec<FileFilter>,
 ) -> Result<Option<String>, String> {
     let mut dialog = file_dialog(&window, title, &filters);
-    if let Some(default_path) = default_path.filter(|p| !p.trim().is_empty()) {
-        // Rebuilt from its components so a path the window wrote with "/" uses "\" on Windows.
-        let path: PathBuf = Path::new(&default_path).components().collect();
-        // The folder is only used when a granted file lives there. Nothing about any other folder is
-        // looked up: even checking whether a network path exists reaches out to that host.
-        if let Some(parent) = path.parent()
-            && parent.components().count() > 0
-            && grants.knows_folder(parent)
-        {
-            dialog = dialog.set_directory(parent);
-        }
-        if let Some(name) = path.file_name() {
-            dialog = dialog.set_file_name(name.to_string_lossy());
-        }
+    let (folder, name) = save_start(&grants, default_path, fallback_folder);
+    if let Some(folder) = folder {
+        dialog = dialog.set_directory(folder);
+    }
+    if let Some(name) = name {
+        dialog = dialog.set_file_name(name);
     }
     let app = window.app_handle().clone();
     blocking(move || {
@@ -286,6 +328,54 @@ pub async fn pick_save_file(
         let text = path_text(&path);
         app.state::<Grants>().allow_write(path);
         Ok(Some(text))
+    })
+    .await
+}
+
+/// `ExportPick` in src/io/ipc.ts: the file picked and the type selected (an extension).
+#[derive(Serialize)]
+pub struct ExportPick {
+    path: String,
+    format: &'static str,
+}
+
+/// The Export dialog (src/save_dialog.rs): every format tricky3D writes, always in the same order,
+/// with `format` (an extension) selected, opened as `save_start` says. The path picked may be
+/// written. With `each` the export makes one file per part in its folder instead, so it is granted
+/// for that (Grants::allow_each), and on Windows the system does not ask about replacing it. Null
+/// when cancelled.
+#[tauri::command]
+pub async fn pick_export_file(
+    window: Window,
+    grants: State<'_, Grants>,
+    title: String,
+    default_path: Option<String>,
+    fallback_folder: Option<String>,
+    format: String,
+    each: bool,
+) -> Result<Option<ExportPick>, String> {
+    let (folder, name) = save_start(&grants, default_path, fallback_folder);
+    let request = save_dialog::export_request(title, folder, name, &format);
+    // One file per part writes files named after the parts, not the file picked, and the window asks
+    // about any of those it would replace. Only the Windows dialog can leave its own question out.
+    #[cfg(windows)]
+    let request = save_dialog::SaveRequest {
+        confirm_replace: !each,
+        ..request
+    };
+    blocking(move || {
+        let Some(saved) = save_dialog::show(&window, &request)? else {
+            return Ok(None);
+        };
+        let text = path_text(&saved.path);
+        let grants = window.state::<Grants>();
+        if each {
+            grants.allow_each(saved.path);
+        } else {
+            grants.allow_write(saved.path);
+        }
+        let (format, _) = save_dialog::EXPORT_TYPES[saved.type_index];
+        Ok(Some(ExportPick { path: text, format }))
     })
     .await
 }
@@ -353,20 +443,58 @@ pub fn repair_cut_reset(cache: State<'_, CutCache>) {
 
 /// Built in memory in an instant, so it runs right here.
 #[tauri::command]
-pub fn library_catalog() -> Vec<crate::library::Primitive> {
+pub fn library_catalog() -> Vec<crate::library::Item> {
     crate::library::catalog()
 }
 
 #[tauri::command]
-pub async fn library_primitive(
-    window: Window,
-    id: String,
-    params: Map<String, Value>,
-    job: u64,
-) -> Result<Response, String> {
-    heavy(move || jobs::library_primitive(&id, &params, job, &window.state::<RepairJobs>()))
-        .await
-        .map(Response::new)
+pub async fn library_build(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "make the part")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::library_build(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::LIBRARY_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+/// Pictures larger than this are refused before they are read.
+const MAX_PICTURE_BYTES: u64 = 64 << 20;
+
+/// The open dialog for a picture (Part library › Bitmap, Heightmap, Picture sweep), read here. The
+/// answer is the file's name as UTF-8, its length first as 4 little-endian bytes, then the file's
+/// bytes for the window to decode; empty when the dialog is cancelled. The path never reaches the
+/// window, so nothing is granted.
+#[tauri::command]
+pub async fn library_pick_image(window: Window) -> Result<Response, String> {
+    blocking(move || {
+        let Some(path) = open_dialog::pick(
+            &window,
+            "Choose a picture",
+            open_dialog::picture_filters(),
+            false,
+        )?
+        .pop() else {
+            return Ok(Response::new(Vec::new()));
+        };
+        let name = crate::formats::display_name(&path);
+        let fail = |reason: String| format!("Could not read \"{name}\": {reason}.");
+        let size = std::fs::metadata(&path)
+            .map_err(|e| fail(crate::formats::read_error(&e)))?
+            .len();
+        if size > MAX_PICTURE_BYTES {
+            return Err(fail("the picture is larger than 64 MB".into()));
+        }
+        let bytes = std::fs::read(&path).map_err(|e| fail(crate::formats::read_error(&e)))?;
+        let mut out = Vec::with_capacity(4 + name.len() + bytes.len());
+        out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&bytes);
+        Ok(Response::new(out))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -565,6 +693,7 @@ mod tests {
             transparent: false,
             locked: false,
             measurements: None,
+            source: None,
             mesh: &mesh,
         };
         project::save_file(&project_file, [200.0; 3], &[part]).unwrap();

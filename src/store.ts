@@ -26,6 +26,12 @@ export interface Part {
   color: string; // CSS hex
   /** Measure mode's measurements on the part, in its own frame; absent when it has none. A new mesh drops them. */
   measurements?: readonly Measurement[];
+  /**
+   * The file the part was imported from, or the source of the part it was made from (cut pieces, shells, merges,
+   * Boolean results, repairs, copies); absent for parts that never came from a file. Save and Export suggest its
+   * name and open in its folder.
+   */
+  source?: string;
 }
 
 export type Projection = "perspective" | "orthographic";
@@ -57,6 +63,13 @@ export type GizmoMode = "combined" | "scale";
 /** What to do with "Place on platform?" when importing a file. */
 export type ImportPlacement = "ask" | "always" | "never";
 
+/** Export's options, remembered between runs: how STL is written, and where several parts go. */
+export interface ExportOptions {
+  stl: "binary" | "ascii";
+  /** All parts in one file, or one file per part named after it. */
+  parts: "one-file" | "per-part";
+}
+
 export type SelectMode = "replace" | "add" | "toggle";
 
 /**
@@ -76,6 +89,7 @@ export interface ClipboardPart {
   color: string;
   stats: MeshStats | null;
   edges: Float32Array | null;
+  source?: string;
 }
 
 export interface NewPart {
@@ -87,6 +101,7 @@ export interface NewPart {
   transparent?: boolean;
   locked?: boolean;
   measurements?: readonly Measurement[];
+  source?: string;
 }
 
 /** Parts to take out (by id) and the parts that take their place. */
@@ -127,6 +142,8 @@ export const PART_COLORS = ["#a9b1bc", "#b9ae9d", "#a0b6a9", "#aaa4c0", "#bda3a3
 
 const HIDE_SOON_KEY = "tricky3d.hideSoon";
 const IMPORT_PLACEMENT_KEY = "tricky3d.importPlacement";
+const EXPORT_STL_KEY = "tricky3d.exportStl";
+const EXPORT_PARTS_KEY = "tricky3d.exportParts";
 // View settings that are remembered, as "1" or "0". Anything else stored (or nothing) means the default.
 const SHOW_PLATFORM_KEY = "tricky3d.showPlatform";
 const ALWAYS_SHOW_GIZMO_KEY = "tricky3d.alwaysShowGizmo";
@@ -151,6 +168,14 @@ export function saveSetting(key: string, value: string) {
 function loadImportPlacement(): ImportPlacement {
   const value = loadSetting(IMPORT_PLACEMENT_KEY);
   return value === "always" || value === "never" ? value : "ask";
+}
+
+/** The export options remembered from an earlier run; the default (binary STL, one file) for any missing or unknown. */
+export function loadExportOptions(): ExportOptions {
+  return {
+    stl: loadSetting(EXPORT_STL_KEY) === "ascii" ? "ascii" : "binary",
+    parts: loadSetting(EXPORT_PARTS_KEY) === "per-part" ? "per-part" : "one-file",
+  };
 }
 
 let partSeq = 0;
@@ -192,6 +217,7 @@ function buildParts(newParts: NewPart[], colorStart: number): Part[] {
       locked: p.locked ?? false,
       color: p.color ?? PART_COLORS[(colorStart + i) % PART_COLORS.length],
       ...(p.measurements && p.measurements.length > 0 ? { measurements: p.measurements } : {}),
+      ...(p.source ? { source: p.source } : {}),
     }),
   );
 }
@@ -225,10 +251,16 @@ export interface AppState {
   /** Settings → "Hide unavailable features". */
   hideSoon: boolean;
   importPlacement: ImportPlacement;
+  exportOptions: ExportOptions;
   /** Parts last copied, in parts-list order. Empty after New project and before the first copy. */
   clipboard: ClipboardPart[];
   /** How many times the current clipboard has been pasted and not undone. The next paste steps by one more gap. */
   pasteCount: number;
+  /**
+   * The folder of the last file picked or dropped (import, open, save, export) in this session, or null. Save and
+   * Export open there for parts that never came from a file, or whose folder is gone.
+   */
+  lastFolder: string | null;
 
   /** Adds parts as one undo step and selects them. Returns the new ids. */
   addParts(parts: NewPart[], label?: string): string[];
@@ -276,6 +308,9 @@ export interface AppState {
   setGizmoMode(mode: GizmoMode | null): void;
   setHideSoon(hide: boolean): void;
   setImportPlacement(value: ImportPlacement): void;
+  /** Remembers Export's options for the next export, also after a restart. */
+  setExportOptions(options: ExportOptions): void;
+  setLastFolder(folder: string | null): void;
   newProject(): void;
   /** Replaces the scene with an opened project. Clears the undo history; the result counts as saved. */
   loadProject(project: ProjectData): void;
@@ -346,8 +381,10 @@ export const useStore = create<AppState>()((set, get) => {
     gizmoMode: null,
     hideSoon: loadSetting(HIDE_SOON_KEY) === "1",
     importPlacement: loadImportPlacement(),
+    exportOptions: loadExportOptions(),
     clipboard: [],
     pasteCount: 0,
+    lastFolder: null,
 
     addParts(newParts, label = "Add parts") {
       if (newParts.length === 0) return [];
@@ -401,7 +438,7 @@ export const useStore = create<AppState>()((set, get) => {
       const copies = sources.map((p): NewPart => {
         const m = [...p.matrix];
         m[12] += dx;
-        return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color };
+        return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color, source: p.source };
       });
       return get().addParts(copies, "Duplicate");
     },
@@ -419,6 +456,7 @@ export const useStore = create<AppState>()((set, get) => {
           color: p.color,
           stats: cachedStats(p.mesh) ?? null,
           edges: cachedProblemEdges(p.mesh) ?? null,
+          source: p.source,
         })),
         pasteCount: 0,
       });
@@ -437,7 +475,7 @@ export const useStore = create<AppState>()((set, get) => {
       const copies = clip.map((p): NewPart => {
         const matrix = [...p.matrix];
         matrix[12] += shift;
-        return { name: p.name, mesh: p.mesh, matrix, color: p.color };
+        return { name: p.name, mesh: p.mesh, matrix, color: p.color, source: p.source };
       });
       const label = clip.length === 1 ? `Paste ${clip[0].name}` : `Paste ${clip.length} parts`;
       const ids = get().addParts(copies, label);
@@ -606,6 +644,16 @@ export const useStore = create<AppState>()((set, get) => {
     setImportPlacement(value) {
       saveSetting(IMPORT_PLACEMENT_KEY, value);
       set({ importPlacement: value });
+    },
+
+    setExportOptions(options) {
+      saveSetting(EXPORT_STL_KEY, options.stl);
+      saveSetting(EXPORT_PARTS_KEY, options.parts);
+      set({ exportOptions: { stl: options.stl, parts: options.parts } });
+    },
+
+    setLastFolder(folder) {
+      if (folder !== get().lastFolder) set({ lastFolder: folder });
     },
 
     newProject() {

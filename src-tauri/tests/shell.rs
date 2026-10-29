@@ -279,6 +279,7 @@ fn a_hollow_part_saves_and_opens_again_as_3mf() {
         transparent: false,
         locked: false,
         measurements: None,
+        source: None,
         mesh,
     };
     project::save_file(&file, [200.0; 3], &[part]).unwrap();

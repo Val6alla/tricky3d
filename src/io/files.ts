@@ -3,7 +3,7 @@
 // file names, placement, the import sequence) are plain exported functions so tests can run them
 // without Tauri.
 import { isTauri } from "@tauri-apps/api/core";
-import { message } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 import { boundsOf, IDENTITY, unionBounds, type Bounds } from "../mesh";
 import { primeMeshCaches } from "../meshCache";
 import { closeRepair } from "../repair/session";
@@ -12,6 +12,7 @@ import {
   targetIds,
   useStore,
   type AppState,
+  type ExportOptions,
   type ImportPlacement,
   type MeshData,
   type NewPart,
@@ -22,14 +23,19 @@ import { prompt, startTask, toast, type ObjectsAnswer, type PlaceAnswer, type Ta
 import { readMeasurements } from "../measure/persist";
 import { viewport } from "../viewport/api";
 import {
+  exportEach,
   exportMeshes,
   importMesh,
   openProjectFile,
+  pickExportFile,
   pickFiles,
   pickOpenFile,
   pickSaveFile,
   saveProjectFile,
+  type EachResult,
   type ExportFormat,
+  type ExportPick,
+  type ExportType,
   type FileFilter,
   type ImportFormat,
   type ImportProgress,
@@ -46,32 +52,8 @@ export const IMPORT_FORMATS: readonly ImportFormat[] = ["stl", "obj", "ply", "3m
 
 const SUPPORTED_TEXT = "STL, OBJ, PLY, 3MF, AMF and OFF";
 
-export const EXPORT_LABELS: Record<ExportFormat, string> = {
-  "stl-binary": "STL (binary)",
-  "stl-ascii": "STL (ASCII)",
-  obj: "OBJ",
-  ply: "PLY",
-  "3mf": "3MF",
-  amf: "AMF",
-};
-
-export const EXPORT_EXTENSIONS: Record<ExportFormat, string> = {
-  "stl-binary": "stl",
-  "stl-ascii": "stl",
-  obj: "obj",
-  ply: "ply",
-  "3mf": "3mf",
-  amf: "amf",
-};
-
-/** What Home › Export writes for each extension typed in its save dialog. */
-const EXPORT_BY_EXTENSION: Record<string, ExportFormat> = { stl: "stl-binary", obj: "obj", ply: "ply", "3mf": "3mf", amf: "amf" };
-
-/** Save-dialog filters for Home › Export, one per extension; the extension picked decides the format. */
-const EXPORT_FILTERS: FileFilter[] = Object.keys(EXPORT_BY_EXTENSION).map((ext) => ({
-  name: `${ext.toUpperCase()} (*.${ext})`,
-  extensions: [ext],
-}));
+/** Export's types in the order its dialog lists them (src-tauri/src/save_dialog.rs); each is also its extension. */
+export const EXPORT_TYPES: readonly ExportType[] = ["stl", "3mf", "obj", "ply", "amf", "off"];
 
 const PROJECT_FILTERS: FileFilter[] = [{ name: "tricky3D project (*.3mf)", extensions: ["3mf"] }];
 
@@ -99,7 +81,18 @@ export function fileStem(path: string): string {
 
 /** `name` in the same folder as `reference`, or `name` alone when there is no reference. */
 export function besidePath(reference: string | null, name: string): string {
-  return reference ? reference.slice(0, reference.length - fileName(reference).length) + name : name;
+  return reference ? folderOf(reference) + name : name;
+}
+
+/** The folder of a file path with its trailing separator, or "" for a bare name. */
+export function folderOf(path: string): string {
+  return path.slice(0, path.length - fileName(path).length);
+}
+
+/** `name` inside `folder` (a folder path, with or without its trailing separator), or `name` alone without one. */
+export function inFolder(folder: string | null, name: string): string {
+  if (!folder) return name;
+  return /[\\/]$/.test(folder) ? folder + name : `${folder}${folder.includes("\\") ? "\\" : "/"}${name}`;
 }
 
 /** The import format for a path, by extension; null when tricky3D cannot read it. */
@@ -113,10 +106,14 @@ export function withExtension(path: string, ext: string): string {
   return extensionOf(path) === ext ? path : `${path}.${ext}`;
 }
 
-/** Path and format for a file picked in Home › Export. An unknown extension gets ".stl" added (binary STL). */
-export function exportTarget(path: string): { path: string; format: ExportFormat } {
-  const format = EXPORT_BY_EXTENSION[extensionOf(path)];
-  return format ? { path, format } : { path: `${path}.stl`, format: "stl-binary" };
+/**
+ * Path and format for a file picked in the Export dialog with the type `selected`. A name ending in one of the types'
+ * extensions is that type; any other name gets the selected type's extension added. STL is written as `stl` says.
+ */
+export function exportTarget(path: string, selected: ExportType, stl: ExportOptions["stl"]): { path: string; format: ExportFormat } {
+  const named = EXPORT_TYPES.find((t) => t === extensionOf(path));
+  const type = named ?? selected;
+  return { path: named ? path : `${path}.${selected}`, format: type === "stl" ? (stl === "ascii" ? "stl-ascii" : "stl-binary") : type };
 }
 
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
@@ -135,6 +132,92 @@ export function sanitizeFileName(name: string, fallback = "Untitled"): string {
 /** Default export file name (no extension): the part's name for one part, else the project's. */
 export function exportBaseName(parts: readonly { name: string }[], projectName: string): string {
   return sanitizeFileName(parts.length === 1 ? parts[0].name : projectName);
+}
+
+/** The file the parts came from: the source of the first of them (in the order given) that has one, or null. */
+export function sourceOf(parts: readonly { source?: string }[]): string | null {
+  return parts.find((p) => p.source)?.source ?? null;
+}
+
+/** Where a save dialog opens: the path it suggests (folder and name), and the folder to use when that folder is gone. */
+export interface DialogDefault {
+  defaultPath: string;
+  fallbackFolder?: string;
+}
+
+/**
+ * The type Export's dialog selects for parts: the format of the file they came from when tricky3D writes it, else STL
+ * (also for parts that never came from a file, such as Part library parts). The name it is saved with decides in the
+ * end (exportTarget).
+ */
+export function exportType(parts: readonly { source?: string }[]): ExportType {
+  const source = sourceOf(parts);
+  const ext = source ? extensionOf(source) : "";
+  return EXPORT_TYPES.find((t) => t === ext) ?? "stl";
+}
+
+/**
+ * The save dialog of an export of `parts` as `.ext`. Parts that came from a file (or were made from one) suggest that
+ * file's own name, never a suffix such as "(cut 1)", in the folder it was imported from, even when the last export
+ * went elsewhere; should that folder be gone, the last folder used. Parts that never came from a file suggest their
+ * name (one part) or the project's, in the last folder used.
+ */
+export function exportDialogDefault(
+  parts: readonly { name: string; source?: string }[],
+  ext: string,
+  projectName: string,
+  lastFolder: string | null,
+): DialogDefault {
+  const source = sourceOf(parts);
+  if (source) return { defaultPath: `${folderOf(source)}${fileStem(source)}.${ext}`, fallbackFolder: lastFolder ?? undefined };
+  return { defaultPath: inFolder(lastFolder, `${exportBaseName(parts, projectName)}.${ext}`) };
+}
+
+/**
+ * The Export dialog of one file per part: the folder exportDialogDefault opens in, with the first part's own file
+ * name, since every part's file is named after the part there.
+ */
+export function eachDialogDefault(parts: readonly { name: string; source?: string }[], ext: string, lastFolder: string | null): DialogDefault {
+  const name = `${sanitizeFileName(parts[0]?.name ?? "")}.${ext}`;
+  const source = sourceOf(parts);
+  if (source) return { defaultPath: folderOf(source) + name, fallbackFolder: lastFolder ?? undefined };
+  return { defaultPath: inFolder(lastFolder, name) };
+}
+
+/** A folder path for a message: without its trailing separator. */
+function shownFolder(folder: string): string {
+  return folder.replace(/[\\/]+$/, "") || folder;
+}
+
+/** The question before one file per part replaces files that are there, naming up to three of them. */
+export function replaceQuestion(existing: readonly string[], folder: string): string {
+  const names = existing.slice(0, 3).map((n) => `"${n}"`).join(", ");
+  const more = existing.length > 3 ? ` and ${existing.length - 3} more` : "";
+  return existing.length === 1
+    ? `${names} is already in "${shownFolder(folder)}". Replace it?`
+    : `${names}${more} are already in "${shownFolder(folder)}". Replace them?`;
+}
+
+/**
+ * The save dialog of Save project (as). Like an export: the parts' original file name with ".3mf", in its folder (else
+ * the last folder used); without a source, the project's own file, else its name in the last folder used.
+ */
+export function saveDialogDefault(
+  parts: readonly { source?: string }[],
+  projectName: string,
+  projectPath: string | null,
+  lastFolder: string | null,
+): DialogDefault {
+  const source = sourceOf(parts);
+  if (source) return { defaultPath: `${folderOf(source)}${fileStem(source)}.3mf`, fallbackFolder: lastFolder ?? undefined };
+  if (projectPath) return { defaultPath: projectPath, fallbackFolder: lastFolder ?? undefined };
+  return { defaultPath: inFolder(lastFolder, `${sanitizeFileName(projectName)}.3mf`) };
+}
+
+/** Remembers the folder of a file the user just picked or dropped as the last folder used. */
+export function usedFile(path: string): void {
+  const folder = folderOf(path);
+  if (folder) useStore.getState().setLastFolder(folder);
 }
 
 /** Error text for files tricky3D cannot read, naming up to three of them. */
@@ -244,6 +327,7 @@ export function projectPart(m: LoadedMesh): NewPart {
     transparent: m.transparent,
     locked: m.locked,
     measurements: readMeasurements(m.measurements),
+    ...(typeof m.source === "string" && m.source ? { source: m.source } : {}),
   };
 }
 
@@ -374,7 +458,7 @@ export async function importFile(path: string, env: ImportEnv): Promise<"added" 
   if (place === null || closed()) return "skipped";
   const placed = place ? placedMatrices(result.meshes, env.platform()) : null;
   const parts = result.meshes.map(
-    (m, i): NewPart => ({ name: m.name, mesh: m.mesh, matrix: placed?.[i] ?? m.matrix ?? undefined }),
+    (m, i): NewPart => ({ name: m.name, mesh: m.mesh, matrix: placed?.[i] ?? m.matrix ?? undefined, source: path }),
   );
   env.add(parts, `Import ${name}`);
   for (const w of result.warnings) env.warn(w);
@@ -457,7 +541,10 @@ export async function importPart(): Promise<void> {
     toast(errorMessage(err, "Could not show the file dialog"), "error");
     return;
   }
-  if (picked.length) await importPaths(picked);
+  if (picked.length) {
+    usedFile(picked[0]);
+    await importPaths(picked);
+  }
 }
 
 /**
@@ -469,6 +556,8 @@ export async function importPaths(paths: string[]): Promise<void> {
   const unsupported = paths.filter((p) => importFormatOf(p) === null);
   if (unsupported.length) toast(unsupportedMessage(unsupported), "error");
   const supported = paths.filter((p) => importFormatOf(p) !== null);
+  // A drop is a use of its folder too.
+  if (supported.length) usedFile(supported[0]);
   const env = appImportEnv();
   await Promise.all(
     supported.map(async (path) => {
@@ -496,61 +585,128 @@ function partsToExport(): Part[] | null {
   return parts;
 }
 
-async function pickSavePath(options: { title: string; defaultPath: string; filters: FileFilter[] }): Promise<string | null> {
+async function pickSavePath(options: { title: string; filters: FileFilter[] } & DialogDefault): Promise<string | null> {
   try {
-    return await pickSaveFile(options);
+    const picked = await pickSaveFile(options);
+    if (picked) usedFile(picked);
+    return picked;
   } catch (err) {
     toast(errorMessage(err, "Could not show the save dialog"), "error");
     return null;
   }
 }
 
-async function writeExport(path: string, format: ExportFormat, parts: Part[]): Promise<void> {
-  const name = fileName(path);
-  const task = startTask(`Exporting ${name}`);
+/** The side effects of an export: the app's own dialogs, the store and the talk to Rust. Tests pass fakes. */
+export interface ExportEnv {
+  /** Export's options for `count` parts, opened on `last`; null when cancelled. */
+  askOptions(count: number, last: ExportOptions): Promise<ExportOptions | null>;
+  /** Keeps the options for the next export, also after a restart. */
+  remember(options: ExportOptions): void;
+  /** The Export dialog (pickExportFile); null when cancelled. */
+  pick(request: { title: string; format: ExportType; each: boolean } & DialogDefault): Promise<ExportPick | null>;
+  /** Writes every part into one file. */
+  writeOne(path: string, format: ExportFormat, parts: Part[]): Promise<void>;
+  /** Writes one file per part next to `path` (exportEach). */
+  writeEach(path: string, format: ExportFormat, replace: boolean, parts: Part[]): Promise<EachResult>;
+  /** Whether to replace the `existing` files in `folder`. */
+  askReplace(existing: string[], folder: string): Promise<boolean>;
+}
+
+/** What an export wrote: the files' names and their folder (with its separator; "" when the path had none). */
+export interface Exported {
+  folder: string;
+  files: string[];
+}
+
+/**
+ * Exports `parts`, the same from every entry point: the options step (on `options`, the last ones used), then the
+ * Export dialog with every type tricky3D writes and the parts' own format selected, else STL. One file is named and
+ * placed as exportDialogDefault says, and the system asks before it replaces a file. One file per part (several parts
+ * and that option) names each file after its part in the folder picked, and asks before replacing any of them.
+ * Null when cancelled at any step; rejects with a writer's error.
+ */
+export async function exportParts(
+  parts: Part[],
+  context: { options: ExportOptions; projectName: string; lastFolder: string | null },
+  env: ExportEnv,
+): Promise<Exported | null> {
+  const options = await env.askOptions(parts.length, context.options);
+  if (!options) return null;
+  env.remember(options);
+  const each = parts.length > 1 && options.parts === "per-part";
+  const type = exportType(parts);
+  const picked = await env.pick({
+    title: each ? `Export ${countParts(parts.length)}, one file each` : `Export ${countParts(parts.length)}`,
+    format: type,
+    each,
+    ...(each ? eachDialogDefault(parts, type, context.lastFolder) : exportDialogDefault(parts, type, context.projectName, context.lastFolder)),
+  });
+  if (!picked) return null;
+  const target = exportTarget(picked.path, picked.format, options.stl);
+  if (!each) {
+    await env.writeOne(target.path, target.format, parts);
+    return { folder: folderOf(target.path), files: [fileName(target.path)] };
+  }
+  // Rust takes the folder of the path exactly as picked.
+  const folder = folderOf(picked.path);
+  let result = await env.writeEach(picked.path, target.format, false, parts);
+  if (result.existing.length > 0) {
+    if (!(await env.askReplace(result.existing, folder))) return null;
+    result = await env.writeEach(picked.path, target.format, true, parts);
+  }
+  return { folder, files: result.written };
+}
+
+/** The toast after an export of `count` parts. */
+export function exportedMessage(count: number, { folder, files }: Exported): string {
+  if (files.length === 1) return `Exported ${countParts(count)} to ${files[0]}`;
+  return `Exported ${countParts(count)} to ${files.length} files in ${shownFolder(folder)}`;
+}
+
+const meshesOut = (parts: Part[]) => parts.map((p) => ({ name: p.name, matrix: p.matrix, mesh: p.mesh }));
+
+/** Runs `write` as a status-bar task named after the file. */
+async function exportTask<T>(path: string, write: () => Promise<T>): Promise<T> {
+  const task = startTask(`Exporting ${fileName(path)}`);
   try {
-    await exportMeshes(path, format, parts.map((p) => ({ name: p.name, matrix: p.matrix, mesh: p.mesh })));
-    toast(`Exported ${countParts(parts.length)} to ${name}`);
-  } catch (err) {
-    toast(errorMessage(err, `Could not export "${name}"`), "error");
+    return await write();
   } finally {
     task.end();
   }
 }
 
-/** Default path for an export: beside the project file when there is one. */
-function exportDefaultPath(parts: Part[], ext: string): string {
-  const s = useStore.getState();
-  return besidePath(s.projectPath, `${exportBaseName(parts, s.projectName)}.${ext}`);
+/** The app's export side effects. */
+function appExportEnv(): ExportEnv {
+  return {
+    askOptions: (count, last) => prompt<ExportOptions>((resolve) => ({ kind: "export-options", count, options: last, resolve })),
+    remember: (options) => useStore.getState().setExportOptions(options),
+    async pick(request) {
+      const picked = await pickExportFile(request);
+      if (picked) usedFile(picked.path);
+      return picked;
+    },
+    writeOne: (path, format, parts) => exportTask(path, () => exportMeshes(path, format, meshesOut(parts))),
+    writeEach: (path, format, replace, parts) => exportTask(path, () => exportEach(path, format, replace, meshesOut(parts))),
+    askReplace: (existing, folder) =>
+      ask(replaceQuestion(existing, folder), { title: "Replace files?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }),
+  };
 }
 
-/** Home › Export: save the target parts, format chosen by the extension in the save dialog. */
+/**
+ * Export (ribbon, File menu, right-click and Ctrl+E): the selected parts, or every visible part when none is
+ * selected, through exportParts.
+ */
 export async function exportSelection(): Promise<void> {
   if (browserOnly("Exporting")) return;
   const parts = partsToExport();
   if (!parts) return;
-  const picked = await pickSavePath({
-    title: `Export ${countParts(parts.length)}`,
-    defaultPath: exportDefaultPath(parts, "stl"),
-    filters: EXPORT_FILTERS,
-  });
-  if (!picked) return;
-  const target = exportTarget(picked);
-  await writeExport(target.path, target.format, parts);
-}
-
-/** Export part as › <format>. */
-export async function exportAs(format: ExportFormat): Promise<void> {
-  if (browserOnly("Exporting")) return;
-  const parts = partsToExport();
-  if (!parts) return;
-  const ext = EXPORT_EXTENSIONS[format];
-  const picked = await pickSavePath({
-    title: `Export ${countParts(parts.length)} as ${EXPORT_LABELS[format]}`,
-    defaultPath: exportDefaultPath(parts, ext),
-    filters: [{ name: `${EXPORT_LABELS[format]} (*.${ext})`, extensions: [ext] }],
-  });
-  if (picked) await writeExport(withExtension(picked, ext), format, parts);
+  const { exportOptions, projectName, lastFolder } = useStore.getState();
+  try {
+    const done = await exportParts(parts, { options: exportOptions, projectName, lastFolder }, appExportEnv());
+    if (done) toast(exportedMessage(parts.length, done));
+  } catch (err) {
+    toast(errorMessage(err, "Could not export"), "error");
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -571,6 +727,7 @@ export async function openFile(): Promise<void> {
     return;
   }
   if (!path) return;
+  usedFile(path);
   const format = importFormatOf(path);
   if (format === "3mf") await openProject(path);
   else if (format) await openMesh(path);
@@ -670,6 +827,7 @@ async function writeProject(path: string): Promise<boolean> {
         transparent: p.transparent,
         locked: p.locked,
         ...(p.measurements && p.measurements.length > 0 ? { measurements: JSON.stringify(p.measurements) } : {}),
+        ...(p.source ? { source: p.source } : {}),
       })),
     );
   } catch (err) {
@@ -692,7 +850,7 @@ async function saveWithDialog(): Promise<boolean> {
   const s = useStore.getState();
   const picked = await pickSavePath({
     title: "Save project",
-    defaultPath: s.projectPath ?? `${sanitizeFileName(s.projectName)}.3mf`,
+    ...saveDialogDefault(s.parts, s.projectName, s.projectPath, s.lastFolder),
     filters: PROJECT_FILTERS,
   });
   return picked ? writeProject(withExtension(picked, "3mf")) : false;
@@ -711,7 +869,7 @@ export function saveProject(): Promise<boolean> {
   });
 }
 
-/** File › Save project as…: asks for a file, then saves. Resolves true when saved. */
+/** File › Save project as (.3mf)…: asks for a file, then saves. Resolves true when saved. */
 export function saveProjectAs(): Promise<boolean> {
   if (browserOnly("Saving")) return Promise.resolve(false);
   return saves.add(saveWithDialog);

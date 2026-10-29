@@ -302,6 +302,31 @@ describe("remembered view settings", () => {
   });
 });
 
+describe("remembered export options", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("start as binary STL and one file, also when the stored values are unknown", async () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect((await freshStore()).getState().exportOptions).toEqual({ stl: "binary", parts: "one-file" });
+    vi.stubGlobal("localStorage", fakeStorage({ "tricky3d.exportStl": "text", "tricky3d.exportParts": "each" }));
+    expect((await freshStore()).getState().exportOptions).toEqual({ stl: "binary", parts: "one-file" });
+  });
+
+  it("are saved by an export and read back at the next start", async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const store = await freshStore();
+    store.getState().setExportOptions({ stl: "ascii", parts: "per-part" });
+    expect(store.getState().exportOptions).toEqual({ stl: "ascii", parts: "per-part" });
+    expect(Object.fromEntries(storage.data)).toEqual({ "tricky3d.exportStl": "ascii", "tricky3d.exportParts": "per-part" });
+    expect((await freshStore()).getState().exportOptions).toEqual({ stl: "ascii", parts: "per-part" });
+    store.getState().setExportOptions({ stl: "binary", parts: "per-part" });
+    expect((await freshStore()).getState().exportOptions).toEqual({ stl: "binary", parts: "per-part" });
+  });
+});
+
 describe("copy and paste", () => {
   it("copies in parts-list order and steps each paste by the group's width plus a gap", () => {
     const mesh = makeBox([20, 20, 20]);

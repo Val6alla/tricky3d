@@ -6,7 +6,9 @@ import type { MeshData, Vec3 } from "../store";
 import { decodeBundle, encodeBundle, type InMesh, type OutMesh } from "./bundle";
 
 export type ImportFormat = "stl" | "obj" | "ply" | "3mf" | "amf" | "off";
-export type ExportFormat = "stl-binary" | "stl-ascii" | "obj" | "ply" | "3mf" | "amf";
+export type ExportFormat = "stl-binary" | "stl-ascii" | "obj" | "ply" | "3mf" | "amf" | "off";
+/** A type in the Export dialog's list: the extension of a format tricky3D writes. */
+export type ExportType = "stl" | "3mf" | "obj" | "ply" | "amf" | "off";
 
 /** Mesh measurements in part-local millimetres, computed in Rust. */
 export interface MeshStats {
@@ -46,6 +48,8 @@ export interface LoadedMesh {
   locked?: boolean;
   /** Measure mode's measurements, as the project file holds them (JSON); checked by src/measure/persist.ts. */
   measurements?: string;
+  /** The file the part was imported from, as the project file holds it. */
+  source?: string;
 }
 
 export interface ImportResult {
@@ -65,7 +69,10 @@ export interface ProjectResult {
   meshes: LoadedMesh[];
 }
 
-/** A part going to a file. The matrix is baked into the vertices on export and kept as-is in a project. */
+/**
+ * A part going to a file. The matrix is baked into the vertices, so every program sees the part where it sits on the
+ * platform; a project also keeps the matrix itself, to take it back out when the project opens.
+ */
 export interface MeshOut {
   name: string;
   matrix: number[];
@@ -76,6 +83,8 @@ export interface MeshOut {
   locked?: boolean;
   /** JSON of the part's measurements (projects only). */
   measurements?: string;
+  /** The file the part was imported from (projects only). */
+  source?: string;
 }
 
 interface MeshInfo {
@@ -87,6 +96,7 @@ interface MeshInfo {
   transparent?: boolean;
   locked?: boolean;
   measurements?: string;
+  source?: string;
 }
 
 function loadedMeshes(buffer: ArrayBuffer) {
@@ -140,7 +150,22 @@ export async function exportMeshes(path: string, format: ExportFormat, meshes: M
   await invoke("export_mesh", encodeBundle({ path, format }, outMeshes(meshes)));
 }
 
-/** Writes a project 3MF: one object and one build item (with its transform) per part, plus the platform. */
+/** What exportEach did: the files it wrote, or, when it wrote none, the files that are already there. */
+export interface EachResult {
+  written: string[];
+  existing: string[];
+}
+
+/**
+ * Writes one file of `format` per part into the folder of `path` (picked with pickExportFile for one file per part),
+ * each named after its part with its matrix baked in. Unless `replace`, it writes nothing while any of those files is
+ * already there and names them instead.
+ */
+export function exportEach(path: string, format: ExportFormat, replace: boolean, meshes: MeshOut[]): Promise<EachResult> {
+  return invoke<EachResult>("export_each", encodeBundle({ path, format, replace }, outMeshes(meshes)));
+}
+
+/** Writes a project 3MF: one object and one build item per part, each where it sits on the platform, plus the platform. */
 export async function saveProjectFile(path: string, platform: Vec3, meshes: MeshOut[]): Promise<void> {
   await invoke("save_project", encodeBundle({ path, platform }, outMeshes(meshes)));
 }
@@ -261,7 +286,33 @@ export function pickOpenFile(): Promise<string | null> {
   return invoke<string | null>("pick_open_file");
 }
 
-/** The save dialog; the path picked, or null when cancelled. */
-export function pickSaveFile(options: { title: string; defaultPath?: string; filters: FileFilter[] }): Promise<string | null> {
+/**
+ * The save dialog, with `defaultPath`'s name filled in. It opens in `defaultPath`'s folder, or when Rust does not know
+ * that folder (no file picked there) or it no longer exists, in `fallbackFolder`; the path picked, or null when
+ * cancelled.
+ */
+export function pickSaveFile(options: { title: string; defaultPath?: string; fallbackFolder?: string; filters: FileFilter[] }): Promise<string | null> {
   return invoke<string | null>("pick_save_file", options);
+}
+
+/** The file picked in the Export dialog and the type that was selected. */
+export interface ExportPick {
+  path: string;
+  format: ExportType;
+}
+
+/**
+ * The Export dialog: every format tricky3D writes, always in the order STL, 3MF, OBJ, PLY, AMF, OFF, with `format`
+ * selected (on Windows; elsewhere the first type is, and the file name's extension decides). It opens as pickSaveFile
+ * does. With `each` the parts go one file each into the folder picked, and the system does not ask about replacing
+ * the name picked; otherwise it does. Null when cancelled.
+ */
+export function pickExportFile(options: {
+  title: string;
+  defaultPath?: string;
+  fallbackFolder?: string;
+  format: ExportType;
+  each: boolean;
+}): Promise<ExportPick | null> {
+  return invoke<ExportPick | null>("pick_export_file", options);
 }

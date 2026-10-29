@@ -70,6 +70,17 @@ describe("Always show gizmo shortcut", () => {
   });
 });
 
+describe("Export shortcut", () => {
+  it("is Ctrl+E, and Cmd+E on macOS, in repair mode too; E alone stays the gizmo key", () => {
+    expect(shortcutFor(press("e", "KeyE", { ctrlKey: true }), false)).toBe("file.export");
+    expect(shortcutFor(press("e", "KeyE", { metaKey: true }), true)).toBe("file.export");
+    expect(shortcutFor(press("у", "KeyE", { ctrlKey: true }), false)).toBe("file.export");
+    expect(shortcutFor(press("e", "KeyE", { ctrlKey: true }), false, true)).toBe("file.export");
+    expect(shortcutFor(press("e", "KeyE"), false)).toBe("gizmo.combined");
+    expect(featureById("file.export")?.shortcut).toMatch(/^(Ctrl|Cmd)\+E$/);
+  });
+});
+
 describe("gizmo keys", () => {
   it("W and E pick the move and rotate gizmo, R the scale gizmo", () => {
     expect(shortcutFor(press("w", "KeyW"), false)).toBe("gizmo.combined");
@@ -80,7 +91,7 @@ describe("gizmo keys", () => {
 
   it("ignore the letters with Shift or Ctrl", () => {
     expect(shortcutFor(press("W", "KeyW", { shiftKey: true }), false)).toBeNull();
-    expect(shortcutFor(press("e", "KeyE", { ctrlKey: true }), false)).toBeNull();
+    expect(shortcutFor(press("w", "KeyW", { ctrlKey: true }), false)).toBeNull();
   });
 
   it("leave Esc to the escape action, not to a gizmo", () => {

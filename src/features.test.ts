@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeshData } from "./store";
+import type { ExportOptions, MeshData } from "./store";
 import type { ActionSpec, Catalog, RunResult } from "./repair/types";
 
 // Rust and the viewport are stand-ins: runRepair answers what each test says, and zooms are recorded. These tests
@@ -13,7 +13,15 @@ const ipc = vi.hoisted(() => ({
   checkMeshes: vi.fn(),
   fetchCutPath: vi.fn(),
 }));
-const io = vi.hoisted(() => ({ pickOpenFile: vi.fn(), splitShells: vi.fn(), openProjectFile: vi.fn(), saveProjectFile: vi.fn() }));
+const io = vi.hoisted(() => ({
+  pickOpenFile: vi.fn(),
+  splitShells: vi.fn(),
+  openProjectFile: vi.fn(),
+  saveProjectFile: vi.fn(),
+  pickExportFile: vi.fn(),
+  exportMeshes: vi.fn(),
+  exportEach: vi.fn(),
+}));
 const dialog = vi.hoisted(() => ({ message: vi.fn() }));
 const view = vi.hoisted(() => ({ zoomTo: vi.fn(), zoomToBounds: vi.fn(), setViewPreset: vi.fn(), centreOn: vi.fn(), viewDirection: vi.fn() }));
 vi.mock("./repair/ipc", async (importOriginal) => ({ ...(await importOriginal<typeof import("./repair/ipc")>()), ...ipc }));
@@ -54,7 +62,7 @@ import { moveNode } from "./repair/nodes";
 import { maskToIds } from "./repair/selection";
 import { groupsFor } from "./ribbon/layout";
 import { useStore } from "./store";
-import { useUi } from "./ui";
+import { useUi, type Dialog } from "./ui";
 
 const feature = (id: string): Feature => {
   const f = featureById(id);
@@ -209,7 +217,7 @@ const REPAIR_GROUPS: [string, string[]][] = [
 
 /** The Home tab as designed (the reference tool's layout): group → ids, in order. */
 const HOME_GROUPS: [string, string[]][] = [
-  ["Edit", ["home.save", "home.undo", "home.redo"]],
+  ["Edit", ["home.save", "home.export", "home.undo", "home.redo"]],
   ["Add parts", ["home.my-machines", "home.add-part", "home.part-library", "home.platform-statistics"]],
   ["Prepare", ["home.repair", "home.run-script"]],
   ["Analyze", ["home.new-analysis", "home.measure"]],
@@ -469,11 +477,10 @@ describe("the registry", () => {
     const at = CONTEXT_MENU.indexOf("context.rename");
     expect(CONTEXT_MENU[at + 1]).toBe("context.repair");
     expect(feature("context.repair").label).toBe("Repair part");
-    // Copy and Paste moved to the part menu, Platform size to Arrange, Export to File › Export part.
+    // Copy and Paste moved to the part menu, Platform size to Arrange.
     expect(CONTEXT_MENU.slice(0, 5)).toEqual(["context.export", "-", "context.copy", "context.paste", "context.duplicate"]);
     expect(CONTEXT_MENU).toContain("context.batch-repair");
     expect(feature("arrange.platform-size").run).toBeTypeOf("function");
-    expect(feature("file.export-any").parent).toBe("file.export");
   });
 
   it("lays out the Measurement tab: six dropdowns as the reference lists them, Wall thickness, 3-point angle and Cancel", () => {
@@ -1467,5 +1474,71 @@ describe("Home repair commands", () => {
     await settle();
     expect(lastToast()).toBe("Locked parts were left as they are.");
     expect(ipc.runRepair).not.toHaveBeenCalled();
+  });
+});
+
+describe("Export and Save project", () => {
+  const exportIds = ["home.export", "modify.export", "file.export", "context.export"];
+
+  /** Answers the export options step that is open, and returns it. */
+  async function answerOptions(answer: ExportOptions | null) {
+    await vi.waitFor(() => expect(useUi.getState().dialog?.kind).toBe("export-options"));
+    const open = useUi.getState().dialog as Extract<Dialog, { kind: "export-options" }>;
+    open.resolve(answer);
+    useUi.getState().closeDialog();
+    return open;
+  }
+
+  it("run one Export command from the ribbon, the File menu and the right-click menu, never a single format", () => {
+    const run = feature("file.export").run;
+    expect(run).toBeTypeOf("function");
+    for (const id of exportIds) {
+      expect([id, feature(id).run, isMenu(feature(id)), feature(id).shortcut]).toEqual([id, run, false, feature("file.export").shortcut]);
+    }
+    expect(FEATURES.filter((f) => f.parent === "context.export" || f.parent === "file.export")).toEqual([]);
+    // The formats still to come stay listed in the File menu.
+    expect(childrenOf("file.export-more").map((f) => f.label)).toEqual([
+      "Colour STL",
+      "GTS",
+      "X3D",
+      "3DS",
+      "VRML",
+      "BINVOX",
+      "Compressed mesh",
+      "Formlabs",
+      "Slice",
+    ]);
+    expect(effectiveStatus(feature("file.export-more"))).toBe("soon");
+  });
+
+  it("say on every Save button that it saves the project as .3mf", () => {
+    for (const id of ["home.save", "modify.save", "file.save"]) expect([id, feature(id).label]).toEqual([id, "Save project (.3mf)"]);
+    expect(feature("file.save-as").label).toBe("Save project as (.3mf)…");
+    expect(feature("home.save").hint).toContain("use Export");
+  });
+
+  it("ask for the options, offer every type with the source format selected, and remember the options for the next export", async () => {
+    s().setExportOptions({ stl: "binary", parts: "one-file" });
+    s().addParts([{ name: "gun", mesh: makeBox([20, 20, 20]), source: String.raw`D:\Models\gun.stl` }], "Import gun.stl");
+    io.pickExportFile.mockResolvedValue({ path: String.raw`D:\Models\gun.stl`, format: "stl" });
+    io.exportMeshes.mockResolvedValue(undefined);
+
+    runFeature("home.export");
+    const first = await answerOptions({ stl: "ascii", parts: "one-file" });
+    expect([first.count, first.options]).toEqual([1, { stl: "binary", parts: "one-file" }]);
+    await vi.waitFor(() => expect(io.exportMeshes).toHaveBeenCalledTimes(1));
+    expect(io.pickExportFile).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Export 1 part", format: "stl", each: false, defaultPath: String.raw`D:\Models\gun.stl` }),
+    );
+    expect(io.exportMeshes.mock.calls[0].slice(0, 2)).toEqual([String.raw`D:\Models\gun.stl`, "stl-ascii"]);
+    await vi.waitFor(() => expect(lastToast()).toBe("Exported 1 part to gun.stl"));
+    expect(s().exportOptions).toEqual({ stl: "ascii", parts: "one-file" });
+
+    // The next export opens on the options used last; cancelling it writes nothing.
+    runFeature("context.export");
+    expect((await answerOptions(null)).options).toEqual({ stl: "ascii", parts: "one-file" });
+    await flush();
+    expect(io.pickExportFile).toHaveBeenCalledTimes(1);
+    s().setExportOptions({ stl: "binary", parts: "one-file" });
   });
 });

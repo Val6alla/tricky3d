@@ -14,9 +14,11 @@ describe("FormatsDialog", () => {
   // Server rendering reads the store's initial state, where Soon items are shown.
   it("lists every supported, planned format and the units note", () => {
     const html = render();
-    for (const name of ["STL", "OBJ", "PLY", "3MF", "AMF", "STL (binary)", "STL (ASCII)", "PLY (binary)"]) {
+    for (const name of ["STL", "OBJ", "PLY", "3MF", "AMF", "OFF", "STL (binary)", "STL (ASCII)", "PLY (binary)"]) {
       expect(html).toContain(`<span class="dlg-format-name">${name}</span>`);
     }
+    // OFF is read and written.
+    expect(html.match(/<span class="dlg-format-name">OFF<\/span>/g)).toHaveLength(2);
     expect(listItems(html, "Import formats coming later")).toEqual(["X3D", "VRML", "3DS", "GTS", "Colour STL", "STEP", "IGES"]);
     expect(listItems(html, "Export formats coming later")).toEqual([
       "Colour STL",
@@ -30,7 +32,8 @@ describe("FormatsDialog", () => {
       "Slice",
     ]);
     expect(html.match(/Coming later/g)).toHaveLength(2);
-    expect(html).toContain("STL, OBJ and PLY files have no units, so tricky3D reads them as millimetres.");
+    expect(html).toContain("STL, OBJ, PLY and OFF files have no units, so tricky3D reads and writes them as millimetres.");
+    expect(html).toContain("Every export writes each part where it sits on the platform.");
   });
 
   it("keeps the lists in a labelled, focusable scroll region so the keyboard can scroll them", () => {

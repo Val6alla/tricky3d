@@ -57,7 +57,21 @@ pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<
 
 /// `open_project`: reads a project 3MF with its parts' display fields and the platform size.
 pub fn open_project(path: &Path, progress: &mut Progress) -> Result<Vec<u8>, String> {
+    open_project_with_sources(path, progress).map(|(bytes, _)| bytes)
+}
+
+/// `open_project`, also returning the files the parts were imported from (as the project saved
+/// them), so Save and Export can open their dialogs in those folders again.
+pub fn open_project_with_sources(
+    path: &Path,
+    progress: &mut Progress,
+) -> Result<(Vec<u8>, Vec<PathBuf>), String> {
     let project = project::open_file(path, progress)?;
+    let sources: Vec<PathBuf> = project
+        .parts
+        .iter()
+        .filter_map(|p| p.source.as_deref().map(PathBuf::from))
+        .collect();
     let analyses = analyze_all(project.parts.iter().map(|p| &p.mesh), progress);
     let mut meta = Map::new();
     meta.insert("platform".into(), json!(project.platform));
@@ -85,11 +99,14 @@ pub fn open_project(path: &Path, progress: &mut Progress) -> Result<Vec<u8>, Str
             if let Some(measurements) = &part.measurements {
                 info.insert("measurements".into(), json!(measurements));
             }
+            if let Some(source) = &part.source {
+                info.insert("source".into(), json!(source));
+            }
             info.insert("stats".into(), json!(analysis.stats));
             out_mesh(info, &part.mesh, analysis)
         })
         .collect();
-    Ok(bundle::encode(&meta, &meshes))
+    Ok((bundle::encode(&meta, &meshes), sources))
 }
 
 fn out_mesh<'a>(info: Map<String, Value>, mesh: &'a Mesh, analysis: &'a Analysis) -> OutMesh<'a> {
@@ -125,16 +142,18 @@ fn analyze_all<'a>(
     out
 }
 
+fn export_format(meta: &Map<String, Value>, file: &str) -> Result<ExportFormat, String> {
+    meta.get("format")
+        .and_then(Value::as_str)
+        .and_then(ExportFormat::parse)
+        .ok_or_else(|| format!("Could not write \"{file}\": the export format is unknown."))
+}
+
 /// `export_mesh`: bakes each part's matrix into its vertices and writes one file.
 pub fn export_mesh(bundle: Bundle) -> Result<(), String> {
     let path = path_field(&bundle.meta)?;
     let file = display_name(&path);
-    let format = bundle
-        .meta
-        .get("format")
-        .and_then(Value::as_str)
-        .and_then(ExportFormat::parse)
-        .ok_or_else(|| format!("Could not write \"{file}\": the export format is unknown."))?;
+    let format = export_format(&bundle.meta, &file)?;
     let parts = parts_from(&bundle, &file)?;
     let baked: Vec<Mesh> = parts
         .iter()
@@ -148,7 +167,81 @@ pub fn export_mesh(bundle: Bundle) -> Result<(), String> {
     formats::export_file(&path, format, &named)
 }
 
-/// `save_project`: writes a project 3MF with each part's matrix kept as its build transform.
+/// `EachResult` in src/io/ipc.ts: the files `export_each` wrote, or, when it wrote none, the files
+/// that are already there.
+#[derive(Debug, Default, Serialize)]
+pub struct EachResult {
+    pub written: Vec<String>,
+    pub existing: Vec<String>,
+}
+
+/// `export_each`: one file per part in the folder of `path` (the file picked in the Export dialog),
+/// each named after its part (formats::part_file_names) with its matrix baked in. Unless the meta
+/// says `replace`, it writes nothing while any of those files is already there and lists them
+/// instead, so the window can ask first. A part never writes over a file this export wrote for
+/// another part, even through another name the system answers to (a short 8.3 name on Windows).
+/// Each file is written whole or not at all, so running it again after a failure only rewrites
+/// files.
+pub fn export_each(bundle: Bundle) -> Result<EachResult, String> {
+    let path = path_field(&bundle.meta)?;
+    let file = display_name(&path);
+    let format = export_format(&bundle.meta, &file)?;
+    let replace = bundle.meta.get("replace").and_then(Value::as_bool) == Some(true);
+    let folder = path
+        .parent()
+        .filter(|f| !f.as_os_str().is_empty())
+        .ok_or_else(|| format!("Could not export next to \"{file}\": it names no folder."))?;
+    let parts = parts_from(&bundle, &file)?;
+    let ext = format.extension();
+    let names = formats::part_file_names(parts.iter().map(|(name, _, _)| name.as_str()), ext);
+    // Anything by that name counts, a folder or a broken link too: the write would replace it. The
+    // system answers the way it compares names, so case and short names are its own.
+    let there = |name: &str| std::fs::symlink_metadata(folder.join(name)).is_ok();
+    let existing: Vec<String> = names.iter().filter(|name| there(name)).cloned().collect();
+    if !replace && !existing.is_empty() {
+        return Ok(EachResult {
+            written: Vec::new(),
+            existing,
+        });
+    }
+    // Every name planned, in any letter case, as part_file_names counts them.
+    let mut taken: HashSet<String> = names.iter().map(|name| name.to_lowercase()).collect();
+    let mut written = Vec::with_capacity(names.len());
+    // The files written so far, as the system names them (long names, the case on disk).
+    let mut ours: Vec<PathBuf> = Vec::new();
+    for ((name, matrix, mesh), planned) in parts.iter().zip(names) {
+        // A name can reach a file written a moment ago for another part, through another name the
+        // system also answers to, such as a short 8.3 name ("GUN-ST~1.STL" for "gun -
+        // stand.stl"). A file that was not there before may also have been made meanwhile. Neither
+        // is written over: the part takes the next free name. Only files that were there before
+        // are replaced, and only when the window asked (`replace`).
+        let lands_on_ours =
+            || std::fs::canonicalize(folder.join(&planned)).is_ok_and(|file| ours.contains(&file));
+        let file = if there(&planned) && (!existing.contains(&planned) || lands_on_ours()) {
+            let stem = planned.strip_suffix(&format!(".{ext}")).unwrap_or(&planned);
+            let free = (2..)
+                .map(|n| format!("{stem} ({n}).{ext}"))
+                .find(|f| !taken.contains(&f.to_lowercase()) && !there(f))
+                .expect("a free name");
+            taken.insert(free.to_lowercase());
+            free
+        } else {
+            planned
+        };
+        let target = folder.join(&file);
+        let baked = bake(mesh, matrix);
+        formats::export_file(&target, format, &[NamedMesh { name, mesh: &baked }])?;
+        ours.extend(std::fs::canonicalize(&target));
+        written.push(file);
+    }
+    Ok(EachResult {
+        written,
+        existing: Vec::new(),
+    })
+}
+
+/// `save_project`: writes a project 3MF, each part where it sits on the platform with its matrix
+/// kept in the metadata (src/project.rs).
 pub fn save_project(bundle: Bundle) -> Result<(), String> {
     let path = path_field(&bundle.meta)?;
     let file = display_name(&path);
@@ -194,6 +287,7 @@ pub fn save_project(bundle: Bundle) -> Result<(), String> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             measurements: m.info.get("measurements").and_then(Value::as_str),
+            source: m.info.get("source").and_then(Value::as_str),
             mesh,
         })
         .collect();
@@ -890,25 +984,109 @@ pub fn repair_check(bundle: Bundle) -> Result<Vec<RepairCheck>, String> {
 // ---------------------------------------------------------------------------------------------
 // Part library (src/library/ipc.ts)
 
-/// `library_primitive`: the mesh of a Part library primitive (`id` with `params`, key → number) in
-/// a bundle like import's, with its stats and problem edges. Cancel (`repair_cancel` with `job`)
-/// makes it fail with CANCELLED: a fine mesh takes a moment to build and to measure.
-pub fn library_primitive(
-    id: &str,
-    params: &Map<String, Value>,
-    job: u64,
+/// The Tauri event a Part library build reports its progress with.
+pub const LIBRARY_PROGRESS: &str = "library-progress";
+
+/// `LibraryProgress` in src/library/ipc.ts.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LibraryProgress {
+    pub job: u64,
+    /// 0..1.
+    pub fraction: f64,
+}
+
+/// `library_build`: meta {id, params (key → number, text, bool), job, preview}; the selected parts
+/// as bundle meshes with info {name, matrix} (for the items made from them), and a picked picture
+/// as a mesh without triangles, info {picture: true, width, height} and an extra f32 array "gray"
+/// (0 black to 1 white, rows from the top). The answer is a bundle like import's: one mesh with
+/// info {stats, world} and its problem edges; `world` is true when the mesh is in world space
+/// (made from the selection) rather than standing centred at the origin. Cancel (`repair_cancel`
+/// with `job`) makes it fail with CANCELLED at any point.
+pub fn library_build(
+    bundle: Bundle,
     jobs: &RepairJobs,
+    emit: &mut dyn FnMut(&LibraryProgress),
 ) -> Result<Vec<u8>, String> {
+    const ACTION: &str = "Could not make the part";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let meta = &bundle.meta;
+    let id = meta
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(damaged)?
+        .to_string();
+    let params = meta
+        .get("params")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let job = meta
+        .get("job")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)?;
+    let preview = meta
+        .get("preview")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let Bundle { meta, meshes } = bundle;
+    let _ = meta;
+    let (pictures, parts): (Vec<InMesh>, Vec<InMesh>) = meshes
+        .into_iter()
+        .partition(|m| m.info.get("picture").and_then(Value::as_bool) == Some(true));
+    let picture = match pictures.into_iter().next() {
+        None => None,
+        Some(m) => {
+            let size = |key: &str| m.info.get(key).and_then(Value::as_u64).map(|v| v as usize);
+            let (Some(width), Some(height), Some(Blob::F32(gray))) =
+                (size("width"), size("height"), m.extra("gray"))
+            else {
+                return Err(damaged());
+            };
+            if width == 0 || height == 0 || width.checked_mul(height) != Some(gray.len()) {
+                return Err(damaged());
+            }
+            Some(crate::library::Picture {
+                width,
+                height,
+                gray: gray.clone(),
+            })
+        }
+    };
+    let parts = world_meshes(
+        Bundle {
+            meta: Map::new(),
+            meshes: parts,
+        },
+        ACTION,
+        true,
+    )?;
+    let sources = crate::library::Sources { parts, picture };
     let running = jobs.start(job);
-    let mesh = crate::library::generate(id, params)?;
-    let analysis = analyze_unless_cancelled(&mesh, running.cancel_flag())
-        .ok_or_else(|| CANCELLED.to_string())?;
+    let full_speed = crate::power::FullSpeed::start();
+    let cancel = running.cancel_flag();
+    let mut last: Option<Instant> = None;
+    let mut report = |fraction: f64| {
+        let now = Instant::now();
+        if last.is_some_and(|t| now.duration_since(t) < PROGRESS_INTERVAL) {
+            return;
+        }
+        last = Some(now);
+        emit(&LibraryProgress { job, fraction });
+    };
+    let mut control = Control::new(cancel, |f| report(0.9 * f));
+    let made =
+        crate::library::make(&id, &params, &sources, preview, &mut control).map_err(run_error)?;
+    drop(control);
+    drop(sources);
+    let analysis =
+        analyze_unless_cancelled(&made.mesh, cancel).ok_or_else(|| CANCELLED.to_string())?;
     let mut info = Map::new();
     info.insert("stats".into(), json!(analysis.stats));
-    Ok(bundle::encode(
-        &Map::new(),
-        &[out_mesh(info, &mesh, &analysis)],
-    ))
+    info.insert("world".into(), json!(made.world));
+    let answer = bundle::encode(&Map::new(), &[out_mesh(info, &made.mesh, &analysis)]);
+    drop(full_speed);
+    drop(running);
+    Ok(answer)
 }
 
 // ---------------------------------------------------------------------------------------------

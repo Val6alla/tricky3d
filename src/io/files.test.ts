@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { boundsOf, IDENTITY, makeBox, translation, unionBounds } from "../mesh";
-import { useStore, type MeshData, type NewPart, type Vec3 } from "../store";
+import { useStore, type ExportOptions, type MeshData, type NewPart, type Part, type Vec3 } from "../store";
 import { useUi, type ObjectsAnswer, type PlaceAnswer } from "../ui";
 import {
   askPlacement,
@@ -8,14 +8,22 @@ import {
   countParts,
   createSaveQueue,
   discardChoice,
+  eachDialogDefault,
   errorMessage,
   exportBaseName,
+  exportDialogDefault,
+  exportedMessage,
+  exportParts,
   exportTarget,
+  exportType,
+  EXPORT_TYPES,
   extensionOf,
   fileColor,
   fileName,
   fileStem,
+  folderOf,
   importFile,
+  inFolder,
   importFormatOf,
   placedMatrices,
   placementOffset,
@@ -24,12 +32,16 @@ import {
   projectPart,
   projectPlatform,
   rememberedPlacement,
+  replaceQuestion,
   sanitizeFileName,
+  saveDialogDefault,
+  sourceOf,
   unsupportedMessage,
   withExtension,
+  type ExportEnv,
   type ImportEnv,
 } from "./files";
-import type { ImportResult, LoadedMesh } from "./ipc";
+import type { EachResult, ExportPick, ImportResult, LoadedMesh } from "./ipc";
 
 describe("paths", () => {
   it("splits Windows and POSIX paths", () => {
@@ -66,15 +78,22 @@ describe("paths", () => {
     expect(withExtension("/out.d/box", "3mf")).toBe("/out.d/box.3mf");
   });
 
-  it("picks the Home › Export format from the extension; .stl is binary", () => {
-    expect(exportTarget("/o/box.stl")).toEqual({ path: "/o/box.stl", format: "stl-binary" });
-    expect(exportTarget("/o/box.STL")).toEqual({ path: "/o/box.STL", format: "stl-binary" });
-    expect(exportTarget("/o/box.obj")).toEqual({ path: "/o/box.obj", format: "obj" });
-    expect(exportTarget("/o/box.ply")).toEqual({ path: "/o/box.ply", format: "ply" });
-    expect(exportTarget("/o/box.3mf")).toEqual({ path: "/o/box.3mf", format: "3mf" });
-    expect(exportTarget("/o/box.amf")).toEqual({ path: "/o/box.amf", format: "amf" });
-    expect(exportTarget("/o/box")).toEqual({ path: "/o/box.stl", format: "stl-binary" });
-    expect(exportTarget("/o/box.txt")).toEqual({ path: "/o/box.txt.stl", format: "stl-binary" });
+  it("lists the export types as the dialog does: STL, 3MF, OBJ, PLY, AMF, OFF", () => {
+    expect(EXPORT_TYPES).toEqual(["stl", "3mf", "obj", "ply", "amf", "off"]);
+  });
+
+  it("takes the export format from the name picked, else from the type selected; STL as the options say", () => {
+    expect(exportTarget("/o/box.stl", "obj", "binary")).toEqual({ path: "/o/box.stl", format: "stl-binary" });
+    expect(exportTarget("/o/box.STL", "stl", "ascii")).toEqual({ path: "/o/box.STL", format: "stl-ascii" });
+    expect(exportTarget("/o/box.obj", "stl", "binary")).toEqual({ path: "/o/box.obj", format: "obj" });
+    expect(exportTarget("/o/box.ply", "stl", "binary")).toEqual({ path: "/o/box.ply", format: "ply" });
+    expect(exportTarget("/o/box.3mf", "stl", "binary")).toEqual({ path: "/o/box.3mf", format: "3mf" });
+    expect(exportTarget("/o/box.amf", "stl", "binary")).toEqual({ path: "/o/box.amf", format: "amf" });
+    expect(exportTarget("/o/box.off", "stl", "binary")).toEqual({ path: "/o/box.off", format: "off" });
+    expect(exportTarget("/o/box", "stl", "binary")).toEqual({ path: "/o/box.stl", format: "stl-binary" });
+    expect(exportTarget("/o/box", "stl", "ascii")).toEqual({ path: "/o/box.stl", format: "stl-ascii" });
+    expect(exportTarget("/o/box", "ply", "ascii")).toEqual({ path: "/o/box.ply", format: "ply" });
+    expect(exportTarget("/o/box.v2", "obj", "binary")).toEqual({ path: "/o/box.v2.obj", format: "obj" });
   });
 
   it("sanitises file names for every platform", () => {
@@ -113,6 +132,84 @@ describe("paths", () => {
 
 /** Rotation by 90° about Z, then a translation, column-major. */
 const rotZ90 = (tx: number, ty: number, tz: number) => [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1];
+
+describe("export and save dialogs", () => {
+  const gun = String.raw`D:\Models\Kits\gun.obj`;
+  const exports = String.raw`E:\Exports\ `.trim();
+  const parts = [
+    { name: "gun - barrel (cut 1)", source: gun },
+    { name: "Merge of 2 parts", source: String.raw`D:\Other\bolts.stl` },
+  ];
+
+  it("finds the folder of a path and puts a name in a folder", () => {
+    expect(folderOf(gun)).toBe(String.raw`D:\Models\Kits\ `.trim());
+    expect(folderOf("/home/me/a.stl")).toBe("/home/me/");
+    expect(folderOf("a.stl")).toBe("");
+    expect(inFolder(exports, "a.stl")).toBe(String.raw`E:\Exports\a.stl`);
+    expect(inFolder(String.raw`E:\Exports`, "a.stl")).toBe(String.raw`E:\Exports\a.stl`);
+    expect(inFolder("/out", "a.stl")).toBe("/out/a.stl");
+    expect(inFolder(null, "a.stl")).toBe("a.stl");
+  });
+
+  it("names the export after the original file, without a suffix, in its folder, even after exporting elsewhere", () => {
+    expect(sourceOf(parts)).toBe(gun);
+    expect(exportDialogDefault(parts, "obj", "Untitled", exports)).toEqual({
+      defaultPath: String.raw`D:\Models\Kits\gun.obj`,
+      fallbackFolder: exports,
+    });
+    // Parts without a source of their own take the first one that has one.
+    expect(exportDialogDefault([{ name: "Box" }, ...parts], "stl", "Untitled", null).defaultPath).toBe(String.raw`D:\Models\Kits\gun.stl`);
+  });
+
+  it("selects the original format in the Export dialog, else STL", () => {
+    // An imported STL exports as STL, an imported OBJ as OBJ, a Part library part (no file) as STL.
+    expect(exportType([{ source: String.raw`D:\Models\gun.stl` }])).toBe("stl");
+    expect(exportType(parts)).toBe("obj");
+    expect(exportType([{}])).toBe("stl");
+    expect(exportType([{ source: String.raw`C:\a\plate.3MF` }])).toBe("3mf");
+    expect(exportType([{ source: "/a/mesh.off" }])).toBe("off");
+    expect(exportType([{ source: "/a/scan.amf" }])).toBe("amf");
+    expect(exportType([{ source: "/a/scan.PLY" }])).toBe("ply");
+    expect(exportType([{ source: "/a/no-extension" }])).toBe("stl");
+  });
+
+  it("opens one file per part in the source folder with the first part's own name", () => {
+    expect(eachDialogDefault(parts, "obj", exports)).toEqual({
+      defaultPath: String.raw`D:\Models\Kits\gun - barrel (cut 1).obj`,
+      fallbackFolder: exports,
+    });
+    expect(eachDialogDefault([{ name: "Gear: 20 teeth" }, { name: "Nut" }], "stl", exports)).toEqual({
+      defaultPath: String.raw`E:\Exports\Gear_ 20 teeth.stl`,
+    });
+  });
+
+  it("asks before replacing, naming up to three files", () => {
+    expect(replaceQuestion(["a.stl"], String.raw`E:\Exports\ `.trim())).toBe(String.raw`"a.stl" is already in "E:\Exports". Replace it?`);
+    expect(replaceQuestion(["a.stl", "b.stl", "c.stl", "d.stl", "e.stl"], "/out/")).toBe(
+      `"a.stl", "b.stl", "c.stl" and 2 more are already in "/out". Replace them?`,
+    );
+    expect(exportedMessage(2, { folder: "/out/", files: ["gun.stl"] })).toBe("Exported 2 parts to gun.stl");
+    expect(exportedMessage(3, { folder: String.raw`E:\Exports\ `.trim(), files: ["a.stl", "b.stl", "c.stl"] })).toBe(
+      String.raw`Exported 3 parts to 3 files in E:\Exports`,
+    );
+  });
+
+  it("puts parts that never came from a file in the last folder used, named after the part or the project", () => {
+    expect(exportDialogDefault([{ name: "Gear wheel" }], "stl", "Untitled", exports)).toEqual({ defaultPath: String.raw`E:\Exports\Gear wheel.stl` });
+    expect(exportDialogDefault([{ name: "A" }, { name: "B" }], "3mf", "Plate", null)).toEqual({ defaultPath: "Plate.3mf" });
+  });
+
+  it("saves a project as the original file's name with .3mf, in its folder", () => {
+    expect(saveDialogDefault(parts, "Untitled", null, exports)).toEqual({
+      defaultPath: String.raw`D:\Models\Kits\gun.3mf`,
+      fallbackFolder: exports,
+    });
+    // Without a source: the project's own file, else its name in the last folder used.
+    const project = String.raw`C:\Jobs\plate.3mf`;
+    expect(saveDialogDefault([{}], "Plate", project, null)).toEqual({ defaultPath: project });
+    expect(saveDialogDefault([], "Plate: v2", null, "/home/me/")).toEqual({ defaultPath: "/home/me/Plate_ v2.3mf" });
+  });
+});
 
 describe("placement", () => {
   const platform: Vec3 = [200, 150, 100];
@@ -182,6 +279,9 @@ describe("project fields", () => {
     const loaded: LoadedMesh = { name: "Lid", matrix: translation(1, 2, 3), mesh, stats: null, edges: null, color: "#bda3a3", visible: false, transparent: true, locked: true };
     expect(projectPart(loaded)).toEqual({ name: "Lid", mesh, matrix: translation(1, 2, 3), color: "#bda3a3", visible: false, transparent: true, locked: true });
     expect(projectPart({ ...loaded, matrix: null, color: undefined }).matrix).toBeUndefined();
+    // The file the part was imported from survives saving and reopening.
+    expect(projectPart({ ...loaded, source: "D:\\Models\\gun.obj" }).source).toBe("D:\\Models\\gun.obj");
+    expect(projectPart({ ...loaded, source: "" }).source).toBeUndefined();
   });
 
   it("reads the unsaved-changes answer from the pressed button's label", () => {
@@ -262,6 +362,8 @@ describe("importFile", () => {
     expect(part.name).toBe("bracket");
     expect(part.mesh).toBe(box); // never copied
     expect(part.matrix).toEqual(translation(100, 100, 10));
+    // Save and Export suggest this file's name and folder.
+    expect(part.source).toBe(String.raw`C:\in\bracket.stl`);
   });
 
   it("keeps the file's matrices when not placing", async () => {
@@ -506,5 +608,131 @@ describe("askPlacement", () => {
     answer(next, { place: false, remember: false });
     expect(await second).toBe(false);
     expect(useStore.getState().importPlacement).toBe("ask");
+  });
+});
+
+describe("exportParts", () => {
+  const folder = String.raw`D:\Models\ `.trim();
+  const part = (name: string, source?: string): Part => ({
+    id: name,
+    name,
+    mesh: makeBox([1, 1, 1]),
+    matrix: [...IDENTITY],
+    color: "#a9b1bc",
+    visible: true,
+    transparent: false,
+    locked: false,
+    ...(source ? { source } : {}),
+  });
+  const binaryOneFile: ExportOptions = { stl: "binary", parts: "one-file" };
+  const context = (options: ExportOptions = binaryOneFile) => ({ options, projectName: "Plate", lastFolder: String.raw`E:\Last\ `.trim() });
+
+  /** A fake export whose dialogs answer as given; `existing` names files that are there until a write replaces them. */
+  function fakeEnv(answers: { options?: ExportOptions | null; pick?: (format: ExportPick["format"]) => ExportPick | null; replace?: boolean; existing?: string[] }) {
+    const existing = new Set(answers.existing ?? []);
+    const env = {
+      askOptions: vi.fn(async (_count: number, last: ExportOptions) => (answers.options === undefined ? last : answers.options)),
+      remember: vi.fn(),
+      pick: vi.fn(async (request: Parameters<ExportEnv["pick"]>[0]) => (answers.pick ? answers.pick(request.format) : { path: request.defaultPath, format: request.format })),
+      writeOne: vi.fn(async () => undefined),
+      writeEach: vi.fn(async (_path: string, _format: string, replace: boolean, parts: Part[]): Promise<EachResult> => {
+        const files = parts.map((p) => `${p.name}.stl`);
+        const there = files.filter((f) => existing.has(f));
+        if (!replace && there.length > 0) return { written: [], existing: there };
+        return { written: files, existing: [] };
+      }),
+      askReplace: vi.fn(async () => answers.replace ?? false),
+    };
+    return env satisfies ExportEnv;
+  }
+
+  it("asks for the options first, remembers them, and offers every type with the source format selected", async () => {
+    const env = fakeEnv({ options: { stl: "ascii", parts: "one-file" } });
+    const done = await exportParts([part("gun", String.raw`D:\Models\gun.stl`)], context(), env);
+    expect(env.askOptions).toHaveBeenCalledWith(1, binaryOneFile);
+    expect(env.remember).toHaveBeenCalledWith({ stl: "ascii", parts: "one-file" });
+    // The source's own name and folder, so saving as is replaces it, which the system asks about (each: false).
+    expect(env.pick).toHaveBeenCalledWith({
+      title: "Export 1 part",
+      format: "stl",
+      each: false,
+      defaultPath: String.raw`D:\Models\gun.stl`,
+      fallbackFolder: String.raw`E:\Last\ `.trim(),
+    });
+    expect(env.writeOne).toHaveBeenCalledWith(String.raw`D:\Models\gun.stl`, "stl-ascii", expect.any(Array));
+    expect(done).toEqual({ folder, files: ["gun.stl"] });
+  });
+
+  it("selects OBJ for an imported OBJ and STL for a Part library part, and writes the type picked", async () => {
+    const obj = fakeEnv({});
+    await exportParts([part("gun - stand", String.raw`D:\Models\gun.obj`)], context(), obj);
+    expect(obj.pick.mock.calls[0][0].format).toBe("obj");
+    expect(obj.writeOne).toHaveBeenCalledWith(String.raw`D:\Models\gun.obj`, "obj", expect.any(Array));
+
+    const library = fakeEnv({ pick: () => ({ path: String.raw`E:\Last\Gear wheel`, format: "ply" }) });
+    await exportParts([part("Gear wheel")], context(), library);
+    expect(library.pick.mock.calls[0][0]).toMatchObject({ format: "stl", defaultPath: String.raw`E:\Last\Gear wheel.stl` });
+    // A name without an extension takes the type that was selected when the dialog closed.
+    expect(library.writeOne).toHaveBeenCalledWith(String.raw`E:\Last\Gear wheel.ply`, "ply", expect.any(Array));
+  });
+
+  it("stops without writing when the options or the dialog are cancelled", async () => {
+    const noOptions = fakeEnv({ options: null });
+    expect(await exportParts([part("a")], context(), noOptions)).toBeNull();
+    expect(noOptions.pick).not.toHaveBeenCalled();
+    expect(noOptions.remember).not.toHaveBeenCalled();
+    const noFile = fakeEnv({ pick: () => null });
+    expect(await exportParts([part("a")], context(), noFile)).toBeNull();
+    expect(noFile.writeOne).not.toHaveBeenCalled();
+    expect(noFile.writeEach).not.toHaveBeenCalled();
+  });
+
+  it("writes several parts to one file by default, and one part to one file whatever the option", async () => {
+    const parts = [part("barrel", String.raw`D:\Models\gun.stl`), part("stand", String.raw`D:\Models\gun.stl`)];
+    const one = fakeEnv({});
+    await exportParts(parts, context(), one);
+    expect(one.askOptions).toHaveBeenCalledWith(2, binaryOneFile);
+    expect(one.writeOne).toHaveBeenCalledWith(String.raw`D:\Models\gun.stl`, "stl-binary", parts);
+    const single = fakeEnv({});
+    await exportParts([parts[0]], context({ stl: "binary", parts: "per-part" }), single);
+    expect(single.pick.mock.calls[0][0].each).toBe(false);
+    expect(single.writeEach).not.toHaveBeenCalled();
+  });
+
+  it("writes one file per part in the folder picked, named after the parts", async () => {
+    const parts = [part("barrel", String.raw`D:\Models\gun.stl`), part("stand", String.raw`D:\Models\gun.stl`)];
+    const env = fakeEnv({ pick: () => ({ path: String.raw`D:\Out\anything`, format: "stl" }) });
+    const done = await exportParts(parts, context({ stl: "ascii", parts: "per-part" }), env);
+    expect(env.pick.mock.calls[0][0]).toMatchObject({
+      title: "Export 2 parts, one file each",
+      each: true,
+      defaultPath: String.raw`D:\Models\barrel.stl`,
+    });
+    // Rust gets the path exactly as picked; it takes its folder.
+    expect(env.writeEach).toHaveBeenCalledWith(String.raw`D:\Out\anything`, "stl-ascii", false, parts);
+    expect(env.askReplace).not.toHaveBeenCalled();
+    expect(done).toEqual({ folder: String.raw`D:\Out\ `.trim(), files: ["barrel.stl", "stand.stl"] });
+  });
+
+  it("never replaces a file of one file per part without asking", async () => {
+    const parts = [part("barrel"), part("stand")];
+    const options: ExportOptions = { stl: "binary", parts: "per-part" };
+    const pick = () => ({ path: "/out/x.stl", format: "stl" as const });
+
+    const declined = fakeEnv({ pick, existing: ["stand.stl"], replace: false });
+    expect(await exportParts(parts, context(options), declined)).toBeNull();
+    expect(declined.askReplace).toHaveBeenCalledWith(["stand.stl"], "/out/");
+    expect(declined.writeEach).toHaveBeenCalledTimes(1);
+    expect(declined.writeEach.mock.calls[0][2]).toBe(false);
+
+    const accepted = fakeEnv({ pick, existing: ["stand.stl"], replace: true });
+    expect(await exportParts(parts, context(options), accepted)).toEqual({ folder: "/out/", files: ["barrel.stl", "stand.stl"] });
+    expect(accepted.writeEach.mock.calls.map((call) => call[2])).toEqual([false, true]);
+  });
+
+  it("passes a writer's error on", async () => {
+    const env = fakeEnv({});
+    env.writeOne.mockRejectedValueOnce('Could not write "gun.stl": the disk is full.');
+    await expect(exportParts([part("gun", "/m/gun.stl")], context(), env)).rejects.toBe('Could not write "gun.stl": the disk is full.');
   });
 });

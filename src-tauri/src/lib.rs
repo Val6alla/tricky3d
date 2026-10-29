@@ -13,6 +13,7 @@ mod power;
 pub mod progress;
 pub mod project;
 pub mod repair;
+mod save_dialog;
 pub mod stats;
 pub mod workers;
 
@@ -97,6 +98,7 @@ pub fn run() {
             commands::import_mesh,
             commands::open_project,
             commands::export_mesh,
+            commands::export_each,
             commands::save_project,
             commands::mesh_stats,
             commands::split_shells,
@@ -106,6 +108,7 @@ pub fn run() {
             commands::pick_files,
             commands::pick_open_file,
             commands::pick_save_file,
+            commands::pick_export_file,
             commands::repair_catalog,
             commands::repair_run,
             commands::repair_cancel,
@@ -118,7 +121,8 @@ pub fn run() {
             commands::repair_script_import,
             commands::repair_script_export,
             commands::library_catalog,
-            commands::library_primitive,
+            commands::library_build,
+            commands::library_pick_image,
             commands::measure_pick,
             commands::measure_fit,
             commands::measure_evaluate,

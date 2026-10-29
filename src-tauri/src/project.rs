@@ -1,14 +1,20 @@
-//! tricky3D projects: a 3MF package (unit millimetre) with one object per part in part-local
-//! coordinates and one build item per part carrying the part's matrix as its `transform`. The
-//! platform size and each part's display fields travel as metadata in the tricky3D namespace,
-//! so any 3MF program can still open a project, and a 3MF from elsewhere opens as a project.
+//! tricky3D projects: a 3MF package (unit millimetre) with one object per part and one build item
+//! per part. Each object holds the part where it sits on the platform (its matrix baked into the
+//! vertices) and its build item has no transform, so every 3MF program places every part where
+//! tricky3D showed it. The part's own matrix, the platform size, each part's display fields and
+//! the file it was imported from travel as metadata in the tricky3D namespace; opening a project
+//! takes the matrix back out of the vertices.
+//!
+//! Projects saved before kept the part-local mesh and put the matrix in the build item's
+//! `transform`. They still open the same, and so does a 3MF from elsewhere.
 
 use std::io::{self, Seek, Write};
 use std::path::Path;
 
 use crate::formats::threemf::{self, ModelOut, ObjectOut, Package};
 use crate::formats::{display_name, has_extension, read_all, write_atomic, write_error};
-use crate::mesh::{Matrix, Mesh};
+use crate::measure::invert;
+use crate::mesh::{IDENTITY, Matrix, Mesh, bake, multiply};
 use crate::progress::Progress;
 
 pub const NAMESPACE: &str = "urn:tricky3d:project:2026";
@@ -27,6 +33,9 @@ pub struct PartOut<'a> {
     pub locked: bool,
     /// Measure mode's measurements on the part, as the window's JSON (src/measure), or None.
     pub measurements: Option<&'a str>,
+    /// The file the part (or the part it was made from) was imported from, or None.
+    pub source: Option<&'a str>,
+    /// Part-local, as the window holds it; written with `matrix` baked in.
     pub mesh: &'a Mesh,
 }
 
@@ -41,6 +50,9 @@ pub struct Part {
     pub locked: Option<bool>,
     /// The measurements' JSON as saved; the window checks it.
     pub measurements: Option<String>,
+    /// The file the part was imported from, as saved.
+    pub source: Option<String>,
+    /// Part-local: `matrix` places it.
     pub mesh: Mesh,
 }
 
@@ -53,10 +65,12 @@ pub struct Project {
 }
 
 pub fn write<W: Write + Seek>(w: W, platform: [f64; 3], parts: &[PartOut]) -> io::Result<W> {
+    let baked: Vec<Mesh> = parts.iter().map(|p| bake(p.mesh, &p.matrix)).collect();
     let objects = parts
         .iter()
-        .map(|p| {
-            let mut metadata = Vec::new();
+        .zip(&baked)
+        .map(|(p, mesh)| {
+            let mut metadata = vec![("tricky3d:matrix", format_matrix(&p.matrix))];
             if let Some(color) = p.color {
                 metadata.push(("tricky3d:color", color.to_string()));
             }
@@ -66,10 +80,13 @@ pub fn write<W: Write + Seek>(w: W, platform: [f64; 3], parts: &[PartOut]) -> io
             if let Some(json) = p.measurements {
                 metadata.push(("tricky3d:measurements", json.to_string()));
             }
+            if let Some(source) = p.source {
+                metadata.push(("tricky3d:source", source.to_string()));
+            }
             ObjectOut {
                 name: p.name,
-                mesh: p.mesh,
-                transform: Some(p.matrix),
+                mesh,
+                transform: None,
                 metadata,
             }
         })
@@ -100,6 +117,48 @@ pub fn save_file(path: &Path, platform: [f64; 3], parts: &[PartOut]) -> Result<(
 
 /// Longest measurements text a part may carry (bytes); anything longer is not ours.
 const MAX_MEASUREMENTS: usize = 4 << 20;
+
+/// Longest source path a part may carry (bytes).
+const MAX_SOURCE: usize = 4096;
+
+/// The 16 numbers of a column-major matrix, in shortest round-trip form.
+fn format_matrix(m: &Matrix) -> String {
+    m.iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A matrix written by `format_matrix`: 16 finite numbers, affine (bottom row 0 0 0 1), and not
+/// squashed flat. None otherwise.
+fn parse_matrix(text: &str) -> Option<Matrix> {
+    let values: Vec<f64> = text
+        .split_whitespace()
+        .map(|v| v.parse::<f64>().ok().filter(|v| v.is_finite()))
+        .collect::<Option<_>>()?;
+    let m = Matrix::try_from(values.as_slice()).ok()?;
+    let affine = m[3] == 0.0 && m[7] == 0.0 && m[11] == 0.0 && m[15] == 1.0;
+    (affine && invert(&m).is_some()).then_some(m)
+}
+
+/// The part's own mesh and matrix from what a project holds: `world` placed by the build item's
+/// `transform`, and the matrix saved in tricky3d:matrix (None for a project saved before that,
+/// or a 3MF from elsewhere, whose transform then is the part's matrix).
+fn part_frame(world: Mesh, transform: Matrix, saved: Option<Matrix>) -> (Mesh, Matrix) {
+    match saved {
+        Some(matrix) => {
+            let back = invert(&matrix).expect("parse_matrix only accepts invertible matrices");
+            let local = multiply(&back, &transform);
+            let mesh = if local == IDENTITY {
+                world
+            } else {
+                bake(&world, &local)
+            };
+            (mesh, matrix)
+        }
+        None => (world, transform),
+    }
+}
 
 /// The names a project field may have in the metadata: ours, then the pre-rename one.
 fn keys(local: &str) -> [String; 2] {
@@ -146,17 +205,24 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Project, String> {
                     _ => None,
                 })
             };
+            let (mesh, matrix) = part_frame(
+                item.mesh,
+                item.matrix,
+                field("matrix").as_deref().and_then(parse_matrix),
+            );
             Part {
                 name: crate::formats::clean_name(item.object_name.as_deref())
                     .unwrap_or_else(|| format!("Part {}", n + 1)),
-                matrix: item.matrix,
+                matrix,
                 color: field("color").filter(|c| !c.is_empty() && c.len() <= 64),
                 visible: flag("visible"),
                 transparent: flag("transparent"),
                 locked: flag("locked"),
                 measurements: field("measurements")
                     .filter(|m| !m.is_empty() && m.len() <= MAX_MEASUREMENTS),
-                mesh: item.mesh,
+                source: field("source")
+                    .filter(|s| !s.is_empty() && s.len() <= MAX_SOURCE && !s.contains('\0')),
+                mesh,
             }
         })
         .collect::<Vec<_>>();

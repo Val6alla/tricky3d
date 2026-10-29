@@ -1,17 +1,113 @@
-// Part library › the right panel: the new part's name and the picked primitive's parameters, each checked as it is
-// typed (src/library/session.ts parseValues), with Create part and Cancel at the bottom.
+// Part library › the right panel: the new part's name and the picked item's parameters (numbers, choices, texts,
+// toggles, a picture), each checked as it is typed (src/library/session.ts), a read-only Triangles count, and Create
+// part and Cancel at the bottom.
 import { useId } from "react";
-import { useLibrary } from "./store";
-import { cancelCreate, closePartLibrary, createPart, fieldProblem, resetValues, setName, setValue, valueText } from "./session";
+import { useStore } from "../store";
+import type { LibraryParam } from "./ipc";
+import { useLibrary, type FieldValue } from "./store";
+import {
+  cancelCreate,
+  choosePicture,
+  clearPicture,
+  closePartLibrary,
+  createPart,
+  defaultValue,
+  resetValues,
+  setName,
+  setValue,
+  shows,
+  triangleText,
+  valueProblem,
+  valueText,
+} from "./session";
 import "./library.css";
+
+/** Typing must not reach the app shortcuts; Enter in a field creates the part. */
+function keys(e: React.KeyboardEvent) {
+  e.stopPropagation();
+  if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) void createPart();
+}
+
+function Field({ param, value }: { param: LibraryParam; value: FieldValue }) {
+  const id = useId();
+  const picture = useLibrary((s) => s.picture);
+  const problem = valueProblem(param, value);
+  const help = param.help || undefined;
+  if (param.kind === "toggle") {
+    return (
+      <label className="lib-check" title={help}>
+        <input type="checkbox" checked={value === true} onChange={(e) => setValue(param.key, e.target.checked)} onKeyDown={keys} />
+        <span>{param.label}</span>
+      </label>
+    );
+  }
+  if (param.kind === "image") {
+    return (
+      <div className="lib-field" title={help}>
+        <span className="lib-label">{param.label}</span>
+        <div className="lib-picture">
+          <span className="lib-picture-name">{picture ? picture.name : "Built-in sample"}</span>
+          <button type="button" className="dlg-btn" onClick={() => void choosePicture()}>
+            Choose…
+          </button>
+          {picture && (
+            <button type="button" className="dlg-btn" onClick={clearPicture}>
+              Use sample
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <label className="lib-field" htmlFor={id}>
+      <span className="lib-label">
+        {param.label}
+        {param.kind === "number" && param.unit && <span className="dlg-unit"> {param.unit}</span>}
+      </span>
+      {param.kind === "choice" ? (
+        <select id={id} className="dlg-input" value={String(value)} title={help} onChange={(e) => setValue(param.key, e.target.value)} onKeyDown={keys}>
+          {param.options.map((o) => (
+            <option key={o.value} value={o.value} disabled={o.soon}>
+              {o.soon ? `${o.label} (Soon)` : o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id={id}
+          className="dlg-input"
+          type="text"
+          inputMode={param.kind === "number" ? (param.integer ? "numeric" : "decimal") : undefined}
+          spellCheck={false}
+          autoComplete="off"
+          value={String(value)}
+          maxLength={param.kind === "text" ? param.maxLength : undefined}
+          aria-invalid={problem ? true : undefined}
+          title={
+            problem ??
+            help ??
+            (param.kind === "number" ? `${valueText(param.min)} to ${valueText(param.max)}${param.unit ? ` ${param.unit}` : ""}` : undefined)
+          }
+          onChange={(e) => setValue(param.key, e.target.value)}
+          onKeyDown={keys}
+        />
+      )}
+      {problem && <span className="lib-problem">{problem}</span>}
+    </label>
+  );
+}
 
 export function LibraryPanel() {
   const session = useLibrary((s) => s.session);
   const catalog = useLibrary((s) => s.catalog);
   const busy = useLibrary((s) => s.busy);
+  const selection = useStore((s) => s.selection);
+  const parts = useStore((s) => s.parts);
   const nameId = useId();
-  const primitive = catalog?.find((p) => p.id === session?.primitive);
-  if (!session || !primitive) return null;
+  const item = catalog?.find((p) => p.id === session?.primitive);
+  if (!session || !item) return null;
+  const from = item.input === "parts" ? parts.filter((p) => selection.includes(p.id) && p.visible) : [];
 
   return (
     <section className="lib-panel" aria-label="Part configuration">
@@ -26,39 +122,29 @@ export function LibraryPanel() {
             spellCheck={false}
             value={session.name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
+            onKeyDown={keys}
           />
         </label>
-        <h3 className="lib-subheading">{primitive.label}</h3>
-        {primitive.params.map((p) => {
-          const text = session.values[p.key] ?? valueText(p.default);
-          const problem = fieldProblem(p, text);
-          return (
-            <label key={p.key} className="lib-field">
-              <span className="lib-label">
-                {p.label}
-                {p.unit && <span className="dlg-unit"> {p.unit}</span>}
-              </span>
-              <input
-                className="dlg-input"
-                type="text"
-                inputMode={p.integer ? "numeric" : "decimal"}
-                spellCheck={false}
-                autoComplete="off"
-                value={text}
-                aria-invalid={problem ? true : undefined}
-                title={problem ?? `${valueText(p.min)} to ${valueText(p.max)}${p.unit ? ` ${p.unit}` : ""}`}
-                onChange={(e) => setValue(p.key, e.target.value)}
-                onKeyDown={(e) => {
-                  // Typing must not reach the app shortcuts; Enter creates the part.
-                  e.stopPropagation();
-                  if (e.key === "Enter") void createPart();
-                }}
-              />
-              {problem && <span className="lib-problem">{problem}</span>}
-            </label>
-          );
-        })}
+        <h3 className="lib-subheading">{item.label}</h3>
+        <p className="lib-description">{item.description}</p>
+        {item.input === "parts" && (
+          <p className={`lib-from${from.length === 0 ? " is-missing" : ""}`} role="status">
+            {from.length === 0
+              ? "Select the part to make it from in the parts list."
+              : `Made from ${from.length === 1 ? `“${from[0].name}”` : `${from.length} parts`}.`}
+          </p>
+        )}
+        {item.params
+          .filter((p) => shows(p, session.values, item))
+          .map((p) => (
+            <Field key={p.key} param={p} value={session.values[p.key] ?? defaultValue(p)} />
+          ))}
+        <div className="lib-field">
+          <span className="lib-label">Triangles</span>
+          <output className="lib-readout" aria-live="polite">
+            {session.triangles === null ? "…" : triangleText(session.triangles)}
+          </output>
+        </div>
         <button type="button" className="dlg-btn lib-reset" onClick={resetValues}>
           Reset to defaults
         </button>
@@ -68,7 +154,7 @@ export function LibraryPanel() {
           <>
             <span className="lib-busy" role="status">
               <span className="statusbar-spinner" aria-hidden="true" />
-              {busy.cancelling ? "Cancelling…" : "Creating the part…"}
+              {busy.cancelling ? "Cancelling…" : `Creating the part… ${Math.round(busy.fraction * 100)}%`}
             </span>
             <button type="button" className="dlg-btn" onClick={cancelCreate} disabled={busy.cancelling}>
               Cancel

@@ -37,6 +37,7 @@ export function shortcutFor(e: KeyPress, isMac: boolean, repairing = false): str
     if (e.shiftKey) return key === "g" ? "view.always-show-gizmo" : null;
     if (key === "y") return "modify.redo";
     if (key === "s") return "file.save";
+    if (key === "e") return "file.export";
     if (key === "o") return "file.open";
     if (key === "c") return "context.copy";
     if (key === "v") return "context.paste";

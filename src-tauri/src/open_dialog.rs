@@ -71,6 +71,24 @@ pub fn script_filters() -> Vec<Filter> {
     .collect()
 }
 
+/// The format menu for a picture the Part library turns into a part.
+pub fn picture_filters() -> Vec<Filter> {
+    [
+        ("Pictures", vec!["png", "jpg", "jpeg", "bmp", "gif", "webp"]),
+        ("PNG (*.png)", vec!["png"]),
+        ("JPEG (*.jpg, *.jpeg)", vec!["jpg", "jpeg"]),
+        ("BMP (*.bmp)", vec!["bmp"]),
+        ("GIF (*.gif)", vec!["gif"]),
+        ("WebP (*.webp)", vec!["webp"]),
+    ]
+    .into_iter()
+    .map(|(name, extensions)| Filter {
+        name: name.into(),
+        extensions,
+    })
+    .collect()
+}
+
 /// Shows the open dialog over `window` with the format menu `filters` and waits until it closes.
 /// Returns the files picked, none when it was cancelled. Blocks, so call it off the main thread.
 pub fn pick(

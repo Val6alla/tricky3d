@@ -1,6 +1,6 @@
 //! Export every format through the same path as the `export_mesh` command (a bundle from the
 //! window), read the file back, and compare with the expected baked meshes. Projects round-trip
-//! their part fields and unbaked matrices.
+//! their part fields and matrices, and hold every part where it sits on the platform.
 
 mod common;
 
@@ -289,7 +289,7 @@ fn export_errors_name_the_file() {
 }
 
 #[test]
-fn project_round_trip_keeps_fields_and_unbaked_matrices() {
+fn project_round_trip_keeps_fields_and_matrices() {
     let dir = temp_dir("project");
     let path = dir.join("my project.3mf");
     let mut parts = parts();
@@ -326,20 +326,39 @@ fn project_round_trip_keeps_fields_and_unbaked_matrices() {
         assert_eq!(
             m.info["matrix"],
             json!(matrix.to_vec()),
-            "matrices are exact and not baked"
+            "matrices are exact"
         );
         assert_eq!(m.info["color"], json!(color));
         assert_eq!(m.info["visible"], json!(visible));
         assert_eq!(m.info["transparent"], json!(transparent));
         assert_eq!(m.info["locked"], json!(locked));
-        assert_eq!(&m.mesh, mesh, "mesh in part-local coordinates");
+        // In part-local coordinates again: the file holds them baked, and opening takes the
+        // matrix back out, so every triangle comes back corner for corner to within a few f32
+        // steps. (A mirrored part's corners are swapped twice on the way, so the reader's weld
+        // may number its vertices differently.)
+        assert_eq!(m.mesh.triangle_count(), mesh.triangle_count());
+        for (g, w) in m.mesh.indices.iter().zip(&mesh.indices) {
+            let (got, want) = (m.mesh.vertex(*g), mesh.vertex(*w));
+            for k in 0..3 {
+                assert!(
+                    (got[k] - want[k]).abs() <= 1e-5 * want[k].abs().max(1.0),
+                    "mesh in part-local coordinates: {got:?} vs {want:?}"
+                );
+            }
+        }
         assert_eq!(m.info["stats"]["triangles"], json!(mesh.triangle_count()));
     }
 
-    // Any 3MF reader sees an ordinary package; ours reads it as an import too.
+    // Any 3MF reader sees an ordinary package with every part where it sits on the platform; ours
+    // reads it as an import too.
     let as_import = import_file(&path, false, &mut Progress::silent()).unwrap();
     assert_eq!(as_import.format, ImportFormat::ThreeMf);
-    assert_eq!(as_import.parts[1].matrix, Some(parts[1].2));
+    assert_eq!(as_import.parts[1].matrix, None);
+    assert_same_shape(
+        &as_import.parts[1].mesh,
+        &bake(&parts[1].1, &parts[1].2),
+        "baked",
+    );
 }
 
 #[test]

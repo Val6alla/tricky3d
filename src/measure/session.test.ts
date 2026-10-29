@@ -195,7 +195,10 @@ describe("Measure mode", () => {
     s().addParts([{ name: "A", mesh: makeBox([10, 10, 10]) }]);
     const { openPartLibrary, closePartLibrary } = await import("../library/session");
     const library = await import("../library/store");
-    library.useLibrary.setState({ catalog: [{ id: "box", label: "Box", params: [] }], session: null });
+    library.useLibrary.setState({
+      catalog: [{ id: "box", label: "Box", category: "primitive", description: "", soon: null, input: "none", params: [] }],
+      session: null,
+    });
     await openPartLibrary();
     openMeasure();
     expect(m().session).toBeNull();

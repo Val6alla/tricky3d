@@ -309,6 +309,7 @@ pub enum ExportFormat {
     Ply,
     ThreeMf,
     Amf,
+    Off,
 }
 
 impl ExportFormat {
@@ -321,6 +322,7 @@ impl ExportFormat {
             "ply" => ExportFormat::Ply,
             "3mf" => ExportFormat::ThreeMf,
             "amf" => ExportFormat::Amf,
+            "off" => ExportFormat::Off,
             _ => return None,
         })
     }
@@ -333,6 +335,7 @@ impl ExportFormat {
             ExportFormat::Ply => "ply",
             ExportFormat::ThreeMf => "3mf",
             ExportFormat::Amf => "amf",
+            ExportFormat::Off => "off",
         }
     }
 }
@@ -344,14 +347,64 @@ pub fn has_extension(path: &Path, ext: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case(ext))
 }
 
+/// `name` as a file name every system accepts, as `sanitizeFileName` in src/io/files.ts: characters
+/// Windows, macOS or Linux forbid become "_", trailing dots and spaces go (Windows drops them), a
+/// device name such as "CON" gets a "_", and an empty name becomes "Part".
+pub fn safe_file_name(name: &str) -> String {
+    let replaced: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || r#"<>:"/\|?*"#.contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let mut out: String = replaced.trim().chars().take(200).collect();
+    out.truncate(out.trim_end_matches(['.', ' ']).len());
+    let lower = out.to_ascii_lowercase();
+    let numbered = |prefix: &str| {
+        lower
+            .strip_prefix(prefix)
+            .is_some_and(|n| n.len() == 1 && matches!(n.as_bytes()[0], b'1'..=b'9'))
+    };
+    if ["con", "prn", "aux", "nul"].contains(&lower.as_str()) || numbered("com") || numbered("lpt")
+    {
+        out.push('_');
+    }
+    if out.is_empty() { "Part".into() } else { out }
+}
+
+/// The files of an export with one file per part, in part order: each part's name made safe
+/// (`safe_file_name`) with `.ext`. Names that would be the same file, in any letter case as on
+/// Windows and macOS, get " (2)", " (3)"… so no part overwrites another.
+pub fn part_file_names<'a>(names: impl IntoIterator<Item = &'a str>, ext: &str) -> Vec<String> {
+    let mut taken = std::collections::HashSet::new();
+    names
+        .into_iter()
+        .map(|name| {
+            let base = safe_file_name(name);
+            (1..)
+                .map(|n| match n {
+                    1 => format!("{base}.{ext}"),
+                    n => format!("{base} ({n}).{ext}"),
+                })
+                .find(|file| taken.insert(file.to_lowercase()))
+                .expect("a free name")
+        })
+        .collect()
+}
+
 /// A part going to a file, with its transform already baked into the mesh.
 pub struct NamedMesh<'a> {
     pub name: &'a str,
     pub mesh: &'a Mesh,
 }
 
-/// Writes `parts` into one file of `format`. STL and PLY merge the parts into one mesh; OBJ, 3MF
-/// and AMF keep one object per part. `title` labels the whole file where the format has a slot.
+/// Writes `parts` into one file of `format`, each where it sits on the platform: the callers bake
+/// every part's matrix into its vertices first, and no writer moves anything. STL, PLY and OFF merge
+/// the parts into one mesh; OBJ, 3MF and AMF keep one object per part. `title` labels the whole file where the format has a slot.
 pub fn write_export<W: Write + Seek>(
     w: W,
     format: ExportFormat,
@@ -365,6 +418,7 @@ pub fn write_export<W: Write + Seek>(
         ExportFormat::Ply => ply::write(w, parts),
         ExportFormat::ThreeMf => threemf::write_export(w, parts),
         ExportFormat::Amf => amf::write(w, parts),
+        ExportFormat::Off => off::write(w, parts),
     }
 }
 
@@ -410,6 +464,45 @@ mod tests {
         assert_eq!(
             err,
             "Could not open \"model.dae\": tricky3D opens STL, OBJ, PLY, 3MF, AMF and OFF files."
+        );
+    }
+
+    #[test]
+    fn file_names_are_safe_on_every_system() {
+        assert_eq!(
+            safe_file_name("gun - barrel (cut 1)"),
+            "gun - barrel (cut 1)"
+        );
+        assert_eq!(
+            safe_file_name(r#"a/b\c:d*e?f"g<h>i|j"#),
+            "a_b_c_d_e_f_g_h_i_j"
+        );
+        assert_eq!(safe_file_name("  bracket.. "), "bracket");
+        assert_eq!(safe_file_name("tab\there"), "tab_here");
+        assert_eq!(safe_file_name("CON"), "CON_");
+        assert_eq!(safe_file_name("com7"), "com7_");
+        assert_eq!(safe_file_name("com10"), "com10");
+        assert_eq!(safe_file_name("console"), "console");
+        assert_eq!(safe_file_name(" . "), "Part");
+        assert_eq!(safe_file_name(""), "Part");
+        assert_eq!(safe_file_name(&"x".repeat(300)).len(), 200);
+    }
+
+    #[test]
+    fn one_file_per_part_never_gives_two_parts_the_same_file() {
+        assert_eq!(
+            part_file_names(
+                ["gun - barrel", "Stand", "stand", "stand (2)", "a/b", "a_b"],
+                "stl"
+            ),
+            [
+                "gun - barrel.stl",
+                "Stand.stl",
+                "stand (2).stl",
+                "stand (2) (2).stl",
+                "a_b.stl",
+                "a_b (2).stl"
+            ]
         );
     }
 

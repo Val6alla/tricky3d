@@ -233,7 +233,18 @@ export async function batchRepair(): Promise<void> {
       if (run.status) primeCheck(run.mesh, checkFromStatus(run.status));
       replacements.push({
         remove: [part.id],
-        add: [{ name: part.name, mesh: run.mesh, matrix: [...part.matrix], color: part.color, visible: part.visible, transparent: part.transparent, locked: part.locked }],
+        add: [
+          {
+            name: part.name,
+            mesh: run.mesh,
+            matrix: [...part.matrix],
+            color: part.color,
+            visible: part.visible,
+            transparent: part.transparent,
+            locked: part.locked,
+            source: part.source,
+          },
+        ],
       });
     }
     const n = replacements.length;
