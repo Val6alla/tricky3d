@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { TabId } from "./features";
-import type { TransformMode, Vec3 } from "./store";
+import type { ExportOptions, TransformMode, Vec3 } from "./store";
 
 export type ToastKind = "info" | "warn" | "error";
 
@@ -42,6 +42,8 @@ export type Dialog =
   | { kind: "scale-on-import"; fileName: string; size: number; resolve(answer: boolean | null): void }
   /** Split shells into parts would make `count` parts; `partName` when they all come from one part. */
   | { kind: "split-many"; count: number; partName: string | null; resolve(answer: SplitAnswer | null): void }
+  /** Export's options for `count` parts, opened on `options` (the last ones used). */
+  | { kind: "export-options"; count: number; options: ExportOptions; resolve(answer: ExportOptions | null): void }
   // Repair mode (src/repair/dialogs).
   /** Several parts selected: pick the one to repair. */
   | { kind: "repair-choose-part"; ids: string[] }

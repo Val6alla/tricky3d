@@ -9,7 +9,7 @@
 // - each operation commits exactly one replaceParts, which is one undo step, after priming meshCache for every result
 //   (otherwise the viewport would measure problem edges on the main thread).
 import { normalized, useClip, type CutScope } from "../clip";
-import { browserOnly, countParts, errorMessage } from "../io/files";
+import { browserOnly, countParts, errorMessage, sourceOf } from "../io/files";
 import { analyzeMeshes, cutMeshes, mergeMeshes, splitShells, type AnalyzedMesh, type PartMesh } from "../io/ipc";
 import { primeMeshCaches } from "../meshCache";
 import { CLOSE_REPAIR_FIRST, enterRepair, isRepairing } from "../repair/session";
@@ -159,6 +159,8 @@ export interface Group {
   removeIds: string[];
   made: Made[];
   after?: string;
+  /** The parts the results are made from, when not only the removed ones and `after` (a Boolean keeping its inputs). */
+  from?: string[];
 }
 
 /** One group per replaced part (Split, Cut), so each part's results stay where it was; Merge and Union have one. */
@@ -316,15 +318,21 @@ function stillCurrent(op: string, inputs: readonly Part[], generation: number): 
  */
 export function commit(plan: Plan, inputs: readonly Part[], label: string): void {
   const colors = freshColors(inputs.map((p) => p.color), madeOf(plan).length);
+  const byId = new Map(inputs.map((p) => [p.id, p]));
   let next = 0;
-  const replacements = plan.groups.map((g) => ({
-    remove: g.removeIds,
-    after: g.after,
-    add: g.made.map((m) => {
-      primeMeshCaches(m.result.mesh, { stats: m.result.stats, edges: m.result.edges });
-      return { name: m.name, mesh: m.result.mesh, color: colors[next++] };
-    }),
-  }));
+  const replacements = plan.groups.map((g) => {
+    // Results come from the file their first input with a source came from (Save and Export suggest its name).
+    const from = (g.from ?? [...g.removeIds, ...(g.after === undefined ? [] : [g.after])]).flatMap((id) => byId.get(id) ?? []);
+    const source = sourceOf(from) ?? undefined;
+    return {
+      remove: g.removeIds,
+      after: g.after,
+      add: g.made.map((m) => {
+        primeMeshCaches(m.result.mesh, { stats: m.result.stats, edges: m.result.edges });
+        return { name: m.name, mesh: m.result.mesh, color: colors[next++], source };
+      }),
+    };
+  });
   useStore.getState().replaceParts(replacements, label);
 }
 

@@ -22,8 +22,7 @@ import {
   Trash, Triangle, TriangleAlert, TriangleDashed, TriangleRight, Type, Undo2, Unlink, Unlink2, VectorSquare,
   WandSparkles, WavesHorizontal, Waypoints, Wrench, X,
 } from "lucide-react";
-import { browserOnly, confirmDiscard, exportAs, exportSelection, importPart, openFile, saveProject, saveProjectAs } from "./io/files";
-import type { ExportFormat } from "./io/ipc";
+import { browserOnly, confirmDiscard, exportSelection, importPart, openFile, saveProject, saveProjectAs } from "./io/files";
 import { boundsOf, unionBounds, type Bounds } from "./mesh";
 import { acceptBoolean, CLOSE_BOOLEAN_FIRST, closeBooleanMode, isBooleanOpen, openBooleanMode, zoomToBooleanPart } from "./boolean/session";
 import { useBoolean, type BooleanState, type BooleanTool } from "./boolean/store";
@@ -557,45 +556,33 @@ export function measureStatus(m: MeasureState): Tool | null {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Export formats. The File menu and the context menu each list them; both lists come from here.
+// Export. Every entry point (ribbon, File menu, right-click, Ctrl+E) runs the same command: the options step, then
+// the system's save dialog listing every format tricky3D writes (src/io/files.ts exportParts). The formats still to
+// come are listed under File › More export formats.
 
-interface ExportEntry {
-  key: string;
-  label: string;
-  status: FeatureStatus;
-  run?: () => void;
-}
+const EXPORT_HINT = "Save the selected parts, or every visible part, as STL, 3MF, OBJ, PLY, AMF or OFF.";
+const SAVE_HINT = "Save the whole project as a tricky3D project file (.3mf). For an STL or another mesh file, use Export.";
 
-const exportTo = (format: ExportFormat) => () => void exportAs(format);
-
-const EXPORT_FORMATS: ExportEntry[] = [
-  { key: "stl-binary", label: "STL (binary)", status: "ready", run: exportTo("stl-binary") },
-  { key: "stl-ascii", label: "STL (ASCII)", status: "ready", run: exportTo("stl-ascii") },
-  { key: "obj", label: "OBJ", status: "ready", run: exportTo("obj") },
-  { key: "ply", label: "PLY", status: "ready", run: exportTo("ply") },
-  { key: "3mf", label: "3MF", status: "ready", run: exportTo("3mf") },
-  { key: "amf", label: "AMF", status: "ready", run: exportTo("amf") },
-  { key: "color-stl", label: "Colour STL", status: "soon" },
-  { key: "gts", label: "GTS", status: "soon" },
-  { key: "x3d", label: "X3D", status: "soon" },
-  { key: "3ds", label: "3DS", status: "soon" },
-  { key: "vrml", label: "VRML", status: "soon" },
-  { key: "binvox", label: "BINVOX", status: "soon" },
-  { key: "compressed", label: "Compressed mesh", status: "soon" },
-  { key: "formlabs", label: "Formlabs", status: "soon" },
-  { key: "slice", label: "Slice", status: "soon" },
+const SOON_EXPORT_FORMATS: [key: string, label: string][] = [
+  ["color-stl", "Colour STL"],
+  ["gts", "GTS"],
+  ["x3d", "X3D"],
+  ["3ds", "3DS"],
+  ["vrml", "VRML"],
+  ["binvox", "BINVOX"],
+  ["compressed", "Compressed mesh"],
+  ["formlabs", "Formlabs"],
+  ["slice", "Slice"],
 ];
 
-function exportFormatEntries(tab: TabId, parent: string): Feature[] {
-  return EXPORT_FORMATS.map(({ key, label, status, run }) => ({
+function soonExportFormats(parent: string): Feature[] {
+  return SOON_EXPORT_FORMATS.map(([key, label]) => ({
     id: `${parent}.${key}`,
-    tab,
-    // The group splits the menu into a ready section and a "Soon" section.
-    group: status === "ready" ? "Formats" : "More formats",
+    tab: "file",
+    group: "More formats",
     label,
     icon: key === "slice" ? Layers : FileAxis3d,
-    status,
-    run,
+    status: "soon",
     parent,
   }));
 }
@@ -615,8 +602,8 @@ export const FEATURES: Feature[] = [
   ...group("file", "Project", [
     { id: "file.new", label: "New project", icon: FilePlus, status: "ready", run: newProject, hint: "Start over with an empty platform." },
     { id: "file.open", label: "Open…", icon: FolderOpen, status: "ready", run: openProject, shortcut: mod("O"), hint: "Open a project, or a mesh file as a new project." },
-    { id: "file.save", label: "Save project", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: "Save the project with all parts." },
-    { id: "file.save-as", label: "Save project as…", icon: SaveAll, status: "ready", run: saveProjectAs, hint: "Save the project under a new name." },
+    { id: "file.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: SAVE_HINT },
+    { id: "file.save-as", label: "Save project as (.3mf)…", icon: SaveAll, status: "ready", run: saveProjectAs, hint: "Save the project as a tricky3D project file (.3mf) under a new name." },
     { id: "file.recent", label: "Recent files", icon: FileClock, status: "soon" },
     { id: "file.autosave", label: "Autosave", icon: Timer, status: "soon" },
   ]),
@@ -627,13 +614,13 @@ export const FEATURES: Feature[] = [
     { id: "file.preview", label: "Preview a file", icon: FileSearch, status: "soon" },
     { id: "file.import-options", label: "Import options", icon: FileSliders, status: "soon" },
     { id: "file.formats", label: "Supported formats…", icon: FileAxis3d, status: "ready", run: () => ui().openDialog({ kind: "formats" }), hint: "File formats tricky3D can read and write." },
-    { id: "file.export", label: "Export part", icon: FileOutput, status: "ready", hint: "Save the selected parts as a mesh file." },
-    { id: "file.export-any", label: "Export…", icon: FileOutput, status: "ready", run: exportSelection, parent: "file.export", group: "Any format", hint: "Save the selected parts; the file name's extension picks the format." },
+    { id: "file.export", label: "Export part…", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), hint: EXPORT_HINT },
+    { id: "file.export-more", label: "More export formats", icon: FileAxis3d, status: "soon" },
     { id: "file.batch-export", label: "Export many parts at once", icon: FolderOutput, status: "soon" },
     { id: "file.part-library", label: "Add to part library", icon: LibraryBig, status: "soon" },
     { id: "file.3mf-colours", label: "3MF colours and materials", icon: SwatchBook, status: "soon" },
   ]),
-  ...exportFormatEntries("file", "file.export"),
+  ...soonExportFormats("file.export-more"),
   ...group("file", "App", [
     { id: "file.settings", label: "Settings…", icon: Settings, status: "ready", run: () => ui().openDialog({ kind: "settings" }), hint: "Change how tricky3D looks and behaves." },
     { id: "file.about", label: "About tricky3D", icon: Info, status: "ready", run: () => ui().openDialog({ kind: "about" }), hint: "Version, licence and credits." },
@@ -642,7 +629,8 @@ export const FEATURES: Feature[] = [
   // Home: the reference tool's layout, left to right. The repair tools that used to live here are in the Repair
   // tab and the repair right-click menu, where the reference has them.
   ...group("home", "Edit", [
-    { id: "home.save", label: "Save", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), size: "large", hint: "Save the project with all parts." },
+    { id: "home.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), size: "large", hint: SAVE_HINT },
+    { id: "home.export", label: "Export", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), size: "large", hint: EXPORT_HINT },
     { id: "home.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, dropdown: () => historyMenu("undo"), shortcut: mod("Z"), hint: "Undo the last change. The arrow lists the recent changes, to undo several at once." },
     { id: "home.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, dropdown: () => historyMenu("redo"), shortcut: mod("Shift+Z"), hint: "Redo the change you undid. The arrow lists the changes you can redo." },
   ]),
@@ -651,7 +639,7 @@ export const FEATURES: Feature[] = [
     { id: "home.add-part", label: "Add part", icon: PackagePlus, status: "ready", size: "large", hint: "Import a mesh file or add a test cube." },
     { id: "home.import", label: "Import from file…", icon: Import, status: "ready", run: importPart, parent: "home.add-part", hint: "Add parts from mesh files." },
     { id: "home.add-test-cube", label: "Add test cube", icon: Box, status: "ready", run: () => store().addTestCube(), parent: "home.add-part", hint: "Add a 20 mm cube to the platform." },
-    { id: "home.part-library", label: "Part library", icon: Library, status: "ready", run: () => void openPartLibrary(), size: "large", hint: "Add a box, cylinder, sphere or another shape, made to the sizes you set." },
+    { id: "home.part-library", label: "Part library", icon: Library, status: "ready", run: () => void openPartLibrary(), size: "large", hint: "Add a shape, grid, screw, nut, gear, QR code, mathematical solid or test part, made to the values you set." },
     { id: "home.platform-statistics", label: "Platform statistics", icon: Sheet, status: "ready", run: openPlatformStats, size: "large", outsideRepair: true, hint: "List every part with its size, volume and mesh counts, and the platform's packing density." },
   ]),
   ...group("home", "Prepare", [
@@ -743,7 +731,8 @@ export const FEATURES: Feature[] = [
 
   // Modify ------------------------------------------------------------------------------------
   ...group("modify", "Edit", [
-    { id: "modify.save", label: "Save", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: "Save the project with all parts." },
+    { id: "modify.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: SAVE_HINT },
+    { id: "modify.export", label: "Export", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), hint: EXPORT_HINT },
     { id: "modify.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, shortcut: mod("Z"), hint: "Undo the last change." },
     { id: "modify.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, shortcut: mod("Shift+Z"), hint: "Redo the change you undid." },
   ]),
@@ -891,7 +880,7 @@ export const FEATURES: Feature[] = [
 
   // Part context menu only --------------------------------------------------------------------
   ...group("context", "Part", [
-    { id: "context.export", label: "Export part as", icon: FileOutput, status: "ready", hint: "Save the selected parts as a mesh file." },
+    { id: "context.export", label: "Export part…", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), hint: EXPORT_HINT },
     { id: "context.duplicate", label: "Duplicate", icon: Copy, status: "ready", run: duplicateSelection, hint: "Copy the selected parts beside the originals." },
     { id: "context.rename", label: "Rename", icon: Pencil, status: "ready", run: renameSelection, hint: "Give the part a new name." },
     { id: "context.repair", label: "Repair part", icon: Wrench, status: "ready", run: repairPart, outsideRepair: true, hint: REPAIR_HINT },
@@ -905,7 +894,6 @@ export const FEATURES: Feature[] = [
     { id: "context.hide-unselected", label: "Hide unselected", icon: EyeOff, status: "ready", run: hideUnselected, hint: "Hide every part that is not selected." },
     { id: "context.show-all", label: "Show all", icon: Eye, status: "ready", run: showAll, hint: "Show every part, none transparent." },
   ]),
-  ...exportFormatEntries("context", "context.export"),
 
   // Quick-action strip at the bottom of the right panel ---------------------------------------
   ...group("quick", "Quick", [
@@ -1007,7 +995,7 @@ export const FEATURES: Feature[] = [
 
   // Part library (contextual tab, shown while the library is open) -----------------------------
   ...group("library", "Create", [
-    { id: "library.create", label: "Create part", icon: PackagePlus, status: "ready", run: () => void createPart(), size: "large", hint: "Add the shape as a new part on the middle of the platform, and close the library." },
+    { id: "library.create", label: "Create part", icon: PackagePlus, status: "ready", run: () => void createPart(), size: "large", hint: "Add the part on the middle of the platform (or, made from the selection, where it is), and close the library." },
   ]),
   ...group("library", "Close", [
     { id: "library.cancel", label: "Cancel", icon: X, status: "ready", run: closePartLibrary, size: "large", hint: "Close the part library without adding a part." },

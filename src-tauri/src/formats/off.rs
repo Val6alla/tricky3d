@@ -2,8 +2,11 @@
 //! for colours, normals and texture coordinates, as in "COFF" or "NOFF"); the counts follow on the
 //! same line or the next. Vertices take their first three numbers, faces "n i1 … in" and any colour
 //! after the corners is ignored. Polygons are split into a fan of triangles. `#` starts a comment.
+//! Export writes text OFF with every part in one mesh.
 
-use super::Loaded;
+use std::io::{self, Write};
+
+use super::{Loaded, NamedMesh};
 use crate::mesh::{fmt_count, weld_indexed};
 use crate::progress::{Progress, Stage};
 
@@ -127,6 +130,33 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Loaded, String> {
         ));
     }
     Ok(loaded)
+}
+
+/// Text OFF with all parts merged into one mesh (OFF holds one object and no units; the numbers
+/// are millimetres, in their shortest exact form).
+pub fn write<W: Write>(mut w: W, parts: &[NamedMesh]) -> io::Result<W> {
+    let vertices: usize = parts.iter().map(|p| p.mesh.vertex_count()).sum();
+    let faces: usize = parts.iter().map(|p| p.mesh.triangle_count()).sum();
+    writeln!(w, "OFF\n# tricky3D, millimetres\n{vertices} {faces} 0")?;
+    for p in parts {
+        for v in p.mesh.positions.as_chunks::<3>().0 {
+            writeln!(w, "{} {} {}", v[0], v[1], v[2])?;
+        }
+    }
+    let mut base = 0u64;
+    for p in parts {
+        for t in p.mesh.indices.as_chunks::<3>().0 {
+            writeln!(
+                w,
+                "3 {} {} {}",
+                base + t[0] as u64,
+                base + t[1] as u64,
+                base + t[2] as u64
+            )?;
+        }
+        base += p.mesh.vertex_count() as u64;
+    }
+    Ok(w)
 }
 
 #[cfg(test)]

@@ -245,9 +245,9 @@ export function applyRepair(mode: ApplyMode): void {
     toast(`The original part was removed meanwhile, so "${current.partName}" was added as a new part.`, "warn");
   } else if (mode === "remove") {
     const { name, color, visible, transparent, locked } = part;
-    store.replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked }] }], "Repair");
+    store.replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, source: part.source }] }], "Repair");
   } else {
-    const repaired = { name: `${part.name} (repaired)`, mesh, color: freshColors([part.color], 1)[0] };
+    const repaired = { name: `${part.name} (repaired)`, mesh, color: freshColors([part.color], 1)[0], source: part.source };
     const patch = mode === "compare" ? { ids: [part.id], patch: { transparent: true, visible: true } } : undefined;
     store.replaceParts([{ remove: [], add: [repaired], after: part.id }], "Repair", patch);
   }
@@ -741,7 +741,7 @@ export async function extractSelection(separate: boolean): Promise<void> {
   const store = useStore.getState();
   const part = store.parts.find((p) => p.id === current.partId);
   const name = `${repairedPartName(current, store.parts)} (extracted)`;
-  store.addParts([{ name, mesh: piece, color: freshColors(part ? [part.color] : [], 1)[0] }], "Extract part");
+  store.addParts([{ name, mesh: piece, color: freshColors(part ? [part.color] : [], 1)[0], source: part?.source }], "Extract part");
   // The tree keeps pointing at the part being repaired.
   if (part) store.select([part.id]);
   toast(`Added "${name}" with ${formatCount(triangleCount(piece))} ${triangleCount(piece) === 1 ? "triangle" : "triangles"}.`);

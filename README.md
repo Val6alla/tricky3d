@@ -79,7 +79,9 @@ STL, OBJ, PLY and OFF files have no units, so tricky3D reads them as millimetres
 | PLY | ASCII and binary | Binary, all selected parts in one mesh |
 | 3MF | Objects, placement and units | One object per part, in mm |
 | AMF | Plain or zipped, with units | One object per part, in mm |
-| OFF | Text; polygons are split into triangles | No |
+| OFF | Text; polygons are split into triangles | Text, all selected parts in one mesh |
+
+Export (Ctrl+E) writes each part where it sits on the platform. It asks whether STL should be binary or ASCII, and, for several parts, whether they go into one file or into one file per part, each named after its part.
 
 tricky3D saves projects as 3MF files, which other 3MF programs can open too.
 

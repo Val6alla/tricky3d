@@ -23,6 +23,7 @@ const EXPORT: FormatRow[] = [
   { name: "PLY (binary)", detail: "Parts merged into one mesh", ext: ".ply" },
   { name: "3MF", detail: "One object per part, in mm", ext: ".3mf" },
   { name: "AMF", detail: "One object per part, in mm", ext: ".amf" },
+  { name: "OFF", detail: "Parts merged into one mesh", ext: ".off" },
 ];
 
 const IMPORT_SOON = ["X3D", "VRML", "3DS", "GTS", "Colour STL", "STEP", "IGES"];
@@ -68,7 +69,10 @@ export function FormatsDialog({ onClose }: { onClose(): void }) {
           <FormatSection title="Import" rows={IMPORT} soon={IMPORT_SOON} hideSoon={hideSoon} />
           <FormatSection title="Export" rows={EXPORT} soon={EXPORT_SOON} hideSoon={hideSoon} />
         </div>
-        <p className="dlg-note">STL, OBJ and PLY files have no units, so tricky3D reads them as millimetres.</p>
+        <p className="dlg-note">
+          STL, OBJ, PLY and OFF files have no units, so tricky3D reads and writes them as millimetres. Every export
+          writes each part where it sits on the platform.
+        </p>
       </div>
     </Dialog>
   );

@@ -1,80 +1,30 @@
-//! Part library › Primitive: closed, outward-facing meshes of simple solids made to the sizes the
-//! user sets (mm, degrees and segment counts), and the catalog of their parameters, which the
-//! window builds its form from (src/library). Every shape sits centred on the local Z axis with its
-//! lowest point at z = 0, so a part made from it rests on the platform where it is placed.
+//! Part library › Primitive: simple solids made to the sizes the user sets (mm, degrees and
+//! segment counts). Every shape sits centred on the local Z axis with its lowest point at z = 0.
 //!
 //! Curved shapes keep their points on the true surface (as CAD tessellation does), so a coarse
 //! mesh is a little smaller than the solid it approximates; the tests bound that by the segment
 //! counts.
 
-use serde::Serialize;
-use serde_json::{Map, Value};
 use std::f64::consts::{PI, TAU};
 
+use super::build::{Builder, Cap, circle};
+use super::{Category, Item, Param, Values, count, item, mm, num};
 use crate::mesh::{Mesh, cross, dot, make_box, sub};
-
-/// A parameter of a primitive. Field names match `LibraryParam` in src/library/ipc.ts.
-#[derive(Clone, Debug, Serialize)]
-pub struct Param {
-    pub key: &'static str,
-    pub label: &'static str,
-    /// "mm", "°" or "" (a count).
-    pub unit: &'static str,
-    pub default: f64,
-    pub min: f64,
-    pub max: f64,
-    /// Whole numbers only (segment counts).
-    pub integer: bool,
-}
-
-/// A primitive of the catalog. Field names match `LibraryPrimitive` in src/library/ipc.ts.
-#[derive(Clone, Debug, Serialize)]
-pub struct Primitive {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub params: Vec<Param>,
-}
-
-/// More triangles than this would take long to draw and help nobody.
-pub const MAX_TRIANGLES: usize = 4_000_000;
-
-const MAX_MM: f64 = 10_000.0;
-
-const fn mm(key: &'static str, label: &'static str, default: f64) -> Param {
-    Param {
-        key,
-        label,
-        unit: "mm",
-        default,
-        min: 0.001,
-        max: MAX_MM,
-        integer: false,
-    }
-}
-
-const fn count(key: &'static str, label: &'static str, default: f64, min: f64, max: f64) -> Param {
-    Param {
-        key,
-        label,
-        unit: "",
-        default,
-        min,
-        max,
-        integer: true,
-    }
-}
 
 const SEGMENTS: Param = count("segments", "Segments", 64.0, 3.0, 2048.0);
 const RINGS: Param = count("rings", "Rings", 32.0, 2.0, 1024.0);
 const TUBE_SEGMENTS: Param = count("tube_segments", "Tube segments", 32.0, 3.0, 1024.0);
 
-/// Every primitive with its parameters, in the order the library shows them.
-pub fn catalog() -> Vec<Primitive> {
-    let p = |id, label, params: Vec<Param>| Primitive { id, label, params };
+/// The primitives with their parameters, in the order the library shows them.
+pub(super) fn catalog() -> Vec<Item> {
+    let p = |id, label, description, params: Vec<Param>| {
+        item(id, label, Category::Primitive, description, params)
+    };
     vec![
         p(
             "box",
             "Box",
+            "A rectangular block.",
             vec![
                 mm("length", "Length (X)", 20.0),
                 mm("width", "Width (Y)", 20.0),
@@ -84,6 +34,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "pyramid",
             "Pyramid",
+            "A pyramid on a base of three or more sides.",
             vec![
                 mm("length", "Length (X)", 20.0),
                 mm("width", "Width (Y)", 20.0),
@@ -94,6 +45,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "pyramid_frustum",
             "Frustum of pyramid",
+            "A pyramid with its tip cut off flat.",
             vec![
                 mm("length", "Bottom length (X)", 20.0),
                 mm("width", "Bottom width (Y)", 20.0),
@@ -106,6 +58,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "cylinder",
             "Cylinder",
+            "A round column.",
             vec![
                 mm("radius", "Radius", 10.0),
                 mm("height", "Height (Z)", 20.0),
@@ -115,6 +68,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "cone",
             "Cone",
+            "A round base narrowing to a point.",
             vec![
                 mm("radius", "Radius", 10.0),
                 mm("height", "Height (Z)", 20.0),
@@ -124,6 +78,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "cone_frustum",
             "Frustum of cone",
+            "A cone with its tip cut off flat.",
             vec![
                 mm("radius", "Bottom radius", 10.0),
                 mm("top_radius", "Top radius", 5.0),
@@ -134,11 +89,13 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "sphere",
             "Sphere",
+            "A ball.",
             vec![mm("radius", "Radius", 10.0), SEGMENTS, RINGS],
         ),
         p(
             "ellipsoid",
             "Ellipsoid",
+            "A ball stretched to its own radius along each axis.",
             vec![
                 mm("radius_x", "Radius X", 15.0),
                 mm("radius_y", "Radius Y", 10.0),
@@ -150,6 +107,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "torus",
             "Torus",
+            "A ring with a round tube.",
             vec![
                 mm("radius", "Ring radius", 15.0),
                 mm("tube_radius", "Tube radius", 5.0),
@@ -160,6 +118,7 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "elliptical_torus",
             "Elliptical torus",
+            "A ring whose tube is wider than it is tall, or the other way round.",
             vec![
                 mm("radius", "Ring radius", 15.0),
                 mm("tube_width", "Tube radius across", 5.0),
@@ -171,15 +130,11 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "helix",
             "Helix",
+            "A round wire wound round the Z axis.",
             vec![
                 mm("radius", "Coil radius", 10.0),
                 mm("tube_radius", "Wire radius", 1.5),
-                Param {
-                    min: 0.05,
-                    max: 200.0,
-                    integer: false,
-                    ..count("turns", "Turns", 3.0, 0.0, 0.0)
-                },
+                num("turns", "Turns", "", 3.0, 0.05, 200.0),
                 mm("lead", "Lead length", 8.0),
                 count("segments", "Segments per turn", 64.0, 8.0, 2048.0),
                 count("tube_segments", "Wire segments", 16.0, 3.0, 512.0),
@@ -188,21 +143,17 @@ pub fn catalog() -> Vec<Primitive> {
         p(
             "rhombicuboctahedron",
             "Rhombicuboctahedron",
+            "The solid of 8 triangles and 18 squares with all edges equal.",
             vec![mm("edge", "Edge length", 10.0)],
         ),
         p(
             "hyperboloid",
             "Rotation hyperboloid",
+            "Straight lines from a bottom circle to a top circle turned against it.",
             vec![
                 mm("radius", "Radius", 10.0),
                 mm("height", "Height (Z)", 20.0),
-                Param {
-                    unit: "°",
-                    min: 0.0,
-                    max: 170.0,
-                    integer: false,
-                    ..count("twist", "Rotation angle", 60.0, 0.0, 0.0)
-                },
+                num("twist", "Rotation angle", "°", 60.0, 0.0, 170.0),
                 SEGMENTS,
                 count("rings", "Rings", 16.0, 1.0, 1024.0),
             ],
@@ -210,59 +161,9 @@ pub fn catalog() -> Vec<Primitive> {
     ]
 }
 
-/// The parameter values of a request, each checked against the catalog; a missing one takes its
-/// default. Errors are sentences for the user.
-struct Values<'a> {
-    spec: &'a Primitive,
-    given: &'a Map<String, Value>,
-}
-
-impl Values<'_> {
-    fn get(&self, key: &str) -> Result<f64, String> {
-        let p = self
-            .spec
-            .params
-            .iter()
-            .find(|p| p.key == key)
-            .expect("generators only ask for their own parameters");
-        let v = match self.given.get(key) {
-            None | Some(Value::Null) => p.default,
-            Some(v) => v
-                .as_f64()
-                .ok_or_else(|| format!("{} must be a number.", p.label))?,
-        };
-        if !v.is_finite() || v < p.min || v > p.max || (p.integer && v.fract() != 0.0) {
-            let unit = if p.unit.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", p.unit)
-            };
-            let kind = if p.integer { "a whole number " } else { "" };
-            return Err(format!(
-                "{} must be {kind}from {}{unit} to {}{unit}.",
-                p.label, p.min, p.max
-            ));
-        }
-        Ok(v)
-    }
-
-    fn count(&self, key: &str) -> Result<usize, String> {
-        self.get(key).map(|v| v as usize)
-    }
-}
-
-/// The mesh of primitive `id` with `params` (key → number), or a sentence saying what is wrong.
-pub fn generate(id: &str, params: &Map<String, Value>) -> Result<Mesh, String> {
-    let all = catalog();
-    let spec = all
-        .iter()
-        .find(|p| p.id == id)
-        .ok_or_else(|| format!("The part library has no primitive \"{id}\"."))?;
-    let v = Values {
-        spec,
-        given: params,
-    };
-    let mesh = match id {
+/// The mesh of primitive `id`.
+pub(super) fn make(id: &str, v: &Values) -> Result<Mesh, String> {
+    match id {
         "box" => {
             let [x, y, z] = [v.get("length")?, v.get("width")?, v.get("height")?];
             Ok(make_box(
@@ -342,147 +243,8 @@ pub fn generate(id: &str, params: &Map<String, Value>) -> Result<Mesh, String> {
             v.count("segments")?,
             v.count("rings")?,
         ),
-        _ => unreachable!("every catalog id has a generator"),
-    };
-    let mesh = mesh?;
-    if mesh.triangle_count() > MAX_TRIANGLES {
-        return Err(format!(
-            "That would make {} triangles; lower the segment counts to stay under {}.",
-            crate::mesh::fmt_count(mesh.triangle_count() as u64),
-            crate::mesh::fmt_count(MAX_TRIANGLES as u64)
-        ));
+        _ => unreachable!("every primitive has a generator"),
     }
-    Ok(mesh)
-}
-
-// ---------------------------------------------------------------------------------------------
-// Building meshes
-
-/// Collects points and triangles, then makes the result face outward and rest on z = 0.
-#[derive(Default)]
-struct Builder {
-    points: Vec<[f64; 3]>,
-    triangles: Vec<[u32; 3]>,
-}
-
-/// How a stack of rings is closed at one end.
-enum Cap {
-    /// A flat lid: a fan from the ring's centre.
-    Flat,
-    /// A fan to a single point (a cone's tip, a sphere's pole).
-    Point([f64; 3]),
-}
-
-impl Builder {
-    fn point(&mut self, p: [f64; 3]) -> u32 {
-        self.points.push(p);
-        (self.points.len() - 1) as u32
-    }
-
-    fn triangle(&mut self, a: u32, b: u32, c: u32) {
-        self.triangles.push([a, b, c]);
-    }
-
-    fn quad(&mut self, a: u32, b: u32, c: u32, d: u32) {
-        self.triangle(a, b, c);
-        self.triangle(a, c, d);
-    }
-
-    /// Closed loops of points (each the same length, running anticlockwise seen from the top of
-    /// the stack) joined one to the next, and closed at both ends. The winding is consistent; the
-    /// final sign is fixed in `finish`.
-    fn stack(&mut self, rings: &[Vec<[f64; 3]>], bottom: Cap, top: Cap) {
-        let n = rings[0].len();
-        let ids: Vec<Vec<u32>> = rings
-            .iter()
-            .map(|ring| ring.iter().map(|&p| self.point(p)).collect())
-            .collect();
-        for pair in ids.windows(2) {
-            let (lo, hi) = (&pair[0], &pair[1]);
-            for k in 0..n {
-                let k1 = (k + 1) % n;
-                self.quad(lo[k], lo[k1], hi[k1], hi[k]);
-            }
-        }
-        let centre = |ring: &[[f64; 3]]| {
-            let mut c = [0.0; 3];
-            for p in ring {
-                for (a, v) in c.iter_mut().zip(p) {
-                    *a += v / ring.len() as f64;
-                }
-            }
-            c
-        };
-        let first = &ids[0];
-        let c = match bottom {
-            Cap::Flat => self.point(centre(&rings[0])),
-            Cap::Point(p) => self.point(p),
-        };
-        for k in 0..n {
-            self.triangle(c, first[(k + 1) % n], first[k]);
-        }
-        let last = &ids[ids.len() - 1];
-        let c = match top {
-            Cap::Flat => self.point(centre(&rings[rings.len() - 1])),
-            Cap::Point(p) => self.point(p),
-        };
-        for k in 0..n {
-            self.triangle(c, last[k], last[(k + 1) % n]);
-        }
-    }
-
-    /// The mesh, turned inside out if its winding came out facing in, centred on the Z axis and
-    /// lifted so its lowest point is at z = 0.
-    fn finish(mut self) -> Result<Mesh, String> {
-        let signed: f64 = self
-            .triangles
-            .iter()
-            .map(|t| {
-                dot(
-                    self.points[t[0] as usize],
-                    cross(self.points[t[1] as usize], self.points[t[2] as usize]),
-                )
-            })
-            .sum();
-        if signed < 0.0 {
-            for t in &mut self.triangles {
-                t.swap(1, 2);
-            }
-        }
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for p in &self.points {
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        let shift = [-(lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, -lo[2]];
-        let positions = self
-            .points
-            .iter()
-            .flat_map(|p| {
-                [
-                    (p[0] + shift[0]) as f32,
-                    (p[1] + shift[1]) as f32,
-                    (p[2] + shift[2]) as f32,
-                ]
-            })
-            .collect();
-        let indices = self.triangles.iter().flatten().copied().collect();
-        let mesh = Mesh { positions, indices };
-        mesh.check()
-            .map_err(|reason| format!("The primitive could not be built: {reason}."))?;
-        Ok(mesh)
-    }
-}
-
-/// `n` points anticlockwise round the unit circle, the first at `start` radians.
-fn circle(n: usize, start: f64) -> impl Iterator<Item = (f64, f64)> {
-    (0..n).map(move |k| {
-        let a = start + TAU * k as f64 / n as f64;
-        (a.cos(), a.sin())
-    })
 }
 
 /// The unit outline of a pyramid's base with `sides` sides and a flat side towards −Y, scaled so
@@ -511,7 +273,7 @@ fn base_outline(sides: usize) -> Vec<(f64, f64)> {
 }
 
 /// A pyramid (no top) or its frustum with a top of `top` (length, width), `sides` sides.
-fn frustum_of_pyramid(
+pub(super) fn frustum_of_pyramid(
     length: f64,
     width: f64,
     top: Option<(f64, f64)>,
@@ -542,7 +304,7 @@ fn frustum_of_pyramid(
 }
 
 /// A cylinder or frustum of a cone (a top radius), or a cone (no top).
-fn frustum_of_cone(
+pub(super) fn frustum_of_cone(
     radius: f64,
     top: Option<f64>,
     height: f64,
@@ -567,7 +329,7 @@ fn frustum_of_cone(
 
 /// An ellipsoid with semi-axes `r` (a sphere when they are equal): `segments` round the Z axis,
 /// `rings` from pole to pole.
-fn ellipsoid(r: [f64; 3], segments: usize, rings: usize) -> Result<Mesh, String> {
+pub(super) fn ellipsoid(r: [f64; 3], segments: usize, rings: usize) -> Result<Mesh, String> {
     let rings_of: Vec<Vec<[f64; 3]>> = (1..rings)
         .map(|i| {
             let polar = PI * i as f64 / rings as f64;
@@ -588,7 +350,13 @@ fn ellipsoid(r: [f64; 3], segments: usize, rings: usize) -> Result<Mesh, String>
 
 /// A torus round the Z axis whose tube is an ellipse `across` wide and `up` high (semi-axes), its
 /// centre line `radius` from the axis.
-fn torus(radius: f64, across: f64, up: f64, segments: usize, tube: usize) -> Result<Mesh, String> {
+pub(super) fn torus(
+    radius: f64,
+    across: f64,
+    up: f64,
+    segments: usize,
+    tube: usize,
+) -> Result<Mesh, String> {
     if across >= radius {
         return Err("The tube radius must be smaller than the ring radius, or the tube would cross the middle.".into());
     }
@@ -768,9 +536,10 @@ fn hyperboloid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::generate;
     use crate::mesh::stats;
     use crate::repair::{silent, status, tritri};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn make(id: &str, params: Value) -> Mesh {
         generate(id, params.as_object().unwrap()).unwrap_or_else(|e| panic!("{id}: {e}"))
@@ -826,14 +595,6 @@ mod tests {
         for p in catalog() {
             let mesh = make(p.id, json!({}));
             sound(p.id, &mesh);
-            for param in &p.params {
-                assert!(
-                    param.min <= param.default && param.default <= param.max,
-                    "{} {}",
-                    p.id,
-                    param.key
-                );
-            }
         }
     }
 
@@ -1157,14 +918,14 @@ mod tests {
         );
         assert_eq!(
             err("teapot", json!({})),
-            "The part library has no primitive \"teapot\"."
+            "The part library has no item \"teapot\"."
         );
         assert!(
             err("torus", json!({"tube_radius": 20})).starts_with("The tube radius must be smaller")
         );
         assert!(
             err("sphere", json!({"segments": 2048, "rings": 1024}))
-                .starts_with("That would make 4,190,208 triangles")
+                .starts_with("That would make 4,190,208 triangles; lower the resolution")
         );
     }
 

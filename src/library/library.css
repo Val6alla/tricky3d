@@ -10,48 +10,73 @@
   background: var(--surface);
 }
 
+/* Four large buttons in a row, each a picture beside its name. */
 .lib-categories {
-  display: flex;
+  display: grid;
   flex: none;
-  gap: 2px;
-  padding: 8px 12px 0;
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 8px 6px;
 }
 
 .lib-category {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: transparent;
-  color: var(--text-muted);
+  gap: 10px;
+  min-width: 0;
+  height: 76px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
   font: inherit;
-  font-size: var(--fs-md);
   cursor: pointer;
 }
 
 .lib-category:hover {
-  background: var(--surface-3);
+  border-color: var(--border-strong);
 }
 
 .lib-category.is-selected {
-  margin-bottom: -1px;
-  border-color: var(--border);
-  background: var(--surface);
-  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.lib-category-picture {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 82px;
+  height: 64px;
+}
+
+.lib-category-picture img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.lib-category-label {
+  overflow: hidden;
+  font-size: var(--fs-md);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lib-tiles {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   align-content: start;
   gap: 10px;
   overflow: auto;
+  margin: 0 8px 8px;
   padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .lib-tile {
@@ -76,6 +101,15 @@
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.lib-tile.is-soon {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.lib-tile.is-soon:hover {
+  border-color: var(--border);
 }
 
 .lib-thumb {
@@ -154,6 +188,50 @@
 
 .lib-reset {
   align-self: flex-start;
+}
+
+.lib-description {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.lib-from {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.lib-from.is-missing {
+  color: var(--warning, var(--danger));
+}
+
+.lib-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.lib-picture {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lib-picture-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-readout {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .lib-actions {

@@ -47,6 +47,14 @@ num-traits = "0.2"
 # builds this crate on Windows.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+# The Export save dialog (src/save_dialog.rs), which selects the part's own format in its type
+# list; the dialog plugin always selects the first type. Tauri already builds this crate on Windows.
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+] }
 
 # Heavy work runs below normal priority (src/workers.rs). Tauri already builds this crate on macOS
 # and Linux.

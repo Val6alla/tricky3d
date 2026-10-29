@@ -3,7 +3,14 @@
 //! user can. They only accept paths the user chose: picked in one of the app's own file dialogs
 //! (commands::pick_files, pick_open_file, pick_save_file) or dropped on the window. Picking or dropping
 //! a file to read never lets the window write it; only a save pick, or a 3MF picked in the File › Open
-//! dialog and then opened as a project, does. Grants last until the app quits and are never stored.
+//! dialog and then opened as a project, does. An Export picked for one file per part lets the window
+//! write mesh files named after its parts next to the file picked (jobs::export_each). Grants last
+//! until the app quits and are never stored.
+//!
+//! Save dialogs may also open in a folder a project names as where its parts were imported from, so
+//! Save and Export still open there after the project is reopened. Rust reads those from the file,
+//! never from the window, and keeps only folders on a local drive: a project from elsewhere cannot
+//! make a dialog reach out to a network host.
 //!
 //! Paths are compared exactly as the dialog or the drop returned them. The window gets that text and
 //! sends the same text back, so nothing may rewrite it on the way: no canonicalizing, and no Unicode
@@ -27,6 +34,10 @@ struct Sets {
     write: HashSet<PathBuf>,
     /// 3MFs picked in the File › Open dialog, whose title Rust sets: may become writable.
     projects: HashSet<PathBuf>,
+    /// Folders an opened project names as its parts' sources (local drives only).
+    folders: HashSet<PathBuf>,
+    /// Files picked in the Export dialog for one file per part: their folders take the parts' files.
+    each: HashSet<PathBuf>,
 }
 
 impl Grants {
@@ -64,14 +75,62 @@ impl Grants {
         self.sets().write.insert(path.into());
     }
 
-    /// True when some granted file lives in `folder`, so a save dialog may open there. Any other folder
-    /// the window names is not touched at all: even a look at a network path reaches out to that host.
+    /// A file picked in the Export dialog for one file per part. The file itself is not written; its
+    /// folder takes one file per part, and `check_each` lets that export through.
+    pub fn allow_each(&self, path: impl Into<PathBuf>) {
+        self.sets().each.insert(path.into());
+    }
+
+    /// The folders of the files an opened project's parts were imported from, read from the project
+    /// by Rust. Only absolute paths on a local drive are kept.
+    pub fn remember_source_folders(&self, sources: &[PathBuf]) {
+        let mut sets = self.sets();
+        for source in sources {
+            if let Some(folder) = source.parent()
+                && is_local_folder(folder)
+            {
+                sets.folders.insert(folder.to_path_buf());
+            }
+        }
+    }
+
+    /// True when some granted file lives in `folder`, or an opened project named it as a source
+    /// folder, so a save dialog may open there. Any other folder the window names is not touched at
+    /// all: even a look at a network path reaches out to that host.
     pub fn knows_folder(&self, folder: &Path) -> bool {
         let sets = self.sets();
-        sets.read
-            .iter()
-            .chain(&sets.write)
-            .any(|p| p.parent() == Some(folder))
+        sets.folders.contains(folder)
+            || sets
+                .read
+                .iter()
+                .chain(&sets.write)
+                .any(|p| p.parent() == Some(folder))
+    }
+
+    /// The first of `candidates` (in order of preference) that `knows_folder` and that still exists,
+    /// for a save dialog to open in. Only known folders are looked at: nothing about any other folder
+    /// is looked up, since even checking whether a network path exists reaches out to that host.
+    pub fn dialog_folder<'p>(
+        &self,
+        candidates: impl IntoIterator<Item = &'p PathBuf>,
+    ) -> Option<PathBuf> {
+        candidates
+            .into_iter()
+            .find(|folder| {
+                folder.components().count() > 0 && self.knows_folder(folder) && folder.is_dir()
+            })
+            .cloned()
+    }
+
+    /// Accepts a path picked for one file per part (`allow_each`).
+    pub fn check_each(&self, path: &Path) -> Result<(), String> {
+        if self.sets().each.contains(path) {
+            return Ok(());
+        }
+        Err(format!(
+            "Could not export to the folder of \"{}\": tricky3D only writes to folders you pick in the Export dialog.",
+            display_name(path)
+        ))
     }
 
     pub fn check_read(&self, path: &Path) -> Result<(), String> {
@@ -105,6 +164,26 @@ impl Grants {
             "Could not {verb} \"{}\": tricky3D only writes to files you pick in a save dialog.",
             display_name(path)
         ))
+    }
+}
+
+/// An absolute folder on a local drive: on Windows a drive letter ("C:\models"), never a share
+/// ("\\host\share") or a device path; elsewhere any absolute path.
+fn is_local_folder(folder: &Path) -> bool {
+    if !folder.is_absolute() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        matches!(
+            folder.components().next(),
+            Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_))
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        true
     }
 }
 
@@ -166,11 +245,86 @@ mod tests {
     }
 
     #[test]
+    fn one_file_per_part_needs_a_pick_for_it_and_writes_nothing_else() {
+        let grants = Grants::default();
+        let picked = Path::new("C:/out/gun.stl");
+        assert!(grants.check_each(picked).is_err());
+        grants.allow_write(picked);
+        // A plain save pick is not a pick for one file per part.
+        assert!(grants.check_each(picked).is_err());
+        let each = Path::new("C:/out/parts/gun.stl");
+        grants.allow_each(each);
+        assert!(grants.check_each(each).is_ok());
+        assert!(
+            grants
+                .check_each(Path::new("C:/out/parts/other.stl"))
+                .is_err()
+        );
+        // Nor does it let the window write or read the file picked.
+        assert!(grants.check_write(each, "stl", "write").is_err());
+        assert!(grants.check_read(each).is_err());
+    }
+
+    #[test]
     fn save_dialogs_only_open_in_folders_of_granted_files() {
         let grants = Grants::default();
         assert!(!grants.knows_folder(Path::new("C:/jobs")));
         grants.allow_read("C:/jobs/plate.stl");
         assert!(grants.knows_folder(Path::new("C:/jobs")));
         assert!(!grants.knows_folder(Path::new("//host/share")));
+    }
+
+    #[test]
+    fn a_project_teaches_the_source_folders_on_local_drives_only() {
+        let grants = Grants::default();
+        let local = if cfg!(windows) {
+            r"C:\parts\gun.stl"
+        } else {
+            "/parts/gun.stl"
+        };
+        grants.remember_source_folders(&[
+            PathBuf::from(local),
+            PathBuf::from(r"\\host\share\gun.stl"),
+            PathBuf::from("relative/gun.stl"),
+        ]);
+        assert!(grants.knows_folder(Path::new(local).parent().unwrap()));
+        assert!(!grants.knows_folder(Path::new(r"\\host\share")));
+        assert!(!grants.knows_folder(Path::new("relative")));
+        // A known folder never lets the window read or write anything in it.
+        assert!(grants.check_read(Path::new(local)).is_err());
+        assert!(
+            grants
+                .check_write(Path::new(local), "stl", "write")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn save_dialogs_open_in_the_source_folder_else_the_last_one_used_while_they_exist() {
+        let root = std::env::temp_dir()
+            .join("tricky3d-tests")
+            .join(format!("dialog-folder-{}", std::process::id()));
+        let source = root.join("imported from");
+        let last = root.join("exported to");
+        let unknown = root.join("never picked");
+        for folder in [&source, &last, &unknown] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let grants = Grants::default();
+        grants.allow_read(source.join("gun.stl"));
+        grants.allow_write(last.join("stand.stl"));
+        // The part's source folder first, even when the last export went elsewhere.
+        assert_eq!(grants.dialog_folder([&source, &last]), Some(source.clone()));
+        // A part that never came from a file: the last folder used.
+        assert_eq!(grants.dialog_folder([&last]), Some(last.clone()));
+        // A folder no file was picked in is never opened, nor looked at.
+        assert_eq!(grants.dialog_folder([&unknown, &last]), Some(last.clone()));
+        // The source folder is gone: the last folder used.
+        std::fs::remove_dir_all(&source).unwrap();
+        assert_eq!(grants.dialog_folder([&source, &last]), Some(last.clone()));
+        // Neither is left: the system's choice.
+        std::fs::remove_dir_all(&last).unwrap();
+        assert_eq!(grants.dialog_folder([&source, &last]), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

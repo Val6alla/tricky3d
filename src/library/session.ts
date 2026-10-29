@@ -1,25 +1,26 @@
-// The Part library mode: entering and leaving, the category and primitive picked, the form, the tile pictures, and
-// Create part. UI code changes library state only through these functions; the state is in src/library/store.ts, the
-// meshes come from Rust (src/library/ipc.ts). The decisions are plain exported functions, so tests run them without
-// Tauri.
+// The Part library mode: entering and leaving, the category and item picked, the form, the picture, the tile pictures,
+// the Triangles read-out, and Create part. UI code changes library state only through these functions; the state is in
+// src/library/store.ts, the meshes come from Rust (src/library/ipc.ts). The decisions are plain exported functions, so
+// tests run them without Tauri.
 //
-// The flow follows the reference tool: Home › Part library opens a "Part library" tab, a gallery of primitives over the
-// view and their parameters in the right panel; Create part builds the mesh in Rust, adds it as a part standing on the
-// middle of the platform (one undo step) and leaves the mode; Cancel leaves without adding anything.
+// The flow follows the reference tool: Home › Part library opens a "Part library" tab, four categories with a gallery of
+// items over the view and the picked item's parameters in the right panel; Create part builds the mesh in Rust, adds it
+// as a part standing on the middle of the platform (one undo step) and leaves the mode; Cancel leaves without adding
+// anything. Items made from the selected parts (Convex hull, Base plate) are added where those parts are.
 import { CLOSE_BOOLEAN_FIRST, isBooleanOpen } from "../boolean/session";
 import type { TabId } from "../features";
-import { browserOnly, errorMessage } from "../io/files";
+import { browserOnly, errorMessage, sourceOf } from "../io/files";
 import { CLOSE_MEASURE_FIRST, isMeasureOpen } from "../measure/session";
-import { translation } from "../mesh";
+import { IDENTITY, translation } from "../mesh";
 import { primeMeshCaches } from "../meshCache";
 import { parseNumber } from "../numbers";
 import { meshOperationRunning, WAIT_MESSAGE } from "../ops/meshOps";
 import { CANCELLED, cancelRepair } from "../repair/ipc";
 import { CLOSE_REPAIR_FIRST, isRepairing } from "../repair/session";
-import { useStore } from "../store";
+import { useStore, type Part } from "../store";
 import { startTask, toast, useUi } from "../ui";
-import { buildPrimitive, fetchLibraryCatalog, type LibraryParam, type LibraryPrimitive } from "./ipc";
-import { useLibrary, type LibraryCategory, type LibrarySession } from "./store";
+import { buildItem, fetchLibraryCatalog, pickPicture, type LibraryItem, type LibraryParam, type NumberParam } from "./ipc";
+import { CATEGORIES, useLibrary, type FieldValue, type LibraryCategory, type LibrarySession } from "./store";
 import { releaseThumbnails, thumbnail } from "./thumbnails";
 
 /** Main-document commands that would add or change parts refuse with this while the library is open. */
@@ -33,32 +34,84 @@ export function valueText(v: number): string {
   return String(Math.round(v * 1e6) / 1e6);
 }
 
-/** The form's starting text: every parameter's default. */
-export function defaultValues(primitive: LibraryPrimitive): Record<string, string> {
-  return Object.fromEntries(primitive.params.map((p) => [p.key, valueText(p.default)]));
+/** A parameter's starting value in the form. */
+export function defaultValue(param: LibraryParam): FieldValue {
+  switch (param.kind) {
+    case "number":
+      return valueText(param.default);
+    case "choice":
+    case "text":
+      return param.default;
+    case "toggle":
+      return param.default;
+    case "image":
+      return "";
+  }
 }
 
-/** Why a field's text cannot be used, or null. */
-export function fieldProblem(param: LibraryParam, text: string): string | null {
+/** The form's starting values: every parameter's default. */
+export function defaultValues(item: LibraryItem): Record<string, FieldValue> {
+  return Object.fromEntries(item.params.map((p) => [p.key, defaultValue(p)]));
+}
+
+/** Why a number field's text cannot be used, or null. */
+export function fieldProblem(param: NumberParam, text: string): string | null {
   const v = parseNumber(text);
   if (v === null) return "Enter a number.";
   if (param.integer && !Number.isInteger(v)) return "Enter a whole number.";
   if (v < param.min || v > param.max) {
-    const unit = param.unit ? ` ${param.unit}` : "";
+    const unit = param.unit === "%" || param.unit === "°" ? param.unit : param.unit ? ` ${param.unit}` : "";
     return `Enter ${valueText(param.min)}${unit} to ${valueText(param.max)}${unit}.`;
   }
   return null;
 }
 
-/** The numbers to send to Rust, and the fields that are wrong (by key). */
-export function parseValues(primitive: LibraryPrimitive, values: Record<string, string>): { params: Record<string, number>; errors: Record<string, string> } {
-  const params: Record<string, number> = {};
+/** Why a parameter's value cannot be used, or null. */
+export function valueProblem(param: LibraryParam, value: FieldValue | undefined): string | null {
+  const v = value ?? defaultValue(param);
+  switch (param.kind) {
+    case "number":
+      return fieldProblem(param, String(v));
+    case "text": {
+      const length = [...String(v)].length;
+      return length > param.maxLength ? `Enter at most ${param.maxLength} characters.` : null;
+    }
+    case "choice": {
+      const option = param.options.find((o) => o.value === v);
+      if (!option) return "Pick one of the choices.";
+      return option.soon ? `${option.label} is not available yet.` : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** Whether a parameter shows: always, or while the toggle its `when` names is on ("!key": off). */
+export function shows(param: LibraryParam, values: Record<string, FieldValue>, item: LibraryItem): boolean {
+  if (!param.when) return true;
+  const off = param.when.startsWith("!");
+  const key = off ? param.when.slice(1) : param.when;
+  const toggle = item.params.find((p) => p.key === key);
+  const on = values[key] ?? (toggle ? defaultValue(toggle) : false);
+  return off ? on !== true : on === true;
+}
+
+/** The values to send to Rust, and the shown fields that are wrong (by key). Hidden fields keep their defaults. */
+export function parseValues(
+  item: LibraryItem,
+  values: Record<string, FieldValue>,
+): { params: Record<string, number | string | boolean>; errors: Record<string, string> } {
+  const params: Record<string, number | string | boolean> = {};
   const errors: Record<string, string> = {};
-  for (const p of primitive.params) {
-    const text = values[p.key] ?? valueText(p.default);
-    const problem = fieldProblem(p, text);
-    if (problem) errors[p.key] = problem;
-    else params[p.key] = parseNumber(text) as number;
+  for (const p of item.params) {
+    if (p.kind === "image") continue;
+    const value = shows(p, values, item) ? (values[p.key] ?? defaultValue(p)) : defaultValue(p);
+    const problem = valueProblem(p, value);
+    if (problem) {
+      errors[p.key] = problem;
+      continue;
+    }
+    params[p.key] = p.kind === "number" ? (parseNumber(String(value)) as number) : value;
   }
   return { params, errors };
 }
@@ -72,12 +125,20 @@ export function defaultName(label: string, names: readonly string[]): string {
   return `${label} ${n}`;
 }
 
+/** Whether an item takes a picture. */
+export const usesPicture = (item: LibraryItem) => item.params.some((p) => p.kind === "image");
+
+/** "12,345 triangles" for the read-out. */
+export function triangleText(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 // ---------------------------------------------------------------------------------------------
 // State helpers
 
 const state = () => useLibrary.getState();
 const session = () => useLibrary.getState().session;
-const primitiveOf = (id: string) => state().catalog?.find((p) => p.id === id);
+const itemOf = (id: string) => state().catalog?.find((p) => p.id === id);
 
 /** Job numbers of library builds, apart from the other modes' (all cancel through repair_cancel). */
 let jobSeq = 2 ** 41;
@@ -93,12 +154,19 @@ export function isLibraryOpen(): boolean {
   return session() !== null;
 }
 
+/** The selected parts an item made from the selection is made from: the selection's visible parts. */
+function selectedParts(): Part[] {
+  const s = useStore.getState();
+  const ids = new Set(s.selection);
+  return s.parts.filter((p) => ids.has(p.id) && p.visible);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Entering and leaving
 
 /**
- * Home › Part library: opens the "Part library" tab, the gallery and the form, with the Box picked. Refused while repair
- * mode, Boolean operations, Measure or a mesh operation is busy with the parts.
+ * Home › Part library: opens the "Part library" tab, the gallery and the form, with the first primitive picked.
+ * Refused while repair mode, Boolean operations, Measure or a mesh operation is busy with the parts.
  */
 export async function openPartLibrary(): Promise<void> {
   const ui = useUi.getState();
@@ -121,9 +189,12 @@ export async function openPartLibrary(): Promise<void> {
     // A second click while the catalog loaded opened it already.
     if (isLibraryOpen()) return;
   }
-  const first = state().catalog?.[0];
+  const first = state().catalog?.find((p) => p.category === "primitive" && !p.soon);
   if (!first) return;
-  useLibrary.setState({ session: { category: "primitive", primitive: first.id, name: "", nameEdited: false, values: {} }, busy: null });
+  useLibrary.setState({
+    session: { category: "primitive", primitive: first.id, name: "", nameEdited: false, values: {}, triangles: null },
+    busy: null,
+  });
   pickPrimitive(first.id);
   tabBefore = ui.ribbonTab === "library" ? null : ui.ribbonTab;
   ui.closeContextMenu();
@@ -131,7 +202,7 @@ export async function openPartLibrary(): Promise<void> {
   watchProject();
   const store = useStore.getState();
   if (store.gizmoMode) store.setGizmoMode(null);
-  void drawTiles();
+  void drawTiles("primitive");
 }
 
 /** Cancel: leaves the mode without adding anything; a part being made is dropped. */
@@ -139,7 +210,7 @@ export function closePartLibrary(): void {
   if (!isLibraryOpen()) return;
   const busy = state().busy;
   if (busy) cancelRepair(busy.job).catch(() => {});
-  clearTimeout(thumbTimer);
+  stopPreview();
   useLibrary.setState({ session: null, busy: null });
   releaseThumbnails();
   const ui = useUi.getState();
@@ -161,108 +232,183 @@ function watchProject() {
 // ---------------------------------------------------------------------------------------------
 // The gallery and the form
 
+/** A category: its tiles, and its first item picked unless the picked one belongs to it. */
 export function pickCategory(category: LibraryCategory): void {
+  const current = session();
+  if (!current) return;
   setSession({ category });
+  const picked = itemOf(current.primitive);
+  if (picked?.category !== category) {
+    const first = state().catalog?.find((p) => p.category === category && !p.soon);
+    if (first) pickPrimitive(first.id);
+  }
+  void drawTiles(category);
 }
 
-/** A tile: that primitive with its default values; the name follows unless the user typed one. */
+/** A tile: that item with its default values; the name follows unless the user typed one. Soon items say why. */
 export function pickPrimitive(id: string): void {
   const current = session();
-  const primitive = primitiveOf(id);
-  if (!current || !primitive) return;
-  const name = current.nameEdited ? current.name : defaultName(primitive.label, useStore.getState().parts.map((p) => p.name));
-  setSession({ primitive: id, values: defaultValues(primitive), name });
+  const item = itemOf(id);
+  if (!current || !item) return;
+  if (item.soon) {
+    toast(`${item.label} is not available yet: ${item.soon}`);
+    return;
+  }
+  const name = current.nameEdited ? current.name : defaultName(item.label, useStore.getState().parts.map((p) => p.name));
+  setSession({ primitive: id, values: defaultValues(item), name, triangles: null });
+  redrawPickedTile(0);
 }
 
 export function setName(name: string): void {
   setSession({ name, nameEdited: true });
 }
 
-export function setValue(key: string, text: string): void {
+export function setValue(key: string, value: FieldValue): void {
   const current = session();
   if (!current) return;
-  setSession({ values: { ...current.values, [key]: text } });
+  setSession({ values: { ...current.values, [key]: value }, triangles: null });
   redrawPickedTile();
 }
 
-/** Back to the picked primitive's defaults. */
+/** Back to the picked item's defaults. */
 export function resetValues(): void {
   const current = session();
-  const primitive = current && primitiveOf(current.primitive);
-  if (!primitive) return;
-  setSession({ values: defaultValues(primitive) });
+  const item = current && itemOf(current.primitive);
+  if (!item) return;
+  setSession({ values: defaultValues(item), triangles: null });
   redrawPickedTile();
+}
+
+/** Choose picture…: the picture dialog; the picture then shapes every item that takes one. */
+export async function choosePicture(): Promise<void> {
+  try {
+    const picture = await pickPicture();
+    if (!picture || !isLibraryOpen()) return;
+    useLibrary.setState({ picture });
+    setSession({ triangles: null });
+    redrawPickedTile(0);
+  } catch (err) {
+    toast(errorMessage(err, "Could not read the picture"), "error");
+  }
+}
+
+/** Back to the built-in sample picture. */
+export function clearPicture(): void {
+  useLibrary.setState({ picture: null });
+  setSession({ triangles: null });
+  redrawPickedTile(0);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Tile pictures
+// Tile pictures and the Triangles read-out
 
-/** The tile pictures of every primitive at its defaults, one after another. */
-async function drawTiles(): Promise<void> {
-  for (const p of state().catalog ?? []) {
-    if (!isLibraryOpen()) return;
-    if (state().thumbs[p.id]) continue;
+/** The tile pictures of a category's items at their defaults, and the four category pictures, one after another. */
+async function drawTiles(category: LibraryCategory): Promise<void> {
+  const catalog = state().catalog ?? [];
+  const pictures = CATEGORIES.flatMap((c) => catalog.filter((p) => p.id === c.picture));
+  const wanted = [...pictures, ...catalog.filter((p) => p.category === category && !p.soon)];
+  for (const item of wanted) {
+    if (!isLibraryOpen() || session()?.category !== category) return;
+    if (state().thumbs[item.id]) continue;
     try {
-      const built = await buildPrimitive(p.id, parseValues(p, defaultValues(p)).params, ++jobSeq);
+      const built = await buildItem(item.id, parseValues(item, defaultValues(item)).params, ++jobSeq, { preview: true });
       if (!isLibraryOpen()) return;
-      useLibrary.setState((s) => ({ thumbs: { ...s.thumbs, [p.id]: thumbnail(built.mesh) } }));
+      useLibrary.setState((s) => ({ thumbs: { ...s.thumbs, [item.id]: thumbnail(built.mesh) } }));
     } catch (err) {
-      console.error(`library thumbnail ${p.id}`, err);
+      console.error(`library thumbnail ${item.id}`, err);
     }
   }
 }
 
-let thumbTimer: ReturnType<typeof setTimeout> | undefined;
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+let previewJob: number | null = null;
 
-/** The picked tile follows the form, a moment after the typing stops. */
-function redrawPickedTile(): void {
-  clearTimeout(thumbTimer);
-  thumbTimer = setTimeout(async () => {
-    const current = session();
-    const primitive = current && primitiveOf(current.primitive);
-    if (!current || !primitive) return;
-    const { params, errors } = parseValues(primitive, current.values);
-    if (Object.keys(errors).length > 0) return;
-    try {
-      const built = await buildPrimitive(primitive.id, params, ++jobSeq);
-      if (session()?.values !== current.values) return;
-      useLibrary.setState((s) => ({ thumbs: { ...s.thumbs, [primitive.id]: thumbnail(built.mesh) } }));
-    } catch {
-      // A value Rust refuses (turns that touch): the form says so on Create part.
-    }
-  }, 300);
+function stopPreview() {
+  clearTimeout(previewTimer);
+  if (previewJob !== null) cancelRepair(previewJob).catch(() => {});
+  previewJob = null;
 }
+
+/**
+ * The picked tile and the Triangles read-out follow the form, a moment after the typing stops: Rust builds the item
+ * with the form's values (a build still running for older values is cancelled).
+ */
+function redrawPickedTile(delay = 300): void {
+  stopPreview();
+  previewTimer = setTimeout(async () => {
+    const current = session();
+    const item = current && itemOf(current.primitive);
+    if (!current || !item) return;
+    const { params, errors } = parseValues(item, current.values);
+    if (Object.keys(errors).length > 0) return;
+    const job = ++jobSeq;
+    previewJob = job;
+    try {
+      const parts = item.input === "parts" ? selectedParts() : [];
+      const built = await buildItem(item.id, params, job, {
+        preview: parts.length === 0,
+        parts: parts.map(partMesh),
+        picture: usesPicture(item) ? state().picture : null,
+      });
+      if (previewJob !== job || session()?.values !== current.values || session()?.primitive !== item.id) return;
+      previewJob = null;
+      useLibrary.setState((s) => ({ thumbs: { ...s.thumbs, [item.id]: thumbnail(built.mesh) } }));
+      setSession({ triangles: built.stats.triangles });
+    } catch {
+      // A value Rust refuses: Create part says why.
+      if (previewJob === job) previewJob = null;
+    }
+  }, delay);
+}
+
+const partMesh = (p: Part) => ({ name: p.name, mesh: p.mesh, matrix: p.matrix });
 
 // ---------------------------------------------------------------------------------------------
 // Create part
 
 /**
  * Create part: Rust builds the mesh from the form, which is added as one part, named as the form says, standing on the
- * middle of the platform; one undo step "Create <name>". Then the mode closes. A wrong field or a value Rust refuses
- * keeps it open with the reason.
+ * middle of the platform, or for an item made from the selection, where the selection is; one undo step
+ * "Create <name>". Then the mode closes. A wrong field or a value Rust refuses keeps it open with the reason.
  */
 export async function createPart(): Promise<void> {
   const current = session();
   if (!current || state().busy) return;
-  const primitive = primitiveOf(current.primitive);
-  if (!primitive) return;
-  const { params, errors } = parseValues(primitive, current.values);
-  const wrong = primitive.params.find((p) => errors[p.key]);
+  const item = itemOf(current.primitive);
+  if (!item || item.soon) return;
+  const { params, errors } = parseValues(item, current.values);
+  const wrong = item.params.find((p) => errors[p.key]);
   if (wrong) {
     toast(`${wrong.label}: ${errors[wrong.key]}`, "warn");
     return;
   }
-  const name = current.name.trim() || primitive.label;
+  const parts = item.input === "parts" ? selectedParts() : [];
+  if (item.input === "parts" && parts.length === 0) {
+    toast(`Select the part to make the ${item.label.toLowerCase()} from first: click it in the parts list.`, "warn");
+    return;
+  }
+  stopPreview();
+  const name = current.name.trim() || item.label;
   const job = ++jobSeq;
-  useLibrary.setState({ busy: { job, cancelling: false } });
+  useLibrary.setState({ busy: { job, cancelling: false, fraction: 0 } });
   const task = startTask(`Creating ${name}`);
   try {
-    const built = await buildPrimitive(primitive.id, params, job);
+    const built = await buildItem(item.id, params, job, {
+      parts: parts.map(partMesh),
+      picture: usesPicture(item) ? state().picture : null,
+      onProgress: (fraction) => {
+        const busy = state().busy;
+        if (busy?.job === job) useLibrary.setState({ busy: { ...busy, fraction } });
+        task.progress(fraction);
+      },
+    });
     if (state().busy?.job !== job || state().busy?.cancelling || !isLibraryOpen()) return;
     primeMeshCaches(built.mesh, { stats: built.stats, edges: built.edges });
     const store = useStore.getState();
     const [x, y] = store.platform;
-    store.addParts([{ name, mesh: built.mesh, matrix: translation(x / 2, y / 2, 0) }], `Create ${name}`);
+    const matrix = built.world ? [...IDENTITY] : translation(x / 2, y / 2, 0);
+    const source = sourceOf(parts) ?? undefined;
+    store.addParts([{ name, mesh: built.mesh, matrix, source }], `Create ${name}`);
     useLibrary.setState({ busy: null });
     closePartLibrary();
   } catch (err) {
