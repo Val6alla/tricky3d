@@ -17,6 +17,7 @@ const FormatsDialog = onDemand(() => import("./FormatsDialog").then((m) => m.For
 const TransformDialog = onDemand(() => import("./TransformDialog").then((m) => m.TransformDialog));
 const CutDialog = onDemand(() => import("./CutDialog").then((m) => m.CutDialog));
 const PlatformStatsDialog = onDemand(() => import("../stats/PlatformStatsDialog").then((m) => m.PlatformStatsDialog));
+const GenerateShellDialog = onDemand(() => import("../shell/GenerateShellDialog").then((m) => m.GenerateShellDialog));
 const PlacePromptDialog = onDemand(() => import("./PlacePromptDialog").then((m) => m.PlacePromptDialog));
 const ImportObjectsDialog = onDemand(() => import("./ImportObjectsDialog").then((m) => m.ImportObjectsDialog));
 const ScaleMetresDialog = onDemand(() => import("./ScaleMetresDialog").then((m) => m.ScaleMetresDialog));
@@ -60,6 +61,8 @@ function OpenDialog({ dialog }: { dialog: Exclude<Dialog, null> }) {
       return <CutDialog onClose={close} />;
     case "platform-stats":
       return <PlatformStatsDialog onClose={close} />;
+    case "generate-shell":
+      return <GenerateShellDialog onClose={close} />;
     case "place-on-import":
       return <PlacePromptDialog key={dialog.fileName} fileName={dialog.fileName} resolve={dialog.resolve} onClose={close} />;
     case "import-objects":

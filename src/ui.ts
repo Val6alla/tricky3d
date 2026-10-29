@@ -33,6 +33,8 @@ export type Dialog =
   | { kind: "cut" }
   /** Home › Platform statistics. */
   | { kind: "platform-stats" }
+  /** Home › Generate shell and Modify › Generate shell; runs and shows its progress itself. */
+  | { kind: "generate-shell" }
   // Prompts answer through resolve; null means the dialog was cancelled.
   | { kind: "place-on-import"; fileName: string; resolve(answer: PlaceAnswer | null): void }
   | { kind: "import-objects"; fileName: string; count: number; resolve(answer: ObjectsAnswer | null): void }

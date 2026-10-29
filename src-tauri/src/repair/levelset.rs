@@ -34,9 +34,9 @@ const TRIANGLES_PER_CELL_AREA: f64 = 3.5;
 /// The finest grid step, mm: vertices kept `CLEAR` from their edges' ends stay further apart than
 /// Remove degenerate faces' 0.002 mm tolerance.
 pub(crate) const MIN_CELL: f64 = 0.01;
-const CLEAR: f64 = 0.004;
+pub(crate) const CLEAR: f64 = 0.004;
 /// The least clearance as a fraction of the edge.
-const CLEAR_MIN: f64 = 0.05;
+pub(crate) const CLEAR_MIN: f64 = 0.05;
 
 pub(crate) struct Remeshed {
     pub mesh: Mesh,
@@ -104,12 +104,29 @@ pub(crate) fn remesh(
     let inside = grid.classify(&points, &triangles, within, control.cancel_flag());
     control.check()?;
     control.progress(0.4);
-    let (tris, quads) = grid.pieces(&inside, control.cancel_flag());
+    let bvh = Bvh::new(&boxes_of(&points, &triangles));
+    let place = |key: u64| grid.vertex(key, &inside, &points, &triangles, &bvh);
+    let mesh = surface(&grid, &inside, &mut control.sub(0.4, 1.0), place)?;
+    Ok(mesh.map(|mesh| Remeshed { mesh, cell }))
+}
+
+/// The surface between the grid points `inside` holds and the others, facing away from them: one
+/// triangle or quad (two triangles, split along its shorter diagonal) per tetrahedron with corners
+/// of both kinds. Each vertex lies on a grid edge, where `place` puts it (given the edge's key); as
+/// long as that is strictly between the edge's ends, the surface is closed, oriented and free of
+/// crossings. None when no tetrahedron has corners of both kinds.
+pub(crate) fn surface(
+    grid: &Grid,
+    inside: &Inside,
+    control: &mut Control,
+    place: impl Fn(u64) -> P3 + Sync,
+) -> RepairResult<Option<Mesh>> {
+    let (tris, quads) = grid.pieces(inside, control.cancel_flag());
     control.check()?;
     if tris.is_empty() && quads.is_empty() {
         return Ok(None);
     }
-    control.progress(0.6);
+    control.progress(1.0 / 3.0);
     let mut keys: Vec<u64> = tris
         .par_iter()
         .flatten()
@@ -118,13 +135,9 @@ pub(crate) fn remesh(
         .collect();
     keys.par_sort_unstable();
     keys.dedup();
-    let bvh = Bvh::new(&boxes_of(&points, &triangles));
-    let positions: Vec<P3> = keys
-        .par_iter()
-        .map(|&key| grid.vertex(key, &inside, &points, &triangles, &bvh))
-        .collect();
+    let positions: Vec<P3> = keys.par_iter().map(|&key| place(key)).collect();
     control.check()?;
-    control.progress(0.9);
+    control.progress(5.0 / 6.0);
     let id = |key: u64| keys.binary_search(&key).unwrap() as u32;
     let mut indices: Vec<u32> = Vec::with_capacity(3 * (tris.len() + 2 * quads.len()));
     for t in &tris {
@@ -143,10 +156,7 @@ pub(crate) fn remesh(
     }
     let positions: Vec<f32> = positions.iter().flatten().map(|&x| x as f32).collect();
     control.progress(1.0);
-    Ok(Some(Remeshed {
-        mesh: Mesh { positions, indices },
-        cell,
-    }))
+    Ok(Some(Mesh { positions, indices }))
 }
 
 /// The six tetrahedra of a cube: the paths from corner 0 to corner 7 (bit 1 is +x, 2 is +y, 4 is
@@ -160,22 +170,24 @@ const TETS: [[u8; 4]; 6] = [
     [0, 4, 6, 7],
 ];
 
-struct Grid {
-    origin: P3,
-    cell: f64,
+/// The sampling grid, shared with Generate shell (src/ops/shell): `classify` for the inside map,
+/// `pieces` for the surface between inside and outside points.
+pub(crate) struct Grid {
+    pub(crate) origin: P3,
+    pub(crate) cell: f64,
     /// Points along each axis.
-    n: [usize; 3],
+    pub(crate) n: [usize; 3],
     /// u64 words per row of x (each row starts a new word).
-    row_words: usize,
+    pub(crate) row_words: usize,
 }
 
 /// A bit per grid point: rows of x, `ny` rows per slab of z, one slab per z.
-struct Inside {
-    slabs: Vec<Vec<u64>>,
+pub(crate) struct Inside {
+    pub(crate) slabs: Vec<Vec<u64>>,
 }
 
 impl Grid {
-    fn new(bounds: &Aabb, cell: f64) -> Grid {
+    pub(crate) fn new(bounds: &Aabb, cell: f64) -> Grid {
         // One clear cell round the bounds, so the border points are all outside; the odd offset
         // keeps the grid off round coordinates, where CAD faces like to lie.
         let pad = 1.5 * cell + 0.137 * cell;
@@ -189,11 +201,11 @@ impl Grid {
         }
     }
 
-    fn coord(&self, axis: usize, i: usize) -> f64 {
+    pub(crate) fn coord(&self, axis: usize, i: usize) -> f64 {
         self.origin[axis] + i as f64 * self.cell
     }
 
-    fn point(&self, [i, j, k]: [usize; 3]) -> P3 {
+    pub(crate) fn point(&self, [i, j, k]: [usize; 3]) -> P3 {
         [self.coord(0, i), self.coord(1, j), self.coord(2, k)]
     }
 
@@ -322,7 +334,7 @@ impl Grid {
     /// The inside map: per grid point, whether the winding number of `triangles` there is not
     /// zero, or the point stands for a wall thinner than a cell (`thin`); and, given `within`,
     /// the point lies in one of its boxes.
-    fn classify(
+    pub(crate) fn classify(
         &self,
         points: &[P3],
         triangles: &[[u32; 3]],
@@ -420,7 +432,7 @@ impl Grid {
     }
 
     /// Whether grid point (i, j, k) is inside.
-    fn at(&self, inside: &Inside, [i, j, k]: [usize; 3]) -> bool {
+    pub(crate) fn at(&self, inside: &Inside, [i, j, k]: [usize; 3]) -> bool {
         inside.slabs[k][j * self.row_words + i / 64] >> (i % 64) & 1 == 1
     }
 
@@ -429,10 +441,29 @@ impl Grid {
         ((i + self.n[0] * (j + self.n[1] * k)) as u64) << 3 | d as u64
     }
 
+    /// The grid points at the ends of the grid edge `key` (`key`'s point first).
+    pub(crate) fn ends(&self, key: u64) -> [[usize; 3]; 2] {
+        let d = (key & 7) as u8;
+        let g = (key >> 3) as usize;
+        let (i, j, k) = (
+            g % self.n[0],
+            g / self.n[0] % self.n[1],
+            g / self.n[0] / self.n[1],
+        );
+        [
+            [i, j, k],
+            [
+                i + (d & 1) as usize,
+                j + (d >> 1 & 1) as usize,
+                k + (d >> 2 & 1) as usize,
+            ],
+        ]
+    }
+
     /// The pieces of surface: triangles and quads, each corner the key of the grid edge it lies
     /// on, turned to face the outside.
     #[allow(clippy::type_complexity)]
-    fn pieces(
+    pub(crate) fn pieces(
         &self,
         inside: &Inside,
         cancel: &std::sync::atomic::AtomicBool,
@@ -571,19 +602,7 @@ impl Grid {
         triangles: &[[u32; 3]],
         bvh: &Bvh,
     ) -> P3 {
-        let d = (key & 7) as u8;
-        let g = (key >> 3) as usize;
-        let (i, j, k) = (
-            g % self.n[0],
-            g / self.n[0] % self.n[1],
-            g / self.n[0] / self.n[1],
-        );
-        let from = [i, j, k];
-        let to = [
-            i + (d & 1) as usize,
-            j + (d >> 1 & 1) as usize,
-            k + (d >> 2 & 1) as usize,
-        ];
+        let [from, to] = self.ends(key);
         let (outer, inner) = if self.at(inside, from) {
             (to, from)
         } else {

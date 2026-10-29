@@ -1128,6 +1128,181 @@ pub fn platform_stats(
     })
 }
 
+// ---------------------------------------------------------------------------------------------
+// Generate shell (src/shell/ipc.ts)
+
+/// The Tauri event a Generate shell run reports its progress with.
+pub const SHELL_PROGRESS: &str = "shell-progress";
+
+/// `ShellProgress` in src/shell/types.ts.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ShellProgress {
+    pub job: u64,
+    /// 0-based index of the part being worked on, and how many there are.
+    pub part: usize,
+    pub parts: usize,
+    /// The step it is on ("Measuring distances").
+    pub stage: Option<String>,
+    /// 0..1 over the whole run, never decreasing.
+    pub fraction: f64,
+}
+
+/// `shell_generate`: meta {job, settings: ShellSettings}; one bundle mesh per part with info
+/// {name, matrix}. Every part must be closed and oriented: when one is not, nothing is generated
+/// and the answer's meta is {refused: [{source, closed, oriented, holes, borderEdges,
+/// nonManifoldEdges, invertedTriangles}]} with no meshes. Otherwise meta {results: [{source, made,
+/// warnings}]} per part, and a mesh per part made (world space), info {source, stats} plus problem
+/// edges. Cancel (`repair_cancel` with the job) fails it with CANCELLED at any point.
+pub fn shell_generate(
+    bundle: Bundle,
+    jobs: &RepairJobs,
+    emit: &mut dyn FnMut(&ShellProgress),
+) -> Result<Vec<u8>, String> {
+    const ACTION: &str = "Could not generate the shell";
+    let damaged = || format!("{ACTION}: the request from the window is damaged.");
+    let job = bundle
+        .meta
+        .get("job")
+        .and_then(Value::as_u64)
+        .ok_or_else(damaged)?;
+    let settings: ops::shell::ShellSettings =
+        field(&bundle.meta, "settings").ok_or_else(damaged)?;
+    if let Some(problem) = ops::shell::settings_problem(&settings) {
+        return Err(problem);
+    }
+    let meshes = world_meshes(bundle, ACTION, true)?;
+    let running = jobs.start(job);
+    let full_speed = crate::power::FullSpeed::start();
+    let cancel = running.cancel_flag();
+    let parts = meshes.len();
+    let total = meshes
+        .iter()
+        .map(|m| m.triangle_count())
+        .sum::<usize>()
+        .max(1) as f64;
+    let events = RefCell::new(ShellEvents {
+        job,
+        shares: meshes
+            .iter()
+            .map(|m| m.triangle_count() as f64 / total)
+            .collect(),
+        emit,
+        last: None,
+        sent: 0.0,
+        stage: None,
+        local: 0.0,
+    });
+    // The check takes a tenth of each part's share, the shell the rest.
+    let mut refused = Vec::new();
+    for (i, mesh) in meshes.iter().enumerate() {
+        events.borrow_mut().stage(i, "Checking the part");
+        let mut control = Control::new(cancel, |f| events.borrow_mut().progress(i, 0.1 * f));
+        let s = status::analyze(mesh, &mut control)
+            .map_err(run_error)?
+            .status;
+        if !(s.closed && s.oriented) {
+            refused.push(json!({
+                "source": i,
+                "closed": s.closed,
+                "oriented": s.oriented,
+                "holes": s.holes,
+                "borderEdges": s.border_edges,
+                "nonManifoldEdges": s.non_manifold_edges,
+                "invertedTriangles": s.inverted_triangles,
+            }));
+        }
+    }
+    if !refused.is_empty() {
+        let mut meta = Map::new();
+        meta.insert("refused".into(), json!(refused));
+        return Ok(bundle::encode(&meta, &[]));
+    }
+    let mut results = Vec::with_capacity(parts);
+    let mut made = Vec::new();
+    for (i, mesh) in meshes.iter().enumerate() {
+        let mut control = Control::new(cancel, |f| events.borrow_mut().progress(i, 0.1 + 0.9 * f))
+            .with_stages(|name| events.borrow_mut().stage(i, name));
+        let shell = ops::shell::generate(mesh, &settings, &mut control).map_err(run_error)?;
+        drop(control);
+        results.push(json!({
+            "source": i,
+            "made": shell.mesh.is_some(),
+            "warnings": shell.warnings,
+        }));
+        if let Some(m) = shell.mesh {
+            made.push((source_info(i), m));
+        }
+    }
+    drop(meshes);
+    let mut meta = Map::new();
+    meta.insert("results".into(), json!(results));
+    let answer = encode_results(&meta, &made);
+    if cancel.load(Ordering::Relaxed) {
+        return Err(CANCELLED.into());
+    }
+    drop(full_speed);
+    drop(running);
+    Ok(answer)
+}
+
+/// Turns a shell run's progress into `shell-progress` events over all its parts: each part's
+/// share is its share of the triangles; a new step is sent at once, the rest at most once per
+/// PROGRESS_INTERVAL.
+struct ShellEvents<'a> {
+    job: u64,
+    shares: Vec<f64>,
+    emit: &'a mut dyn FnMut(&ShellProgress),
+    last: Option<Instant>,
+    sent: f64,
+    stage: Option<&'static str>,
+    /// How far along the current part is.
+    local: f64,
+}
+
+impl ShellEvents<'_> {
+    fn progress(&mut self, part: usize, local: f64) {
+        self.local = local;
+        self.send(part, false);
+    }
+
+    fn stage(&mut self, part: usize, name: &'static str) {
+        if self.stage != Some(name) {
+            self.stage = Some(name);
+            self.send(part, true);
+        }
+    }
+
+    fn send(&mut self, part: usize, always: bool) {
+        let now = Instant::now();
+        if !always
+            && self
+                .last
+                .is_some_and(|t| now.duration_since(t) < PROGRESS_INTERVAL)
+        {
+            return;
+        }
+        self.last = Some(now);
+        let start: f64 = self.shares[..part].iter().sum();
+        let fraction = start + self.shares[part] * self.local.clamp(0.0, 1.0);
+        self.sent = self.sent.max(fraction.clamp(0.0, 1.0));
+        (self.emit)(&ShellProgress {
+            job: self.job,
+            part,
+            parts: self.shares.len(),
+            stage: self.stage.map(str::to_string),
+            fraction: self.sent,
+        });
+    }
+}
+
+/// `shell_estimate`: what Generate shell would take for these parts and settings.
+pub fn shell_estimate(
+    parts: &[ops::shell::EstimatePart],
+    settings: &ops::shell::ShellSettings,
+) -> ops::shell::Estimate {
+    ops::shell::estimate(parts, settings)
+}
+
 /// `export_text`: writes `text` (UTF-8) to `path`, a file the user picked in a save dialog: the
 /// platform statistics' Export to CSV. The grant is checked by the command.
 pub fn export_text(path: &Path, text: &str) -> Result<(), String> {

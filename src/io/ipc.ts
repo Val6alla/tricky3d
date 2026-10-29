@@ -174,21 +174,21 @@ export interface CutPiece extends AnalyzedMesh {
   side: "below" | "above";
 }
 
-interface OpInfo {
+export interface OpInfo {
   source?: number;
   side?: "below" | "above";
   stats?: MeshStats;
 }
 
-function partMeshes(parts: PartMesh[]): OutMesh[] {
+export function partMeshes(parts: PartMesh[]): OutMesh[] {
   return parts.map(({ name, mesh, matrix }) => ({ info: { name, matrix: [...matrix] }, positions: mesh.positions, indices: mesh.indices }));
 }
 
-function opResult(buffer: ArrayBuffer) {
+export function opResult(buffer: ArrayBuffer) {
   return decodeBundle<Record<string, unknown>, OpInfo>(buffer);
 }
 
-function analyzed(m: InMesh<OpInfo>): AnalyzedMesh {
+export function analyzed(m: InMesh<OpInfo>): AnalyzedMesh {
   if (!m.info.stats || !m.edges) throw new Error("The measurements of a result mesh are missing");
   return { mesh: { positions: m.positions, indices: m.indices }, stats: m.info.stats, edges: m.edges };
 }

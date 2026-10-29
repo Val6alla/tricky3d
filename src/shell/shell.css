@@ -1,0 +1,79 @@
+/* Generate shell's dialog. Builds on dialogs.css and transform.css; colours come from theme.css. */
+
+.dlg.dlg-shell {
+  width: 420px;
+}
+
+.dlg-shell .tf-row {
+  grid-template-columns: 128px minmax(0, 1fr);
+}
+
+/* The kind's sentence sits under its list, lined up with the field. */
+.shell-kind-help {
+  margin-top: -6px;
+  padding-left: 140px;
+}
+
+.shell-outputs {
+  display: flex;
+  gap: 20px;
+}
+
+.shell-soon {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* The settings that belong to Create part, set in under it. */
+.shell-part-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.shell-heavy {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.shell-running {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shell-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.shell-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+.shell-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-progress-fill {
+    transition: none;
+  }
+}

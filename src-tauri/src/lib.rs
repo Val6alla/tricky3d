@@ -124,6 +124,8 @@ pub fn run() {
             commands::measure_evaluate,
             commands::measure_reset,
             commands::platform_stats,
+            commands::shell_generate,
+            commands::shell_estimate,
             commands::export_text,
         ]);
     #[cfg(target_os = "macos")]
