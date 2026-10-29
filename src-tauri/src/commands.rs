@@ -342,7 +342,8 @@ pub struct ExportPick {
 /// The Export dialog (src/save_dialog.rs): every format tricky3D writes, always in the same order,
 /// with `format` (an extension) selected, opened as `save_start` says. The path picked may be
 /// written. With `each` the export makes one file per part in its folder instead, so it is granted
-/// for that (Grants::allow_each) and the system does not ask about replacing it. Null when cancelled.
+/// for that (Grants::allow_each), and on Windows the system does not ask about replacing it. Null
+/// when cancelled.
 #[tauri::command]
 pub async fn pick_export_file(
     window: Window,
@@ -354,7 +355,14 @@ pub async fn pick_export_file(
     each: bool,
 ) -> Result<Option<ExportPick>, String> {
     let (folder, name) = save_start(&grants, default_path, fallback_folder);
-    let request = save_dialog::export_request(title, folder, name, &format, each);
+    let request = save_dialog::export_request(title, folder, name, &format);
+    // One file per part writes files named after the parts, not the file picked, and the window asks
+    // about any of those it would replace. Only the Windows dialog can leave its own question out.
+    #[cfg(windows)]
+    let request = save_dialog::SaveRequest {
+        confirm_replace: !each,
+        ..request
+    };
     blocking(move || {
         let Some(saved) = save_dialog::show(&window, &request)? else {
             return Ok(None);

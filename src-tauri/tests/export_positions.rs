@@ -747,10 +747,11 @@ fn one_file_per_part_asks_before_replacing_and_writes_nothing_until_then() {
     std::fs::write(dir.join("GUN - STAND.stl"), kept).unwrap();
     let asked = export_each(&picked, "stl-binary", &all, false);
     assert!(asked.written.is_empty());
-    // Windows and macOS see "GUN - STAND.stl" as "gun - stand.stl".
+    // A file system that ignores letter case (Windows, and macOS by default) sees
+    // "GUN - STAND.stl" as "gun - stand.stl"; it is the folder that decides, not the system.
     let mut existing = asked.existing.clone();
     existing.sort();
-    let want = if cfg!(any(windows, target_os = "macos")) {
+    let want = if dir.join("gun - stand.stl").exists() {
         vec!["barrel (cut) 2.stl", "gun - stand.stl"]
     } else {
         vec!["barrel (cut) 2.stl"]

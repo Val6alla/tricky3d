@@ -5,9 +5,9 @@
 //! On Windows Rust shows the system dialog itself, since the dialog plugin always selects the
 //! first type. A default extension makes the dialog add the selected type's extension to a name
 //! typed without one, and swap it when another type is picked, so the name the dialog returns is
-//! the file written; the system asks before replacing a file that is there (`confirm_replace`).
-//! Elsewhere the plugin shows it: the list is in the same order, but its first type is selected
-//! and the file name's extension decides.
+//! the file written; the system asks before replacing a file that is there, unless told not to
+//! (`confirm_replace`). Elsewhere the plugin shows it: the list is in the same order, but its first
+//! type is selected, the file name's extension decides, and the system always asks.
 
 use std::path::{Path, PathBuf};
 
@@ -34,7 +34,9 @@ pub struct SaveRequest {
     pub types: Vec<Filter>,
     /// The type selected when it opens, an index into `types`.
     pub selected: usize,
-    /// Let the system ask before the file picked replaces one that is there.
+    /// Let the system ask before the file picked replaces one that is there. Only the Windows dialog
+    /// can leave the question out; the plugin's dialogs on macOS and Linux always ask.
+    #[cfg(windows)]
     pub confirm_replace: bool,
 }
 
@@ -52,15 +54,13 @@ pub fn type_index(id: &str) -> usize {
         .unwrap_or(0)
 }
 
-/// The Export dialog for parts whose format is `format` (an extension). With `each` the parts go to
-/// one file each, named after them in the folder picked, so the name picked is not itself written
-/// and the window asks about every file that would be replaced instead of the system.
+/// The Export dialog for parts whose format is `format` (an extension), asking before it replaces
+/// a file (commands::pick_export_file leaves that out for one file per part).
 pub fn export_request(
     title: String,
     folder: Option<PathBuf>,
     file_name: Option<String>,
     format: &str,
-    each: bool,
 ) -> SaveRequest {
     SaveRequest {
         title,
@@ -74,7 +74,8 @@ pub fn export_request(
             })
             .collect(),
         selected: type_index(format),
-        confirm_replace: !each,
+        #[cfg(windows)]
+        confirm_replace: true,
     }
 }
 
@@ -273,7 +274,7 @@ mod tests {
 
     #[test]
     fn the_type_list_is_stl_3mf_obj_ply_amf_off() {
-        let request = export_request("Export".into(), None, None, "obj", false);
+        let request = export_request("Export".into(), None, None, "obj");
         let names: Vec<&str> = request.types.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(
             names,
@@ -303,7 +304,7 @@ mod tests {
             ("", 0),
         ] {
             assert_eq!(
-                export_request("Export".into(), None, None, format, false).selected,
+                export_request("Export".into(), None, None, format).selected,
                 want,
                 "{format}"
             );
@@ -311,26 +312,25 @@ mod tests {
     }
 
     #[test]
-    fn one_file_asks_before_replacing_and_one_file_per_part_leaves_that_to_the_window() {
+    fn the_dialog_opens_on_the_source_files_name_folder_and_format() {
         let folder = PathBuf::from(r"C:\models");
-        let one = export_request(
+        let request = export_request(
             "Export 1 part".into(),
             Some(folder.clone()),
             Some("gun.stl".into()),
             "stl",
-            false,
         );
-        assert!(one.confirm_replace);
-        assert_eq!(one.folder.as_deref(), Some(folder.as_path()));
-        assert_eq!(one.file_name.as_deref(), Some("gun.stl"));
-        assert_eq!(one.selected, 0);
-        let each = export_request("Export 3 parts".into(), None, None, "stl", true);
-        assert!(!each.confirm_replace);
+        assert_eq!(request.folder.as_deref(), Some(folder.as_path()));
+        assert_eq!(request.file_name.as_deref(), Some("gun.stl"));
+        assert_eq!(request.selected, 0);
+        // So saving it as it is replaces the source file, which the system asks about.
+        #[cfg(windows)]
+        assert!(request.confirm_replace);
     }
 
     #[test]
     fn the_extension_picked_decides_the_type_else_the_one_selected() {
-        let types = export_request("Export".into(), None, None, "stl", false).types;
+        let types = export_request("Export".into(), None, None, "stl").types;
         assert_eq!(type_of(Path::new(r"C:\o\gun.OBJ"), &types, 0), 2);
         assert_eq!(type_of(Path::new("/o/gun.3mf"), &types, 0), 1);
         assert_eq!(type_of(Path::new("/o/gun"), &types, 4), 4);
@@ -351,13 +351,16 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         let _apartment = windows_dialog::Apartment::enter();
         for (format, each, index) in [("obj", false, 3u32), ("stl", false, 1), ("off", true, 6)] {
-            let request = export_request(
-                "Export".into(),
-                Some(folder.clone()),
-                Some(format!("gun.{format}")),
-                format,
-                each,
-            );
+            // As commands::pick_export_file asks for it.
+            let request = SaveRequest {
+                confirm_replace: !each,
+                ..export_request(
+                    "Export".into(),
+                    Some(folder.clone()),
+                    Some(format!("gun.{format}")),
+                    format,
+                )
+            };
             let dialog = windows_dialog::prepare(&request, request.selected).unwrap();
             // SAFETY: reads back state from the dialog made above, on this thread.
             unsafe {
