@@ -28,9 +28,7 @@ import {
 } from "./format";
 import { exportText, fetchPlatformStats, type StatsReply, type StatsSummary } from "./ipc";
 import "./stats.css";
-
-/** Job numbers of statistics runs, apart from repair mode's and Boolean operations' (all cancel through repair_cancel). */
-let jobSeq = 2 ** 40;
+import { nextJob } from "../jobs";
 
 type Scope = "all" | "selected";
 
@@ -64,7 +62,7 @@ async function copyText(text: string): Promise<void> {
 }
 
 export function PlatformStatsDialog({ onClose }: { onClose(): void }) {
-  const [phase, setPhase] = useState<Phase>(() => ({ kind: "measuring", job: ++jobSeq, progress: 0 }));
+  const [phase, setPhase] = useState<Phase>(() => ({ kind: "measuring", job: nextJob(), progress: 0 }));
   const job = phase.kind === "measuring" ? phase.job : null;
 
   useEffect(() => {

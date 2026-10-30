@@ -3,7 +3,6 @@
 
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tricky3d_lib::mesh::{Matrix, Mesh, bounds, make_box, multiply, stats};
 use zip::write::SimpleFileOptions;
@@ -16,39 +15,10 @@ pub fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// A fresh, empty directory for one test, removed again when the test is done with it.
-pub struct TempDir(PathBuf);
-
-impl std::ops::Deref for TempDir {
-    type Target = Path;
-
-    fn deref(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for TempDir {
-    fn as_ref(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-pub fn temp_dir(name: &str) -> TempDir {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join("tricky3d-tests").join(format!(
-        "{name}-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    TempDir(dir)
+/// A fresh, empty directory for one test, removed again when the test is done with it, also when
+/// it fails.
+pub fn temp_dir(name: &str) -> tricky3d_lib::test_dir::TempDir {
+    tricky3d_lib::test_dir::temp_dir(name)
 }
 
 pub fn cube(size: f32) -> Mesh {

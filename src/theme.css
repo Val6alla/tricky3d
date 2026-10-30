@@ -1,7 +1,7 @@
 /* tricky3D palette. Neutral slate surfaces with a teal accent; light and dark follow the OS.
    Every component reads colours from these tokens. The viewport reads the --vp-* tokens at runtime.
-   In the light theme, --text-subtle, the Soon pills (--soon on --soon-bg) and white on --accent are set to at least
-   4.5:1 against what they sit on. */
+   In the light theme, --text-subtle, the Soon pills (--soon on --soon-bg), white on --accent, --warn text and
+   --accent-strong on --accent-soft are set to at least 4.5:1 against what they sit on. */
 :root {
   color-scheme: light dark;
 
@@ -28,11 +28,14 @@
   --accent-hover: #08696d;
   --accent-text: #ffffff;
   --accent-soft: rgba(10, 127, 132, 0.12);
+  /* Accent text on --accent-soft (an unselected contextual tab), and its hover. */
+  --accent-strong: #08696d;
+  --accent-strong-hover: #05484b;
   --focus-ring: rgba(10, 127, 132, 0.45);
   --soon: #5a6573;
   --soon-bg: #e3e7ec;
   --danger: #c93c3c;
-  --warn: #b7791f;
+  --warn: #8f5c0c;
   --shadow: 0 6px 24px rgba(20, 28, 40, 0.16), 0 1px 3px rgba(20, 28, 40, 0.12);
   --backdrop: rgba(20, 28, 40, 0.32);
 
@@ -94,6 +97,8 @@
     --accent-hover: #46c7c4;
     --accent-text: #0b1214;
     --accent-soft: rgba(43, 179, 177, 0.16);
+    --accent-strong: #2bb3b1;
+    --accent-strong-hover: #46c7c4;
     --focus-ring: rgba(43, 179, 177, 0.5);
     --soon: #7a8593;
     --soon-bg: #2b313b;

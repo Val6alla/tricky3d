@@ -147,13 +147,8 @@ fn copy_file(from: &Path, to: &Path) {
 mod tests {
     use super::*;
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join("tricky3d-tests")
-            .join(format!("migrate-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp(name: &str) -> crate::test_dir::TempDir {
+        crate::test_dir::temp_dir(&format!("migrate-{name}"))
     }
 
     fn write(path: &Path, text: &str) {

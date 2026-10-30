@@ -410,7 +410,7 @@ button.rp-expand:hover {
 .rp-step-num {
   flex: none;
   min-width: 2.2ch;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -642,7 +642,7 @@ button.rp-expand:hover {
 
 .rp-report.is-unchanged .rp-report-head,
 .rp-report.is-unchanged .rp-report-msg {
-  color: var(--text-faint);
+  color: var(--text-subtle);
 }
 
 .rp-report-warn {
@@ -651,7 +651,7 @@ button.rp-expand:hover {
 
 /* A warning a later action put right: kept for the record, no longer a warning. */
 .rp-report-resolved {
-  color: var(--text-faint);
+  color: var(--text-subtle);
 }
 
 /* ---------- Shells ---------- */
@@ -722,7 +722,7 @@ button.rp-expand:hover {
   align-items: center;
   gap: 2px;
   min-height: 13px;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-weight: 400;
 }
 

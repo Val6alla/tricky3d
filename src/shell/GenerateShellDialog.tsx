@@ -12,13 +12,7 @@ import { repairRefused, runGenerateShell, shellTargets, type Refused } from "./s
 import { checkFields, estimateParts, estimateText, heavyWarning, kindChoice, KINDS, loadFields, type ShellFields } from "./settings";
 import "./shell.css";
 import type { ShellEstimate, ShellKind, ShellProgress } from "./types";
-
-/**
- * Job numbers of shell runs, above those of repair mode, Boolean operations, statistics and the Part library (all
- * cancel through repair_cancel). Rust keeps a cancel that comes before its run starts only for a number above every
- * one started so far.
- */
-let jobSeq = 2 ** 42;
+import { nextJob } from "../jobs";
 
 type Phase =
   | { kind: "form" }
@@ -49,7 +43,7 @@ export function GenerateShellDialog({ onClose }: { onClose(): void }) {
   async function run() {
     const settings = checkFields(fields).settings;
     if (!settings) return;
-    const job = ++jobSeq;
+    const job = nextJob();
     cancelled.current = false;
     setPhase({ kind: "running", job, progress: null, cancelling: false });
     const outcome = await runGenerateShell(
@@ -118,16 +112,7 @@ export function GenerateShellDialog({ onClose }: { onClose(): void }) {
         </Dialog>
       );
     case "warnings":
-      return (
-        <Dialog title="Generate shell" onClose={onClose}>
-          <p className="dlg-text">{phase.made === 1 ? "Made 1 new part." : phase.made === 0 ? "Made no new part." : `Made ${phase.made} new parts.`}</p>
-          <ul className="shell-warnings" role="alert">
-            {phase.warnings.map((w, i) => (
-              <li key={i}>{w}</li>
-            ))}
-          </ul>
-        </Dialog>
-      );
+      return <ShellWarnings made={phase.made} warnings={phase.warnings} onClose={onClose} />;
     case "failed":
       return (
         <Dialog title="Generate shell" onClose={onClose}>
@@ -137,6 +122,23 @@ export function GenerateShellDialog({ onClose }: { onClose(): void }) {
         </Dialog>
       );
   }
+}
+
+/**
+ * A run that finished with warnings. When no part was made, the warnings say so for each part ("No part was made."),
+ * so the count line is left out rather than saying it twice.
+ */
+export function ShellWarnings({ made, warnings, onClose }: { made: number; warnings: string[]; onClose(): void }) {
+  return (
+    <Dialog title="Generate shell" onClose={onClose}>
+      {made > 0 && <p className="dlg-text">{made === 1 ? "Made 1 new part." : `Made ${made} new parts.`}</p>}
+      <ul className="shell-warnings" role="alert">
+        {warnings.map((w, i) => (
+          <li key={i}>{w}</li>
+        ))}
+      </ul>
+    </Dialog>
+  );
 }
 
 function Running({ progress }: { progress: ShellProgress | null }) {

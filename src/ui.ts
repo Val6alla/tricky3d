@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { TabId } from "./features";
+import type { PackMethod } from "./arrange/pack";
+import type { DuplicateMode } from "./arrange/types";
 import type { ExportOptions, TransformMode, Vec3 } from "./store";
 
 export type ToastKind = "info" | "warn" | "error";
@@ -35,6 +37,17 @@ export type Dialog =
   | { kind: "platform-stats" }
   /** Home › Generate shell and Modify › Generate shell; runs and shows its progress itself. */
   | { kind: "generate-shell" }
+  // Arrange (src/arrange). Their runs show progress and Cancel in the busy box (src/arrange/ArrangeBusy.tsx).
+  /** Home › Duplicate and Arrange › Copies: in place, filling the platform, or in a grid. */
+  | { kind: "duplicate"; mode: DuplicateMode }
+  /** Arrange › Rotate to smallest box: about Z only or all axes. */
+  | { kind: "min-box" }
+  /** Home › Orient for the part `partId`. */
+  | { kind: "orient"; partId: string }
+  /** Home › Pack ▸ a method, Arrange › Packing: the method's settings, its presets, and Pack platform. */
+  | { kind: "pack"; method: PackMethod }
+  /** Right-click › Packing settings for the parts `ids`: priority, permitted rotation, position lock. */
+  | { kind: "packing-settings"; ids: string[] }
   // Prompts answer through resolve; null means the dialog was cancelled.
   | { kind: "place-on-import"; fileName: string; resolve(answer: PlaceAnswer | null): void }
   | { kind: "import-objects"; fileName: string; count: number; resolve(answer: ObjectsAnswer | null): void }
@@ -66,8 +79,11 @@ export interface ContextMenuState {
 
 export type PanelSection = "clip" | "cuts" | "information";
 
-/** A one-shot view tool from Zoom to: the next left drag zooms into its rectangle, or the next click centres the view. */
-export type ViewTool = "zoom-area" | "zoom-point";
+/**
+ * A one-shot view tool: from Zoom to, the next left drag zooms into its rectangle or the next click centres the view;
+ * with Arrange › Lay a face on the platform, the next click on a part lays that face on the platform.
+ */
+export type ViewTool = "zoom-area" | "zoom-point" | "lay-flat";
 
 /** Long-running work shown in the status bar (imports, saves). */
 export interface Task {

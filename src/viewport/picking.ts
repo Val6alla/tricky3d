@@ -5,6 +5,7 @@ import { useBoolean } from "../boolean/store";
 import { IS_MAC } from "../platform";
 import { isMeasureOpen, measureClick, type MeasureHit } from "../measure/session";
 import { isLabelOpen, labelClick } from "../label/session";
+import { layFlatAt } from "../arrange/session";
 import { isRepairing, selectAt, selectNone, selectTriangles } from "../repair/session";
 import { useRepair } from "../repair/store";
 import { selectMode, useStore, type SelectMode, type Vec3 } from "../store";
@@ -60,7 +61,8 @@ export interface BoxSelector {
  * Not on macOS with Option (that drag pans) or Control (that press is a right click), nor while a repair run goes.
  *
  * Zoom to › Area and Point (the UI store's viewTool) come first in any mode: the next left drag draws the rectangle to
- * zoom into (`box.select` zooms), and the next left click on a part centres the view on the point hit.
+ * zoom into (`box.select` zooms), and the next left click on a part centres the view on the point hit. So does Arrange ›
+ * Lay a face on the platform: the next left click on a part lays the face hit on the platform.
  *
  * In Measure mode a left click on a part goes to the measurement in progress (`measure` says what was hit), and no
  * drag draws a rectangle. In label generation a left click places a label or selects one (src/label/session.ts
@@ -166,6 +168,7 @@ export function attachPicking(
     if (viewTool !== null && e.button === 0 && !menu) {
       // A click with Area does nothing: it waits for its drag.
       if (viewTool === "zoom-point") centreAt(e);
+      else if (viewTool === "lay-flat") layFlatClick(e);
       return;
     }
     if (isLabelOpen()) {
@@ -222,6 +225,14 @@ export function attachPicking(
     if (!point) return;
     useUi.getState().setViewTool(null);
     viewport.centreOn([point[0], point[1], point[2]]);
+  }
+
+  /** Arrange › Lay a face on the platform: the face under the pointer goes down onto the platform. */
+  function layFlatClick(e: PointerEvent) {
+    const hit = viewport.surfaceAt(e.clientX, e.clientY);
+    if (!hit) return;
+    useUi.getState().setViewTool(null);
+    void layFlatAt(hit);
   }
 
   function selectPartAt(e: PointerEvent) {

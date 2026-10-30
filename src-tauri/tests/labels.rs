@@ -148,6 +148,8 @@ fn a_moved_part_is_labelled_where_it_stands_and_reopens_unchanged() {
         visible: true,
         transparent: false,
         locked: false,
+        priority: None,
+        rotation: None,
         measurements: None,
         source: None,
         mesh: labelled,

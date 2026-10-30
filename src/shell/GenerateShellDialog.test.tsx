@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeBox, translation } from "../mesh";
 import { useStore } from "../store";
-import { GenerateShellDialog, ShellForm } from "./GenerateShellDialog";
+import { GenerateShellDialog, ShellForm, ShellWarnings } from "./GenerateShellDialog";
 import { DEFAULT_FIELDS, SETTINGS_KEY, type ShellFields } from "./settings";
 
 // The form only; running needs the desktop app (src/shell/session.test.ts runs it against a stand-in).
@@ -79,5 +79,14 @@ describe("Generate shell's dialog", () => {
     expect(html).toMatch(/<input[^>]*value="1.5"/);
     expect(html).toMatch(/<input[^>]*value="0.4"/);
     expect([...html.matchAll(/<input type="checkbox"[^>]*>/g)].map((m) => m[0]).every((c) => c.includes('checked=""'))).toBe(true);
+  });
+
+  it("says once that no part was made", () => {
+    const warning = "Nothing is left of the part: every wall is thinner than 4 mm, twice the shell thickness. No part was made.";
+    const none = text(renderToStaticMarkup(<ShellWarnings made={0} warnings={[warning]} onClose={() => {}} />));
+    expect(none.match(/no (new )?part was made|made no new part/gi)).toEqual(["No part was made"]);
+    const one = text(renderToStaticMarkup(<ShellWarnings made={1} warnings={[`B: ${warning}`]} onClose={() => {}} />));
+    expect(one).toContain("Made 1 new part.");
+    expect(one).toContain("B: Nothing is left of the part");
   });
 });

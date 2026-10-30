@@ -362,6 +362,150 @@ fn project_round_trip_keeps_fields_and_matrices() {
 }
 
 #[test]
+fn project_round_trip_keeps_packing_settings() {
+    let dir = temp_dir("project-packing");
+    let path = dir.join("packed.3mf");
+    let save_and_open = |infos: &[Map<String, Value>]| {
+        let mut meta = Map::new();
+        meta.insert("path".into(), json!(path.to_string_lossy()));
+        meta.insert("platform".into(), json!([200.0, 200.0, 200.0]));
+        let parts: Vec<_> = (0..infos.len())
+            .map(|k| {
+                let at = [20.0 * k as f64, 0.0, 0.0];
+                (
+                    "Box",
+                    make_box([0.0; 3], [10.0; 3]),
+                    trs(at, 0.0, 0.0, [1.0; 3]),
+                )
+            })
+            .collect();
+        let bytes = request(meta, &parts, |k| infos[k].clone());
+        jobs::save_project(decode(&bytes).unwrap()).unwrap_or_else(|e| panic!("{e}"));
+        let opened = decode(&jobs::open_project(&path, &mut Progress::silent()).unwrap()).unwrap();
+        opened
+            .meshes
+            .into_iter()
+            .map(|m| m.info)
+            .collect::<Vec<_>>()
+    };
+    let info = |pairs: &[(&str, Value)]| -> Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    };
+
+    // As the window sends them: the first part has settings of its own and is locked in place;
+    // the second has none, so it packs with the defaults.
+    let opened = save_and_open(&[
+        info(&[
+            ("locked", json!(true)),
+            ("priority", json!(9)),
+            ("rotation", json!("z")),
+        ]),
+        info(&[]),
+    ]);
+    let packing = |m: &Map<String, Value>| {
+        ["locked", "priority", "rotation"].map(|k| m.get(k).cloned().unwrap_or(Value::Null))
+    };
+    assert_eq!(packing(&opened[0]), [json!(true), json!(9), json!("z")]);
+    assert_eq!(
+        packing(&opened[1]),
+        [json!(false), Value::Null, Value::Null]
+    );
+
+    // Saved again as opened, the project reads back the same.
+    assert_eq!(
+        save_and_open(&opened)
+            .iter()
+            .map(packing)
+            .collect::<Vec<_>>(),
+        opened.iter().map(packing).collect::<Vec<_>>()
+    );
+
+    // Every rotation and both ends of the priority range come back; values packing does not know
+    // are not saved, so the part packs with the defaults.
+    let opened = save_and_open(&[
+        info(&[("priority", json!(0)), ("rotation", json!("none"))]),
+        info(&[("priority", json!(10)), ("rotation", json!("free"))]),
+        info(&[("priority", json!(5)), ("rotation", json!("default"))]),
+        info(&[("priority", json!(11)), ("rotation", json!("sideways"))]),
+        info(&[("priority", json!(-1)), ("rotation", json!("Z"))]),
+        info(&[("priority", json!(4.5)), ("rotation", json!(3))]),
+    ]);
+    let got: Vec<_> = opened
+        .iter()
+        .map(|m| {
+            [&m.get("priority"), &m.get("rotation")].map(|v| v.cloned().unwrap_or(Value::Null))
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            [json!(0), json!("none")],
+            [json!(10), json!("free")],
+            [json!(5), json!("default")],
+            [Value::Null, Value::Null],
+            [Value::Null, Value::Null],
+            [Value::Null, Value::Null],
+        ]
+    );
+}
+
+#[test]
+fn a_project_with_unknown_packing_settings_opens_with_the_defaults() {
+    let dir = temp_dir("project-packing-unknown");
+    let path = dir.join("hand made.3mf");
+    let object = |id: u32, priority: &str, rotation: &str| {
+        format!(
+            r#"  <object id="{id}" type="model" name="Part {id}">
+   <metadatagroup>
+    <metadata name="tricky3d:packing-priority">{priority}</metadata>
+    <metadata name="tricky3d:packing-rotation">{rotation}</metadata>
+   </metadatagroup>
+   <mesh>
+    <vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/><vertex x="0" y="0" z="10"/></vertices>
+    <triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3"/><triangle v1="1" v2="2" v3="3"/><triangle v1="0" v2="3" v3="2"/></triangles>
+   </mesh>
+  </object>
+"#
+        )
+    };
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:tricky3d="urn:tricky3d:project:2026">
+ <resources>
+{}{}{} </resources>
+ <build><item objectid="1"/><item objectid="2"/><item objectid="3"/></build>
+</model>"#,
+        object(1, " 7 ", "z"),
+        object(2, "12", "diagonal"),
+        object(3, "-3", ""),
+    );
+    std::fs::write(&path, package_3mf(&model)).unwrap();
+    let opened = decode(&jobs::open_project(&path, &mut Progress::silent()).unwrap()).unwrap();
+    let got: Vec<_> = opened
+        .meshes
+        .iter()
+        .map(|m| {
+            [
+                m.info.get("priority").cloned(),
+                m.info.get("rotation").cloned(),
+            ]
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            [Some(json!(7)), Some(json!("z"))],
+            [None, None],
+            [None, None],
+        ]
+    );
+    assert_eq!(opened.meta["warnings"], json!([]));
+}
+
+#[test]
 fn a_3mf_from_elsewhere_opens_as_a_project() {
     let dir = temp_dir("foreign-project");
     let path = dir.join("other.3mf");

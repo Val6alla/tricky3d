@@ -153,6 +153,8 @@ fn every_primitive_and_one_item_of_each_category_saves_reopens_and_needs_no_repa
             visible: true,
             transparent: false,
             locked: false,
+            priority: None,
+            rotation: None,
             measurements: Some("[]"),
             source: None,
             mesh: &mesh,

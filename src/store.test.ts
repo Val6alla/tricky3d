@@ -352,6 +352,15 @@ describe("copy and paste", () => {
     expect(s().parts.filter((p) => p.name === "A")).toHaveLength(4);
   });
 
+  it("pastes copies that pack as their originals do, lock included", () => {
+    const [id] = s().addParts([{ name: "A", mesh: makeBox([10, 10, 10]), locked: true, packing: { priority: 3, rotation: "z" } }], "Add A");
+    s().select([id]);
+    s().copySelected();
+    const [copy] = s().pasteClipboard();
+    const pasted = s().parts.find((p) => p.id === copy);
+    expect([pasted?.locked, pasted?.packing]).toEqual([true, { priority: 3, rotation: "z" }]);
+  });
+
   it("leaves the clipboard when nothing is selected, and New project clears it", () => {
     const [id] = s().addParts([{ name: "A", mesh: makeBox([10, 10, 10]) }], "Add A");
     expect(s().pasteClipboard()).toEqual([]);

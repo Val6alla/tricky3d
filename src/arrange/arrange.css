@@ -1,0 +1,168 @@
+/* The Arrange dialogs (Duplicate, Rotate to smallest box, Orient, packing) and the busy box. Builds on dialogs.css and
+   transform.css; colours come from theme.css. */
+
+.dlg.dlg-arrange {
+  width: 440px;
+}
+
+.dlg.dlg-arrange-wide {
+  width: 560px;
+}
+
+.dlg-arrange .tf-row {
+  grid-template-columns: minmax(0, 1fr) 160px;
+}
+
+.arr-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.arr-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Duplicate in a grid: a row per axis (on, direction, count, gap), and the size it comes to. */
+.arr-grid,
+.arr-size {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.arr-grid-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 96px 96px;
+  align-items: center;
+  gap: 8px;
+}
+
+.arr-size-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.arr-grid-head {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.arr-readout {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.arr-readout.is-over {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* Orient's results. */
+.arr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.arr-table th,
+.arr-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+
+.arr-table th[scope="row"],
+.arr-table thead th:first-child {
+  text-align: left;
+}
+
+.arr-table thead th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.arr-table .is-goal {
+  font-weight: 600;
+}
+
+.arr-table tbody tr {
+  cursor: pointer;
+}
+
+.arr-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.arr-table tbody tr.is-picked {
+  background: var(--accent-soft);
+}
+
+/* The busy box sits over any dialog. */
+.arr-busy-backdrop {
+  z-index: 300;
+}
+
+.dlg.arr-busy {
+  width: 360px;
+}
+
+.arr-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.arr-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+/* Pack. */
+.dlg.dlg-pack {
+  width: 500px;
+}
+
+.arr-presets {
+  display: flex;
+  gap: 6px;
+}
+
+.arr-presets .dlg-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.arr-presets .dlg-btn {
+  flex: none;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.arr-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.arr-slider-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* The method's name is long: its list takes the room the label leaves. */
+.dlg-pack .arr-method {
+  grid-template-columns: 128px minmax(0, 1fr);
+}

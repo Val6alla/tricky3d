@@ -2,7 +2,7 @@
 // feature, give it a run() and set status: "ready".
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity, AlignStartHorizontal, AppWindow, Atom, Compass, Construction, FileCode, History, Printer, Sheet, SunDim, Zap, AlignStartVertical, ArrowBigUp, ArrowDownLeft, ArrowDownToDot, ArrowDownToLine,
+  Activity, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignVerticalJustifyCenter, AppWindow, ArrowUpToLine, Atom, Compass, Construction, FileCode, History, Printer, Sheet, SunDim, Zap, AlignStartVertical, ArrowBigUp, ArrowDownLeft, ArrowDownToDot, ArrowDownToLine,
   ArrowDownUp, ArrowLeftRight, ArrowUpFromLine, Axis3d, BadgeInfo, Ban, Blend, Blocks, Box, Boxes, Bridge, Brush,
   Camera, ChartArea, Check, CheckCheck, ChevronsDownUp, CircleDashed, CircleDot, CircleFadingPlus, CirclePlay,
   CirclePlus, CircleSmall, ClipboardList, ClipboardPaste, Combine, Contrast, Copy, CopyCheck, CopyPlus, CopyX,
@@ -98,7 +98,10 @@ import {
 } from "./label/session";
 import type { LabelState } from "./label/store";
 import type { LabelKind } from "./label/types";
+import type { AlignHow, DuplicateMode } from "./arrange/types";
 import { openGenerateShell } from "./shell/session";
+import { alignParts, layFlatAuto, openDuplicate, openMinBox, openOrient, startLayFlat } from "./arrange/session";
+import { openPack, PACK_METHODS, type PackMethod } from "./arrange/pack";
 import { GROUP_ICONS, toolIcon } from "./measure/icons";
 import { CLOSE_MEASURE_FIRST, closeMeasure, currentTool, isMeasureOpen, openMeasure, pickMeasureTool } from "./measure/session";
 import type { MeasureState } from "./measure/store";
@@ -384,6 +387,7 @@ const zoomTo = (target: ZoomTarget) => () => viewport.zoomTo(target);
 export const VIEW_TOOLS: Record<ViewTool, Tool> = {
   "zoom-area": { name: "Zoom to area", hint: "Drag a rectangle in the view to zoom into it. Esc cancels." },
   "zoom-point": { name: "Zoom to point", hint: "Click a point on a part: the view centres on it and turns around it from now on. Esc cancels." },
+  "lay-flat": { name: "Lay flat", hint: "Click a face of a part: the part turns so that face lies on the platform. Esc cancels." },
 };
 
 /** Zoom to › Area and Point: the next drag or click in the view does it (src/viewport/picking.ts); a second click stops. */
@@ -419,6 +423,12 @@ function selectionCentre(s: AppState): Vec3 | null {
 
 function duplicateSelection() {
   store().duplicateParts(store().selection);
+}
+
+function packingSettings() {
+  const ids = store().selection;
+  if (ids.length === 0) toast(SELECT_PART_FIRST);
+  else ui().openDialog({ kind: "packing-settings", ids: [...ids] });
 }
 
 function renameSelection() {
@@ -575,6 +585,57 @@ const kindIs = (kind: LabelKind) => (l: LabelState) => l.session?.kind === kind;
 
 const MEASURE_HINT = "Measure distances, angles, radii and wall thickness on the parts.";
 
+const ORIENT_HINT = "Find the best way for the selected part to stand: least support area, lowest height or smallest footprint.";
+
+const DUPLICATE_HINTS: Record<DuplicateMode, string> = {
+  "in-place": "Make copies of the selected parts right on top of them.",
+  fill: "Fill the platform with copies of the selected parts, as many as fit.",
+  grid: "Make copies of the selected parts in rows along X, Y and Z.",
+};
+
+const duplicate = (mode: DuplicateMode) => () => openDuplicate(mode);
+
+const PACK_HINT = "Arrange the parts on the platform in as little room as possible, by one of four methods.";
+
+const PACK_HINTS: Record<PackMethod, string> = {
+  "bounding-box": "Pack the parts' boxes, unturned: the fastest, least tight.",
+  scanline2d: "Lay the parts out in one layer on the platform by their real outline, turned about Z.",
+  scanline3d: "Stack the parts by their real shape, each where its top ends lowest.",
+  "monte-carlo": "Shake the parts into the gaps, seeded, keeping the packing height low; follows each part's priority and rotation.",
+};
+
+/** Home › Pack's entries: [id, method, icon], in the reference's order. */
+const PACK_ENTRIES: [string, string, LucideIcon][] = [
+  ["home.pack-box", "bounding-box", Box],
+  ["home.pack-2d", "scanline2d", LayoutDashboard],
+  ["home.pack-3d", "scanline3d", Boxes],
+  ["home.pack-monte-carlo", "monte-carlo", Dices],
+  ["home.pack-gravity", "gravity", ArrowDownToLine],
+  ["home.pack-true-shape-2d", "true-shape-2d", Shapes],
+  ["home.pack-true-shape-3d", "true-shape-3d", Cuboid],
+];
+const align = (how: AlignHow) => () => void alignParts(how);
+
+/** Align › Align parts to each other: [how, label, icon, hint]. Front is the platform's near edge. */
+const ALIGN_TO_EACH_OTHER: [AlignHow, string, LucideIcon, string][] = [
+  ["left", "Left", AlignStartVertical, "Line up the parts' left sides (smallest X)."],
+  ["right", "Right", AlignEndVertical, "Line up the parts' right sides (largest X)."],
+  ["front", "Front", AlignStartHorizontal, "Line up the parts' front sides (smallest Y)."],
+  ["back", "Back", AlignEndHorizontal, "Line up the parts' back sides (largest Y)."],
+  ["bottom", "Bottom", ArrowDownToLine, "Line up the parts' bottoms (smallest Z)."],
+  ["top", "Top", ArrowUpToLine, "Line up the parts' tops (largest Z)."],
+  ["centre-x", "Centre X", AlignCenterVertical, "Line up the parts' centres in X."],
+  ["centre-y", "Centre Y", AlignCenterHorizontal, "Line up the parts' centres in Y."],
+  ["centre-z", "Centre Z", AlignVerticalJustifyCenter, "Line up the parts' centres in Z."],
+];
+
+/** Align › Align to the platform. */
+const ALIGN_TO_PLATFORM: [AlignHow, string, LucideIcon, string][] = [
+  ["platform-centre", "Centre on platform", Target, "Move the selection as a group to the middle of the platform in X and Y."],
+  ["origin", "Move to origin", ArrowDownLeft, "Move the selection as a group so its box starts at the platform's origin, on the platform."],
+  ["drop", "Drop onto platform", ArrowDownToLine, "Move each selected part down or up so its lowest point is on the platform."],
+];
+
 /** The tab's six dropdowns; Wall thickness and 3-point angle are buttons of their own. */
 const MENU_GROUPS: ToolGroup[] = ["point", "edge", "circle", "circle3", "sphere4", "surface"];
 
@@ -721,13 +782,18 @@ export const FEATURES: Feature[] = [
     { id: "home.scale", label: "Scale", icon: Scale3d, status: "ready", run: scale, size: "large", outsideRepair: true, hint: "Resize the selected parts by a factor or to a size." },
     { id: "home.rotate", label: "Rotate", icon: Rotate3d, status: "ready", run: rotate, size: "large", outsideRepair: true, hint: "Rotate the selected parts." },
     { id: "home.move", label: "Move", icon: Move, status: "ready", run: move, size: "large", outsideRepair: true, hint: "Move the selected parts." },
-    { id: "home.orient", label: "Orient", icon: Compass, status: "soon" },
-    { id: "home.duplicate", label: "Duplicate", icon: CopyPlus, status: "soon" },
-    { id: "home.duplicate-count", label: "Duplicate parts", icon: Rows3, status: "soon", parent: "home.duplicate" },
-    { id: "home.duplicate-fill", label: "Fill the platform", icon: Grid3x2, status: "soon", parent: "home.duplicate" },
-    { id: "home.pack", label: "Pack", icon: Blocks, status: "soon" },
-    { id: "home.pack-2d", label: "2D packing", icon: LayoutDashboard, status: "soon", parent: "home.pack" },
-    { id: "home.pack-3d", label: "3D packing", icon: Boxes, status: "soon", parent: "home.pack" },
+    { id: "home.orient", label: "Orient", icon: Compass, status: "ready", run: openOrient, size: "large", outsideRepair: true, hint: ORIENT_HINT },
+    { id: "home.duplicate", label: "Duplicate", icon: CopyPlus, status: "ready", size: "large", hint: "Copy the selected parts: in place, filling the platform, or in a grid." },
+    { id: "home.duplicate-count", label: "Duplicate in place", icon: Copy, status: "ready", run: duplicate("in-place"), parent: "home.duplicate", outsideRepair: true, hint: DUPLICATE_HINTS["in-place"] },
+    { id: "home.duplicate-fill", label: "Fill the platform", icon: Grid3x2, status: "ready", run: duplicate("fill"), parent: "home.duplicate", outsideRepair: true, hint: DUPLICATE_HINTS.fill },
+    { id: "home.duplicate-grid", label: "Duplicate in a grid", icon: Rows3, status: "ready", run: duplicate("grid"), parent: "home.duplicate", outsideRepair: true, hint: DUPLICATE_HINTS.grid },
+    { id: "home.pack", label: "Pack", icon: Blocks, status: "ready", size: "large", hint: PACK_HINT },
+    ...PACK_ENTRIES.map(([id, method, icon]): Entry => {
+      const m = PACK_METHODS.find((p) => p.value === method);
+      return m?.soon
+        ? { id, label: m.label, icon, status: "soon", parent: "home.pack" }
+        : { id, label: m?.label ?? id, icon, status: "ready", run: () => openPack(method as PackMethod), parent: "home.pack", outsideRepair: true, hint: PACK_HINTS[method as PackMethod] };
+    }),
   ]),
   ...group("home", "Support", [
     { id: "home.generate-supports", label: "Generate supports", icon: Construction, status: "soon", size: "large" },
@@ -854,18 +920,23 @@ export const FEATURES: Feature[] = [
     { id: "arrange.front-left", label: "Move to front-left corner", icon: ArrowDownLeft, status: "soon" },
   ]),
   ...group("arrange", "Orientation", [
-    { id: "arrange.align", label: "Align", icon: AlignStartVertical, status: "soon" },
-    { id: "arrange.align-parts", label: "Align parts to each other", icon: AlignStartHorizontal, status: "soon", parent: "arrange.align" },
-    { id: "arrange.align-to-part", label: "Match a reference part", icon: CopyCheck, status: "soon", parent: "arrange.align" },
-    { id: "arrange.face-down", label: "Lay a face on the platform", icon: SquareArrowDown, status: "soon", parent: "arrange.align" },
-    { id: "arrange.min-box", label: "Rotate to smallest box", icon: Minimize, status: "soon" },
+    { id: "arrange.align", label: "Align", icon: AlignStartVertical, status: "ready", size: "large", hint: "Line the selected parts up with each other, put them on the platform, or lay one flat." },
+    { id: "arrange.align-parts", label: "Align parts to each other", icon: AlignStartHorizontal, status: "ready", parent: "arrange.align", group: "Align", hint: "Line the selected parts up by the box round all of them." },
+    ...ALIGN_TO_EACH_OTHER.map(([how, label, icon, hint]): Entry => ({ id: `arrange.align-${how}`, label, icon, status: "ready", run: align(how), parent: "arrange.align-parts", outsideRepair: true, hint })),
+    { id: "arrange.align-platform", label: "Align to the platform", icon: ArrowDownToLine, status: "ready", parent: "arrange.align", group: "Align", hint: "Centre the selection on the platform, move it to the origin, or drop each part onto it." },
+    ...ALIGN_TO_PLATFORM.map(([how, label, icon, hint]): Entry => ({ id: `arrange.align-${how}`, label, icon, status: "ready", run: align(how), parent: "arrange.align-platform", outsideRepair: true, hint })),
+    { id: "arrange.align-to-part", label: "Match a reference part", icon: CopyCheck, status: "soon", parent: "arrange.align", group: "Align" },
+    { id: "arrange.face-down", label: "Lay a face on the platform", icon: SquareArrowDown, status: "ready", run: startLayFlat, viewTool: "lay-flat", parent: "arrange.align", group: "Lay flat", outsideRepair: true, hint: "Click a face of a part: the part turns so that face lies on the platform." },
+    { id: "arrange.lay-flat-auto", label: "Lay flat automatically", icon: ArrowDownToDot, status: "ready", run: () => void layFlatAuto(), parent: "arrange.align", group: "Lay flat", outsideRepair: true, hint: "Turn each selected part onto its largest flat face." },
+    { id: "arrange.min-box", label: "Rotate to smallest box", icon: Minimize, status: "ready", run: openMinBox, outsideRepair: true, hint: "Turn each selected part so its box is as small as it gets, about Z only or about all axes." },
   ]),
   ...group("arrange", "Layout", [
     { id: "arrange.auto-arrange", label: "Auto-arrange", icon: LayoutDashboard, status: "soon", size: "large" },
-    { id: "arrange.packing", label: "Packing", icon: Blocks, status: "soon", size: "large" },
-    { id: "arrange.copies", label: "Copies", icon: CopyPlus, status: "soon" },
-    { id: "arrange.fill-platform", label: "Fill the platform", icon: Grid3x2, status: "soon", parent: "arrange.copies" },
-    { id: "arrange.copy-count", label: "Set number of copies", icon: Rows3, status: "soon", parent: "arrange.copies" },
+    { id: "arrange.packing", label: "Packing", icon: Blocks, status: "ready", run: () => openPack(), size: "large", outsideRepair: true, hint: PACK_HINT },
+    { id: "arrange.copies", label: "Copies", icon: CopyPlus, status: "ready", hint: "Copy the selected parts: in place, filling the platform, or in a grid." },
+    { id: "arrange.copy-count", label: "Duplicate in place", icon: Copy, status: "ready", run: duplicate("in-place"), parent: "arrange.copies", outsideRepair: true, hint: DUPLICATE_HINTS["in-place"] },
+    { id: "arrange.fill-platform", label: "Fill the platform", icon: Grid3x2, status: "ready", run: duplicate("fill"), parent: "arrange.copies", outsideRepair: true, hint: DUPLICATE_HINTS.fill },
+    { id: "arrange.copies-grid", label: "Duplicate in a grid", icon: Rows3, status: "ready", run: duplicate("grid"), parent: "arrange.copies", outsideRepair: true, hint: DUPLICATE_HINTS.grid },
   ]),
   ...group("arrange", "Organize", [
     { id: "arrange.group", label: "Group parts", icon: Group, status: "soon" },
@@ -931,6 +1002,7 @@ export const FEATURES: Feature[] = [
     { id: "context.export", label: "Export part…", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), hint: EXPORT_HINT },
     { id: "context.duplicate", label: "Duplicate", icon: Copy, status: "ready", run: duplicateSelection, hint: "Copy the selected parts beside the originals." },
     { id: "context.rename", label: "Rename", icon: Pencil, status: "ready", run: renameSelection, hint: "Give the part a new name." },
+    { id: "context.packing-settings", label: "Packing settings…", icon: Blocks, status: "ready", run: packingSettings, outsideRepair: true, hint: "Set the selected parts' packing priority, permitted rotation and position lock." },
     { id: "context.repair", label: "Repair part", icon: Wrench, status: "ready", run: repairPart, outsideRepair: true, hint: REPAIR_HINT },
     { id: "context.batch-repair", label: "Repair many parts at once", icon: ListChecks, status: "ready", run: () => void batchRepair(), outsideRepair: true, hint: "Run Default repair on the selected parts, or on every unlocked part." },
     { id: "context.copy", label: "Copy", icon: Copy, status: "ready", run: copyParts, shortcut: mod("C"), outsideRepair: true, hint: "Copy the selected parts to the clipboard." },
@@ -1138,6 +1210,7 @@ export const CONTEXT_MENU: string[] = [
   "context.rename",
   "context.repair",
   "context.batch-repair",
+  "context.packing-settings",
   "context.delete",
   "-",
   "context.centre-view",

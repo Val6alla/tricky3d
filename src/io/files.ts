@@ -8,6 +8,7 @@ import { boundsOf, IDENTITY, unionBounds, type Bounds } from "../mesh";
 import { primeMeshCaches } from "../meshCache";
 import { closeRepair } from "../repair/session";
 import {
+  DEFAULT_PACKING,
   isDirty,
   targetIds,
   useStore,
@@ -41,6 +42,7 @@ import {
   type ImportProgress,
   type ImportResult,
   type LoadedMesh,
+  type MeshOut,
   type ProjectResult,
 } from "./ipc";
 
@@ -327,7 +329,26 @@ export function projectPart(m: LoadedMesh): NewPart {
     transparent: m.transparent,
     locked: m.locked,
     measurements: readMeasurements(m.measurements),
+    ...(m.priority !== undefined || m.rotation !== undefined
+      ? { packing: { priority: m.priority ?? DEFAULT_PACKING.priority, rotation: m.rotation ?? DEFAULT_PACKING.rotation } }
+      : {}),
     ...(typeof m.source === "string" && m.source ? { source: m.source } : {}),
+  };
+}
+
+/** A part as a project file keeps it: projectPart() turns it back into the same part. */
+export function projectMesh(p: Part): MeshOut {
+  return {
+    name: p.name,
+    matrix: p.matrix,
+    mesh: p.mesh,
+    color: p.color,
+    visible: p.visible,
+    transparent: p.transparent,
+    locked: p.locked,
+    ...(p.packing ? { priority: p.packing.priority, rotation: p.packing.rotation } : {}),
+    ...(p.measurements && p.measurements.length > 0 ? { measurements: JSON.stringify(p.measurements) } : {}),
+    ...(p.source ? { source: p.source } : {}),
   };
 }
 
@@ -815,21 +836,7 @@ async function writeProject(path: string): Promise<boolean> {
   const name = fileName(path);
   const task = startTask(`Saving ${name}`);
   try {
-    await saveProjectFile(
-      path,
-      platform,
-      parts.map((p) => ({
-        name: p.name,
-        matrix: p.matrix,
-        mesh: p.mesh,
-        color: p.color,
-        visible: p.visible,
-        transparent: p.transparent,
-        locked: p.locked,
-        ...(p.measurements && p.measurements.length > 0 ? { measurements: JSON.stringify(p.measurements) } : {}),
-        ...(p.source ? { source: p.source } : {}),
-      })),
-    );
+    await saveProjectFile(path, platform, parts.map(projectMesh));
   } catch (err) {
     toast(errorMessage(err, `Could not save "${name}"`), "error");
     return false;

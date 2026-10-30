@@ -83,12 +83,16 @@ describe("Duplicate", () => {
     const measured = [{ id: "m1", tool: "point-point", features: [], axes: [false, false, false] as [boolean, boolean, boolean], diameter: false }];
     s().setMeasurements(new Map([[a, measured]]), "Measure");
     s().setPartLocked(a, true);
+    s().patchParts([a], { packing: { priority: 8, rotation: "none" } }, "Packing settings");
     const [copy] = s().duplicateParts([a]);
-    // The original's measurements stay with it; the copy is a fresh part, not locked.
+    // The original's measurements stay with it; the copy packs as the original does, its lock included.
     expect(part(copy).measurements).toBeUndefined();
-    expect(part(copy).locked).toBe(false);
+    expect(part(copy).locked).toBe(true);
+    expect(part(copy).packing).toEqual({ priority: 8, rotation: "none" });
     const original = part(a);
 
+    s().setPartLocked(copy, false);
+    s().patchParts([copy], { packing: { priority: 1, rotation: "free" } }, "Packing settings");
     s().setPartMatrices(new Map([[copy, translation(150, 150, 5)]]), "Move");
     s().renamePart(copy, "Spare");
     s().setPartsVisible([copy], false);

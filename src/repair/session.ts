@@ -58,6 +58,7 @@ import type {
   SelectTool,
 } from "./types";
 import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
+import { nextJob } from "../jobs";
 
 export type { SelectMode } from "./selection";
 
@@ -73,7 +74,6 @@ const repair = () => useRepair.getState();
 const session = () => useRepair.getState().session;
 const setSession = (next: RepairSession) => useRepair.setState({ session: next });
 
-let jobSeq = 0;
 /** The ribbon tab shown before repair mode, shown again after it. */
 let tabBefore: TabId | null = null;
 /** Statuses computed for working copies, so undo and redo show them again without a run. */
@@ -249,8 +249,8 @@ export function applyRepair(mode: ApplyMode): void {
     store.addParts([{ name: current.partName, mesh }], "Repair");
     toast(`The original part was removed meanwhile, so "${current.partName}" was added as a new part.`, "warn");
   } else if (mode === "remove") {
-    const { name, color, visible, transparent, locked } = part;
-    store.replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, source: part.source }] }], "Repair");
+    const { name, color, visible, transparent, locked, packing } = part;
+    store.replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, packing, source: part.source }] }], "Repair");
   } else {
     const repaired = { name: `${part.name} (repaired)`, mesh, color: freshColors([part.color], 1)[0], source: part.source };
     const patch = mode === "compare" ? { ids: [part.id], patch: { transparent: true, visible: true } } : undefined;
@@ -390,7 +390,7 @@ async function run(request: RunRequest): Promise<RunResult | null> {
     return null;
   }
   if (browserOnly("Repair")) return null;
-  const job = ++jobSeq;
+  const job = nextJob();
   useRepair.setState({ busy: { job, label: request.label, progress: null, step: null, detail: null, local: null, cancelling: false } });
   const timer = setTimeout(() => void showProgress(job), BUSY_DELAY_MS);
   try {

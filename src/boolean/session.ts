@@ -45,6 +45,7 @@ import { toast, useUi } from "../ui";
 import { viewport } from "../viewport/api";
 import { useBoolean, type BooleanBusy, type BooleanList, type BooleanResult, type BooleanSession, type InputSnapshot, type LogKind } from "./store";
 import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
+import { nextJob } from "../jobs";
 
 // ---------------------------------------------------------------------------------------------
 // Words and checks (pure)
@@ -150,8 +151,6 @@ const state = () => useBoolean.getState();
 const session = () => useBoolean.getState().session;
 
 let logSeq = 0;
-/** Job ids of Boolean runs, apart from repair mode's own (both go to repair_run). */
-let jobSeq = 2 ** 32;
 let tabBefore: TabId | null = null;
 
 function setSession(next: BooleanSession) {
@@ -354,7 +353,7 @@ export function zoomToBooleanPart(): void {
 // Runs
 
 function startBusy(label: string): number {
-  const job = ++jobSeq;
+  const job = nextJob();
   useBoolean.setState({ busy: { job, label, progress: null, step: null, cancelling: false } });
   return job;
 }
@@ -572,9 +571,9 @@ function replaceRepaired(part: Part, mesh: MeshData, check: RepairCheck | null) 
   const list = before ? listOf(before, part.id) : null;
   const at = list && before ? before[list].indexOf(part.id) : -1;
   const wasSelected = before?.selected === part.id;
-  const { name, color, visible, transparent, locked } = part;
+  const { name, color, visible, transparent, locked, packing } = part;
   // The store subscription takes the old id out of the lists; the new one goes back where it was.
-  const [id] = useStore.getState().replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, source: part.source }] }], "Repair");
+  const [id] = useStore.getState().replaceParts([{ remove: [part.id], add: [{ name, mesh, color, visible, transparent, locked, packing, source: part.source }] }], "Repair");
   const now = session();
   if (!now || !list || id === undefined) return;
   const ids = [...now[list]];

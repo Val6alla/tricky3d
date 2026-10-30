@@ -1,9 +1,9 @@
 //! tricky3D projects: a 3MF package (unit millimetre) with one object per part and one build item
 //! per part. Each object holds the part where it sits on the platform (its matrix baked into the
 //! vertices) and its build item has no transform, so every 3MF program places every part where
-//! tricky3D showed it. The part's own matrix, the platform size, each part's display fields and
-//! the file it was imported from travel as metadata in the tricky3D namespace; opening a project
-//! takes the matrix back out of the vertices.
+//! tricky3D showed it. The part's own matrix, the platform size, each part's display fields, its
+//! packing settings and the file it was imported from travel as metadata in the tricky3D
+//! namespace; opening a project takes the matrix back out of the vertices.
 //!
 //! Projects saved before kept the part-local mesh and put the matrix in the build item's
 //! `transform`. They still open the same, and so does a 3MF from elsewhere.
@@ -11,6 +11,7 @@
 use std::io::{self, Seek, Write};
 use std::path::Path;
 
+use crate::arrange::pack::Rotation;
 use crate::formats::threemf::{self, ModelOut, ObjectOut, Package};
 use crate::formats::{display_name, has_extension, read_all, write_atomic, write_error};
 use crate::measure::invert;
@@ -30,7 +31,11 @@ pub struct PartOut<'a> {
     pub color: Option<&'a str>,
     pub visible: bool,
     pub transparent: bool,
+    /// Also its packing position lock.
     pub locked: bool,
+    /// Its own packing priority (0 to 10) and rotation, or None for the defaults.
+    pub priority: Option<u8>,
+    pub rotation: Option<Rotation>,
     /// Measure mode's measurements on the part, as the window's JSON (src/measure), or None.
     pub measurements: Option<&'a str>,
     /// The file the part (or the part it was made from) was imported from, or None.
@@ -48,6 +53,8 @@ pub struct Part {
     pub visible: Option<bool>,
     pub transparent: Option<bool>,
     pub locked: Option<bool>,
+    pub priority: Option<u8>,
+    pub rotation: Option<Rotation>,
     /// The measurements' JSON as saved; the window checks it.
     pub measurements: Option<String>,
     /// The file the part was imported from, as saved.
@@ -77,6 +84,12 @@ pub fn write<W: Write + Seek>(w: W, platform: [f64; 3], parts: &[PartOut]) -> io
             metadata.push(("tricky3d:visible", p.visible.to_string()));
             metadata.push(("tricky3d:transparent", p.transparent.to_string()));
             metadata.push(("tricky3d:locked", p.locked.to_string()));
+            if let Some(priority) = p.priority {
+                metadata.push(("tricky3d:packing-priority", priority.to_string()));
+            }
+            if let Some(rotation) = p.rotation {
+                metadata.push(("tricky3d:packing-rotation", rotation.word().to_string()));
+            }
             if let Some(json) = p.measurements {
                 metadata.push(("tricky3d:measurements", json.to_string()));
             }
@@ -120,6 +133,9 @@ const MAX_MEASUREMENTS: usize = 4 << 20;
 
 /// Longest source path a part may carry (bytes).
 const MAX_SOURCE: usize = 4096;
+
+/// Highest packing priority (the lowest is 0).
+pub const MAX_PRIORITY: u8 = 10;
 
 /// The 16 numbers of a column-major matrix, in shortest round-trip form.
 fn format_matrix(m: &Matrix) -> String {
@@ -218,6 +234,12 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Project, String> {
                 visible: flag("visible"),
                 transparent: flag("transparent"),
                 locked: flag("locked"),
+                priority: field("packing-priority")
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .filter(|p| *p <= MAX_PRIORITY),
+                rotation: field("packing-rotation")
+                    .as_deref()
+                    .and_then(Rotation::from_word),
                 measurements: field("measurements")
                     .filter(|m| !m.is_empty() && m.len() <= MAX_MEASUREMENTS),
                 source: field("source")

@@ -346,9 +346,7 @@ mod tests {
     fn the_windows_dialog_selects_the_parts_format_and_asks_before_replacing() {
         use windows::Win32::UI::Shell::{FOS_OVERWRITEPROMPT, SIGDN_FILESYSPATH};
 
-        let root = std::env::temp_dir()
-            .join("tricky3d-tests")
-            .join(format!("save-dialog-{}", std::process::id()));
+        let root = crate::test_dir::temp_dir("save-dialog");
         let long = root.join("models with a long name");
         std::fs::create_dir_all(&long).unwrap();
         // Its short 8.3 name where the volume keeps them, as in a Windows runner's temp folder.
@@ -386,6 +384,5 @@ mod tests {
                 );
             }
         }
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

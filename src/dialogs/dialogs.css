@@ -324,7 +324,7 @@
 }
 
 .dlg-format-ext {
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
