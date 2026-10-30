@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeshData } from "../store";
+import type { MeshData, PartPacking } from "../store";
 import type { ActionSpec, Catalog, Highlights, RepairProgress, RepairScript, RepairStatus, RunResult, ScriptStep } from "./types";
 
 // Rust is a stand-in: runRepair answers what each test says, so these tests check what the session does with the
@@ -141,7 +141,7 @@ function deferred<T>() {
 /** Waits until no run is going. */
 const idle = () => vi.waitFor(() => expect(r().busy).toBeNull());
 
-function addPart(name = "Part", fields: { matrix?: number[]; color?: string; mesh?: MeshData } = {}): string {
+function addPart(name = "Part", fields: { matrix?: number[]; color?: string; mesh?: MeshData; packing?: PartPacking } = {}): string {
   const [id] = useStore.getState().addParts([{ name, mesh: fields.mesh ?? makeBox([20, 20, 20]), ...fields }], `Add ${name}`);
   return id;
 }
@@ -736,9 +736,9 @@ describe("apply repair", () => {
     return { id, mesh };
   }
 
-  it("remove: the repaired part takes the old one's place, name and colour as one main undo step, and leaves repair mode", async () => {
+  it("remove: the repaired part takes the old one's place, name, colour and packing settings as one main undo step, and leaves repair mode", async () => {
     addPart("Before");
-    const { id, mesh } = await repaired({ matrix: translation(5, 0, 0), color: PART_COLORS[3] });
+    const { id, mesh } = await repaired({ matrix: translation(5, 0, 0), color: PART_COLORS[3], packing: { priority: 7, rotation: "z" } });
     addPart("After");
     useStore.getState().select([id]);
     const parts = useStore.getState().parts;
@@ -752,6 +752,7 @@ describe("apply repair", () => {
     expect(part.mesh).toBe(mesh);
     expect(part.matrix).toEqual([...IDENTITY]);
     expect(part.color).toBe(PART_COLORS[3]);
+    expect(part.packing).toEqual({ priority: 7, rotation: "z" });
     expect(mainLabels()[mainLabels().length - 1]).toBe("Repair");
     expect(cachedCheck(mesh)).toEqual({ closed: true, oriented: true, holes: 0, borderEdges: 0, nonManifoldEdges: 0, invertedTriangles: 0 });
     expect(isRepairing()).toBe(false);

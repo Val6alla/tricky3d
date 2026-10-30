@@ -423,7 +423,7 @@
 
 .rpanel-info dd {
   margin: 0;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -532,7 +532,7 @@
 
 .statusbar-task-more {
   flex: none;
-  color: var(--text-faint);
+  color: var(--text-subtle);
 }
 
 @keyframes statusbar-spin {

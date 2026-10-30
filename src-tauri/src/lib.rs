@@ -1,3 +1,4 @@
+pub mod arrange;
 pub mod bundle;
 mod commands;
 pub mod formats;
@@ -16,6 +17,8 @@ pub mod project;
 pub mod repair;
 mod save_dialog;
 pub mod stats;
+#[doc(hidden)]
+pub mod test_dir;
 pub mod workers;
 
 use tauri::menu::{Menu, MenuEvent, MenuItem};
@@ -114,6 +117,9 @@ pub fn run() {
             commands::repair_catalog,
             commands::repair_run,
             commands::repair_cancel,
+            commands::arrange,
+            commands::packing_presets_load,
+            commands::packing_presets_save,
             commands::repair_check,
             commands::repair_shells,
             commands::repair_cut_path,

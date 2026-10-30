@@ -61,7 +61,7 @@
 .menu-shortcut {
   flex: none;
   margin-left: 16px;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-size: var(--fs-xs);
 }
 

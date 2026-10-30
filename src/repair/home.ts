@@ -27,6 +27,7 @@ import {
 } from "./session";
 import { useRepair } from "./store";
 import type { ActionId, RepairStatus } from "./types";
+import { nextJob } from "../jobs";
 
 const DEFAULT_SCRIPT = "builtin.default";
 
@@ -191,8 +192,6 @@ export function editRepairScripts(): Promise<void> {
   });
 }
 
-let batchJob = 1_000_000;
-
 export async function batchRepair(): Promise<void> {
   if (isRepairing()) {
     toast(CLOSE_REPAIR_FIRST);
@@ -221,7 +220,7 @@ export async function batchRepair(): Promise<void> {
     const replacements: Replacement[] = [];
     for (const part of targets) {
       const run = await runRepair(part.mesh, script.actions, {
-        job: batchJob++,
+        job: nextJob(),
         label: script.name,
         selection: new Uint32Array(0),
         withStatus: true,
@@ -242,6 +241,7 @@ export async function batchRepair(): Promise<void> {
             visible: part.visible,
             transparent: part.transparent,
             locked: part.locked,
+            packing: part.packing,
             source: part.source,
           },
         ],

@@ -29,6 +29,7 @@ import {
   placementOffset,
   placementRule,
   preTranslate,
+  projectMesh,
   projectPart,
   projectPlatform,
   rememberedPlacement,
@@ -282,6 +283,24 @@ describe("project fields", () => {
     // The file the part was imported from survives saving and reopening.
     expect(projectPart({ ...loaded, source: "D:\\Models\\gun.obj" }).source).toBe("D:\\Models\\gun.obj");
     expect(projectPart({ ...loaded, source: "" }).source).toBeUndefined();
+  });
+
+  it("keeps a part's packing settings and lock through saving and reopening", () => {
+    const mesh = makeBox([10, 10, 10]);
+    const part = (fields: Partial<Part>): Part => ({ id: "p1", name: "Cone", mesh, matrix: translation(5, 5, 5), visible: true, transparent: false, locked: false, color: "#bda3a3", ...fields });
+    // Opening hands back the fields the window saved (src-tauri/tests/roundtrip.rs saves and reopens a real file).
+    const reopen = (p: Part) => projectPart({ ...projectMesh(p), stats: null, edges: null });
+    const packed = part({ locked: true, packing: { priority: 9, rotation: "z" } });
+    expect(projectMesh(packed)).toMatchObject({ locked: true, priority: 9, rotation: "z" });
+    expect(reopen(packed)).toMatchObject({ locked: true, packing: { priority: 9, rotation: "z" } });
+    // A part without settings of its own saves none and comes back without them, so it packs with the defaults.
+    const plain = part({});
+    expect(Object.keys(projectMesh(plain))).not.toContain("priority");
+    expect(Object.keys(projectMesh(plain))).not.toContain("rotation");
+    expect(reopen(plain).packing).toBeUndefined();
+    // A file holding only one of the two takes the default for the other.
+    expect(projectPart({ name: "A", matrix: null, mesh, stats: null, edges: null, priority: 2 }).packing).toEqual({ priority: 2, rotation: "default" });
+    expect(projectPart({ name: "A", matrix: null, mesh, stats: null, edges: null, rotation: "none" }).packing).toEqual({ priority: 5, rotation: "none" });
   });
 
   it("reads the unsaved-changes answer from the pressed button's label", () => {

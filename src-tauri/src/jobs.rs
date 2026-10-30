@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use crate::arrange::pack::Rotation;
 use crate::bundle::{self, Blob, BlobRef, Bundle, Extra, InMesh, OutMesh};
 use crate::formats::{self, ExportFormat, NamedMesh, display_name};
 use crate::measure;
@@ -28,6 +29,11 @@ use crate::repair::{
     self, Action, ActionId, Control, RepairError, ScriptOutcome, defaults, shells,
 };
 use crate::stats;
+
+mod arrange;
+pub use arrange::{
+    ARRANGE_PROGRESS, ArrangeProgress, PRESETS_FILE, arrange, load_presets, save_presets,
+};
 
 /// `import_mesh`: reads, welds and measures a file; returns the bundle described in src/io/ipc.ts.
 pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<Vec<u8>, String> {
@@ -95,6 +101,12 @@ pub fn open_project_with_sources(
                 if let Some(value) = value {
                     info.insert(key.into(), json!(value));
                 }
+            }
+            if let Some(priority) = part.priority {
+                info.insert("priority".into(), json!(priority));
+            }
+            if let Some(rotation) = part.rotation {
+                info.insert("rotation".into(), json!(rotation.word()));
             }
             if let Some(measurements) = &part.measurements {
                 info.insert("measurements".into(), json!(measurements));
@@ -286,6 +298,17 @@ pub fn save_project(bundle: Bundle) -> Result<(), String> {
                 .get("locked")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            priority: m
+                .info
+                .get("priority")
+                .and_then(Value::as_u64)
+                .and_then(|p| u8::try_from(p).ok())
+                .filter(|p| *p <= project::MAX_PRIORITY),
+            rotation: m
+                .info
+                .get("rotation")
+                .and_then(Value::as_str)
+                .and_then(Rotation::from_word),
             measurements: m.info.get("measurements").and_then(Value::as_str),
             source: m.info.get("source").and_then(Value::as_str),
             mesh,

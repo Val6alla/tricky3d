@@ -18,6 +18,11 @@ const TransformDialog = onDemand(() => import("./TransformDialog").then((m) => m
 const CutDialog = onDemand(() => import("./CutDialog").then((m) => m.CutDialog));
 const PlatformStatsDialog = onDemand(() => import("../stats/PlatformStatsDialog").then((m) => m.PlatformStatsDialog));
 const GenerateShellDialog = onDemand(() => import("../shell/GenerateShellDialog").then((m) => m.GenerateShellDialog));
+const DuplicateDialog = onDemand(() => import("../arrange/DuplicateDialog").then((m) => m.DuplicateDialog));
+const MinBoxDialog = onDemand(() => import("../arrange/MinBoxDialog").then((m) => m.MinBoxDialog));
+const OrientDialog = onDemand(() => import("../arrange/OrientDialog").then((m) => m.OrientDialog));
+const PackDialog = onDemand(() => import("../arrange/PackDialog").then((m) => m.PackDialog));
+const PackingSettingsDialog = onDemand(() => import("../arrange/PackingSettingsDialog").then((m) => m.PackingSettingsDialog));
 const PlacePromptDialog = onDemand(() => import("./PlacePromptDialog").then((m) => m.PlacePromptDialog));
 const ImportObjectsDialog = onDemand(() => import("./ImportObjectsDialog").then((m) => m.ImportObjectsDialog));
 const ScaleMetresDialog = onDemand(() => import("./ScaleMetresDialog").then((m) => m.ScaleMetresDialog));
@@ -64,6 +69,17 @@ function OpenDialog({ dialog }: { dialog: Exclude<Dialog, null> }) {
       return <PlatformStatsDialog onClose={close} />;
     case "generate-shell":
       return <GenerateShellDialog onClose={close} />;
+    case "duplicate":
+      // Keyed so switching from one way of duplicating to another starts afresh.
+      return <DuplicateDialog key={dialog.mode} mode={dialog.mode} onClose={close} />;
+    case "min-box":
+      return <MinBoxDialog onClose={close} />;
+    case "orient":
+      return <OrientDialog key={dialog.partId} partId={dialog.partId} onClose={close} />;
+    case "pack":
+      return <PackDialog key={dialog.method} method={dialog.method} onClose={close} />;
+    case "packing-settings":
+      return <PackingSettingsDialog key={dialog.ids.join()} ids={dialog.ids} onClose={close} />;
     case "place-on-import":
       return <PlacePromptDialog key={dialog.fileName} fileName={dialog.fileName} resolve={dialog.resolve} onClose={close} />;
     case "import-objects":

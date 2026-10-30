@@ -24,6 +24,7 @@ import { at, labelFrame, onPlane, plateSize, sub, TAG_GAP, unit, dot, add, scale
 import { applyLabels, fetchFonts, fitLabel, labelShape, pickCsv, type ShapeRequest } from "./ipc";
 import { useLabel, type LabelSession, type LabelStep, type LabelTool, type ShapeEntry } from "./store";
 import { BUNDLED_FONT, KIND_LABELS, listEntries, newLabel, shapeText, startDepth, type FontInfo, type LabelKind, type PlacedLabel } from "./types";
+import { nextJob } from "../jobs";
 
 /** Main-document commands that would change the parts refuse with this while the mode is open. */
 export const CLOSE_LABEL_FIRST = "Close label generation first.";
@@ -34,7 +35,6 @@ const store = () => useStore.getState();
 
 let tabBefore: TabId | null = null;
 let labelSeq = 0;
-let jobSeq = 0;
 
 /** True while label mode is open. */
 export function isLabelOpen(): boolean {
@@ -612,7 +612,7 @@ export async function applyLabelMode(): Promise<void> {
     }
   }
   const widths = labels.map((l) => labelWidth(l) ?? l.height);
-  const job = ++jobSeq;
+  const job = nextJob();
   useLabel.setState({ busy: { job, cancelling: false, fraction: 0 } });
   const task = startTask(`Adding labels to ${part.name}`);
   try {

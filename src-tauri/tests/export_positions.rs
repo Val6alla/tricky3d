@@ -461,6 +461,8 @@ fn save_project(path: &Path, parts: &[Part]) {
             visible: true,
             transparent: false,
             locked: false,
+            priority: None,
+            rotation: None,
             measurements: None,
             source: Some("C:\\models\\gun.obj"),
             mesh: &p.mesh,

@@ -278,6 +278,8 @@ fn a_hollow_part_saves_and_opens_again_as_3mf() {
         visible: true,
         transparent: false,
         locked: false,
+        priority: None,
+        rotation: None,
         measurements: None,
         source: None,
         mesh,

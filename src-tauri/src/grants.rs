@@ -439,9 +439,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn short_8_3_names_name_the_same_folder() {
-        let root = std::env::temp_dir()
-            .join("tricky3d-tests")
-            .join(format!("short-names-{}", std::process::id()));
+        let root = crate::test_dir::temp_dir("short-names");
         let long = root.join("a folder with a long name");
         std::fs::create_dir_all(&long).unwrap();
         let short = win::short_name(&long).unwrap();
@@ -455,7 +453,6 @@ mod tests {
         grants.allow_read(short.join("gun.stl"));
         assert!(grants.knows_folder(&long), "{long:?} is {short:?}");
         assert_eq!(folder_key(&short), folder_key(&long));
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -494,9 +491,7 @@ mod tests {
 
     #[test]
     fn save_dialogs_open_in_the_source_folder_else_the_last_one_used_while_they_exist() {
-        let root = std::env::temp_dir()
-            .join("tricky3d-tests")
-            .join(format!("dialog-folder-{}", std::process::id()));
+        let root = crate::test_dir::temp_dir("dialog-folder");
         let source = root.join("imported from");
         let last = root.join("exported to");
         let unknown = root.join("never picked");
@@ -518,6 +513,5 @@ mod tests {
         // Neither is left: the system's choice.
         std::fs::remove_dir_all(&last).unwrap();
         assert_eq!(grants.dialog_folder([&source, &last]), None);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

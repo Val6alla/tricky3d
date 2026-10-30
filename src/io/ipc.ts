@@ -2,7 +2,7 @@
 // (src/io/bundle.ts), never as JSON arrays.
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { CutPlane } from "../ops/types";
-import type { MeshData, Vec3 } from "../store";
+import type { MeshData, PartRotation, Vec3 } from "../store";
 import { decodeBundle, encodeBundle, type InMesh, type OutMesh } from "./bundle";
 
 export type ImportFormat = "stl" | "obj" | "ply" | "3mf" | "amf" | "off";
@@ -46,6 +46,9 @@ export interface LoadedMesh {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  /** Its own packing priority and rotation, when the project file holds them. */
+  priority?: number;
+  rotation?: PartRotation;
   /** Measure mode's measurements, as the project file holds them (JSON); checked by src/measure/persist.ts. */
   measurements?: string;
   /** The file the part was imported from, as the project file holds it. */
@@ -81,6 +84,9 @@ export interface MeshOut {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  /** Its own packing priority and rotation (projects only). */
+  priority?: number;
+  rotation?: PartRotation;
   /** JSON of the part's measurements (projects only). */
   measurements?: string;
   /** The file the part was imported from (projects only). */
@@ -95,6 +101,8 @@ interface MeshInfo {
   visible?: boolean;
   transparent?: boolean;
   locked?: boolean;
+  priority?: number;
+  rotation?: PartRotation;
   measurements?: string;
   source?: string;
 }

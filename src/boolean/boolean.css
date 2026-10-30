@@ -93,7 +93,7 @@
 
 .bp-empty {
   padding: 6px;
-  color: var(--text-faint);
+  color: var(--text-subtle);
   font-size: var(--fs-xs);
 }
 

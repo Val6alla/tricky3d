@@ -644,6 +644,37 @@ pub async fn shell_generate(window: Window, request: Request<'_>) -> Result<Resp
     .map(Response::new)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Arrange: Align, Duplicate, Lay flat, Rotate to smallest box, Orient, Pack (src/arrange/ipc.ts).
+
+#[tauri::command]
+pub async fn arrange(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "arrange the parts")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::arrange(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::ARRANGE_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+#[tauri::command]
+pub async fn packing_presets_load(app: AppHandle) -> Result<Map<String, Value>, String> {
+    let dir = config_dir(&app, "Could not read your packing presets")?;
+    blocking(move || jobs::load_presets(&dir)).await
+}
+
+#[tauri::command]
+pub async fn packing_presets_save(
+    app: AppHandle,
+    presets: Map<String, Value>,
+) -> Result<(), String> {
+    let dir = config_dir(&app, "Could not save your packing presets")?;
+    blocking(move || jobs::save_presets(&dir, &presets)).await
+}
+
 /// A few numbers, so it runs right here.
 #[tauri::command]
 pub fn shell_estimate(parts: Vec<EstimatePart>, settings: ShellSettings) -> Estimate {
@@ -736,9 +767,7 @@ mod tests {
 
     #[test]
     fn picked_files_with_spaces_and_non_ascii_names_pass_the_grant_check_and_open() {
-        let root = std::env::temp_dir()
-            .join("tricky3d-tests")
-            .join(format!("picked-{}", std::process::id()));
+        let root = crate::test_dir::temp_dir("picked");
         // "й" spelled as macOS file names often store it: "и" plus a combining breve.
         let folder = root
             .join("Модели 3D")
@@ -768,6 +797,8 @@ mod tests {
             visible: true,
             transparent: false,
             locked: false,
+            priority: None,
+            rotation: None,
             measurements: None,
             source: None,
             mesh: &mesh,
@@ -789,7 +820,5 @@ mod tests {
         jobs::open_project(Path::new(&arg), &mut Progress::silent()).unwrap();
         grants.adopt_project(Path::new(&arg));
         grants.check_write(Path::new(&arg), "3mf", "save").unwrap();
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

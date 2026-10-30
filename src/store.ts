@@ -14,6 +14,19 @@ export interface MeshData {
   indices: Uint32Array; // 3 per triangle, counter-clockwise = outward
 }
 
+/** How packing may turn a part (src-tauri/src/arrange/pack.rs Rotation): "default" takes the packing method's setting. */
+export type PartRotation = "default" | "none" | "z" | "free";
+
+/** A part's own packing settings (right-click › Packing settings). Its position lock is the part's `locked`. */
+export interface PartPacking {
+  /** 0 to 10; higher packs first and lowest. */
+  priority: number;
+  rotation: PartRotation;
+}
+
+/** What a part without settings of its own packs with. */
+export const DEFAULT_PACKING: PartPacking = { priority: 5, rotation: "default" };
+
 export interface Part {
   id: string;
   name: string;
@@ -26,6 +39,8 @@ export interface Part {
   color: string; // CSS hex
   /** Measure mode's measurements on the part, in its own frame; absent when it has none. A new mesh drops them. */
   measurements?: readonly Measurement[];
+  /** Its own packing settings; absent means DEFAULT_PACKING. */
+  packing?: PartPacking;
   /**
    * The file the part was imported from, or the source of the part it was made from (cut pieces, shells, merges,
    * Boolean results, repairs, copies); absent for parts that never came from a file. Save and Export suggest its
@@ -87,6 +102,8 @@ export interface ClipboardPart {
   mesh: MeshData;
   matrix: number[];
   color: string;
+  locked: boolean;
+  packing?: PartPacking;
   stats: MeshStats | null;
   edges: Float32Array | null;
   source?: string;
@@ -101,6 +118,7 @@ export interface NewPart {
   transparent?: boolean;
   locked?: boolean;
   measurements?: readonly Measurement[];
+  packing?: PartPacking;
   source?: string;
 }
 
@@ -113,7 +131,7 @@ export interface Replacement {
 }
 
 /** Display and naming fields that patchParts may change. */
-export type PartPatch = Partial<Pick<Part, "name" | "visible" | "transparent" | "locked" | "color">>;
+export type PartPatch = Partial<Pick<Part, "name" | "visible" | "transparent" | "locked" | "color" | "packing">>;
 
 /** A patch for parts that stay, applied in the same undo step as a replacement (Apply repair › compare). */
 export interface PartsPatch {
@@ -217,6 +235,7 @@ function buildParts(newParts: NewPart[], colorStart: number): Part[] {
       locked: p.locked ?? false,
       color: p.color ?? PART_COLORS[(colorStart + i) % PART_COLORS.length],
       ...(p.measurements && p.measurements.length > 0 ? { measurements: p.measurements } : {}),
+      ...(p.packing ? { packing: p.packing } : {}),
       ...(p.source ? { source: p.source } : {}),
     }),
   );
@@ -285,6 +304,8 @@ export interface AppState {
   setPartLocked(id: string, locked: boolean): void;
   /** Changes display or naming fields of several parts as one undo step labelled `label`. */
   patchParts(ids: string[], patch: PartPatch, label: string): void;
+  /** patchParts with a patch of its own for each part (by id). */
+  patchEach(patches: ReadonlyMap<string, PartPatch>, label: string): void;
   /** Sets the measurements of parts (by id; an empty list removes them) as one undo step labelled `label`. */
   setMeasurements(changes: ReadonlyMap<string, readonly Measurement[]>, label: string): void;
   /**
@@ -292,8 +313,15 @@ export interface AppState {
    * null it is a live preview, e.g. during a gizmo drag, that recordChange() later makes one step.
    */
   setPartMatrices(matrices: ReadonlyMap<string, number[]>, label: string | null): void;
+  /**
+   * Moves parts (by id, to these matrices) and adds new ones as one undo step labelled `label`, and selects the new
+   * ones (Duplicate › Fill the platform moves the originals and adds the copies). Returns the new ids.
+   */
+  arrangeParts(matrices: ReadonlyMap<string, number[]>, add: NewPart[], label: string): string[];
   /** The current parts and selection, to pass to recordChange() after live previews. */
   snapshot(): Snapshot;
+  /** Ends a live preview without an undo step: the parts and selection go back to `before` (Orient's Cancel). */
+  discardPreview(before: Snapshot): void;
   /** Records everything that changed since `before` as one undo step. Does nothing if the parts did not change. */
   recordChange(label: string, before: Snapshot): void;
   undo(): void;
@@ -432,13 +460,13 @@ export const useStore = create<AppState>()((set, get) => {
       const wanted = new Set(ids);
       const sources = get().parts.filter((p) => wanted.has(p.id));
       // Every copy moves along +X past the whole group plus a 5 mm gap, as Paste does: the copies keep their places
-      // relative to each other, and none lands on an original.
+      // relative to each other, and none lands on an original. They pack as their originals do (lock included).
       const box = unionBounds(sources.map((p) => boundsOf(p.mesh, p.matrix)));
       const dx = box ? box.max[0] - box.min[0] + 5 : 10;
       const copies = sources.map((p): NewPart => {
         const m = [...p.matrix];
         m[12] += dx;
-        return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color, source: p.source };
+        return { name: `${p.name} (copy)`, mesh: p.mesh, matrix: m, color: p.color, locked: p.locked, packing: p.packing, source: p.source };
       });
       return get().addParts(copies, "Duplicate");
     },
@@ -454,6 +482,8 @@ export const useStore = create<AppState>()((set, get) => {
           mesh: p.mesh,
           matrix: [...p.matrix],
           color: p.color,
+          locked: p.locked,
+          ...(p.packing ? { packing: p.packing } : {}),
           stats: cachedStats(p.mesh) ?? null,
           edges: cachedProblemEdges(p.mesh) ?? null,
           source: p.source,
@@ -475,7 +505,7 @@ export const useStore = create<AppState>()((set, get) => {
       const copies = clip.map((p): NewPart => {
         const matrix = [...p.matrix];
         matrix[12] += shift;
-        return { name: p.name, mesh: p.mesh, matrix, color: p.color, source: p.source };
+        return { name: p.name, mesh: p.mesh, matrix, color: p.color, locked: p.locked, packing: p.packing, source: p.source };
       });
       const label = clip.length === 1 ? `Paste ${clip[0].name}` : `Paste ${clip.length} parts`;
       const ids = get().addParts(copies, label);
@@ -548,6 +578,14 @@ export const useStore = create<AppState>()((set, get) => {
       commit(label, before);
     },
 
+    patchEach(patches, label) {
+      const before = begin();
+      const parts = mapParts(before.parts, patches.keys(), (p) => patchPart(p, patches.get(p.id) ?? {}));
+      if (parts === before.parts) return;
+      set({ parts });
+      commit(label, before);
+    },
+
     setMeasurements(changes, label) {
       const before = begin();
       const parts = mapParts(before.parts, changes.keys(), (p) => {
@@ -573,7 +611,26 @@ export const useStore = create<AppState>()((set, get) => {
       if (label !== null) commit(label, before);
     },
 
+    arrangeParts(matrices, add, label) {
+      const before = begin();
+      const moved = mapParts(before.parts, matrices.keys(), (p) => {
+        const m = matrices.get(p.id);
+        return m && !sameMatrix(m, p.matrix) ? { ...p, matrix: [...m] } : p;
+      });
+      const added = buildParts(add, before.parts.length);
+      if (moved === before.parts && added.length === 0) return [];
+      const ids = added.map((p) => p.id);
+      set({ parts: [...moved, ...added], selection: ids.length ? ids : before.selection });
+      commit(label, before);
+      return ids;
+    },
+
     snapshot: snap,
+
+    discardPreview(before) {
+      preview = null;
+      set({ parts: before.parts, selection: before.selection });
+    },
 
     recordChange(label, before) {
       preview = null;

@@ -80,12 +80,12 @@
   align-items: center;
   gap: 5px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
 .rb-tab.is-contextual:hover {
-  color: var(--accent-hover);
+  color: var(--accent-strong-hover);
 }
 
 .rb-tab.is-contextual.is-selected {

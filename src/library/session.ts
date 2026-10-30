@@ -23,6 +23,7 @@ import { buildItem, fetchLibraryCatalog, pickPicture, type LibraryItem, type Lib
 import { CATEGORIES, useLibrary, type FieldValue, type LibraryCategory, type LibrarySession } from "./store";
 import { releaseThumbnails, thumbnail } from "./thumbnails";
 import { CLOSE_LABEL_FIRST, isLabelOpen } from "../label/session";
+import { nextJob } from "../jobs";
 
 /** Main-document commands that would add or change parts refuse with this while the library is open. */
 export const CLOSE_LIBRARY_FIRST = "Close the part library first.";
@@ -141,8 +142,6 @@ const state = () => useLibrary.getState();
 const session = () => useLibrary.getState().session;
 const itemOf = (id: string) => state().catalog?.find((p) => p.id === id);
 
-/** Job numbers of library builds, apart from the other modes' (all cancel through repair_cancel). */
-let jobSeq = 2 ** 41;
 let tabBefore: TabId | null = null;
 
 function setSession(patch: Partial<LibrarySession>) {
@@ -313,7 +312,7 @@ async function drawTiles(category: LibraryCategory): Promise<void> {
     if (!isLibraryOpen() || session()?.category !== category) return;
     if (state().thumbs[item.id]) continue;
     try {
-      const built = await buildItem(item.id, parseValues(item, defaultValues(item)).params, ++jobSeq, { preview: true });
+      const built = await buildItem(item.id, parseValues(item, defaultValues(item)).params, nextJob(), { preview: true });
       if (!isLibraryOpen()) return;
       useLibrary.setState((s) => ({ thumbs: { ...s.thumbs, [item.id]: thumbnail(built.mesh) } }));
     } catch (err) {
@@ -343,7 +342,7 @@ function redrawPickedTile(delay = 300): void {
     if (!current || !item) return;
     const { params, errors } = parseValues(item, current.values);
     if (Object.keys(errors).length > 0) return;
-    const job = ++jobSeq;
+    const job = nextJob();
     previewJob = job;
     try {
       const parts = item.input === "parts" ? selectedParts() : [];
@@ -391,7 +390,7 @@ export async function createPart(): Promise<void> {
   }
   stopPreview();
   const name = current.name.trim() || item.label;
-  const job = ++jobSeq;
+  const job = nextJob();
   useLibrary.setState({ busy: { job, cancelling: false, fraction: 0 } });
   const task = startTask(`Creating ${name}`);
   try {
