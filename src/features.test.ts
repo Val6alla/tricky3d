@@ -446,15 +446,25 @@ describe("the registry", () => {
       ["home.quick-access", "soon"],
     ]);
     expect(isMenu(feature("home.quick-access"))).toBe(true);
-    expect(childrenOf("home.new-analysis").map((f) => f.label)).toEqual([
-      "Up-/Down-skin",
-      "Center of gravity",
-      "Standard analysis",
-      "Shadow area",
-      "Support volume",
-      "Wall thickness",
+    expect(childrenOf("home.new-analysis").map((f) => [f.label, f.status])).toEqual([
+      ["Up- and downskins", "ready"],
+      ["Centre of gravity", "ready"],
+      ["Standard analysis", "ready"],
+      ["Shadow area", "ready"],
+      ["Support volume", "ready"],
+      ["Wall thickness", "ready"],
     ]);
-    expect(childrenOf("home.new-analysis").every((f) => f.status === "soon")).toBe(true);
+    // New analysis and the Analyze tab run the same commands.
+    for (const [a, b] of [
+      ["home.analysis-skin", "analyze.overhangs"],
+      ["home.analysis-gravity", "analyze.centre-of-mass"],
+      ["home.analysis-standard", "analyze.standard"],
+      ["home.analysis-shadow", "analyze.footprint"],
+      ["home.analysis-support-volume", "analyze.support-volume"],
+      ["home.analysis-wall-thickness", "analyze.wall-thickness-map"],
+    ]) {
+      expect([a, feature(a).label, feature(a).hint]).toEqual([a, feature(b).label, feature(b).hint]);
+    }
     // Home's buttons run the same commands as their twins on the other tabs.
     for (const [a, b] of [
       ["home.boolean", "modify.boolean"],
@@ -471,7 +481,7 @@ describe("the registry", () => {
       ["quick.model-package", "Create model package", "soon", "Quick"],
       ["quick.slice", "Slice selected parts", "soon", "Quick"],
       ["quick.file-preview", "File preview browser", "soon", "Quick"],
-      ["quick.collisions", "Collision detection", "soon", "Quick"],
+      ["quick.collisions", "Collision detection", "ready", "Quick"],
     ]);
     expect(quick[0].icon).toBe(home.icon);
     const at = CONTEXT_MENU.indexOf("context.rename");
@@ -481,6 +491,39 @@ describe("the registry", () => {
     expect(CONTEXT_MENU.slice(0, 5)).toEqual(["context.export", "-", "context.copy", "context.paste", "context.duplicate"]);
     expect(CONTEXT_MENU).toContain("context.batch-repair");
     expect(feature("arrange.platform-size").run).toBeTypeOf("function");
+  });
+
+  it("lays out the Analyze tab like the reference: Edit, Overview, Analysis, Collision and interlocking, Documents, Zoom to", () => {
+    const groups = groupsFor("analyze", false);
+    expect(groups.map((g) => [g.name, g.entries.map((f) => f.id)])).toEqual([
+      ["Edit", ["analyze.save", "analyze.undo", "analyze.redo"]],
+      ["Overview", ["analyze.platform-statistics", "analyze.information"]],
+      [
+        "Analysis",
+        [
+          "analyze.overhangs",
+          "analyze.centre-of-mass",
+          "analyze.standard",
+          "analyze.footprint",
+          "analyze.support-volume",
+          "analyze.wall-thickness-map",
+          "analyze.measure",
+          "analyze.compare",
+          "analyze.layer-area",
+          "analyze.wall-thickness",
+        ],
+      ],
+      ["Collision and interlocking", ["analyze.collisions", "analyze.interlock", "analyze.lift-out"]],
+      ["Documents", ["analyze.report", "analyze.drawing"]],
+      ["Zoom to", ["analyze.zoom-everything", "analyze.zoom-platform", "analyze.zoom-parts", "analyze.zoom-selected", "analyze.zoom-area"]],
+    ]);
+    // The Part analysis tab: Edit, Zoom to, Analyze, and OK or Close part analysis to leave.
+    expect(groupsFor("analysis", false).map((g) => [g.name, g.entries.map((f) => f.id)])).toEqual([
+      ["Edit", ["analysis.save", "analysis.undo", "analysis.redo"]],
+      ["Zoom to", ["analysis.zoom-part", "analysis.zoom-area"]],
+      ["Analyze", ["analysis.measure"]],
+      ["Exit part analysis", ["analysis.ok", "analysis.close"]],
+    ]);
   });
 
   it("lays out the Measurement tab: six dropdowns as the reference lists them, Wall thickness, 3-point angle and Cancel", () => {

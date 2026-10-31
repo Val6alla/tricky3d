@@ -156,6 +156,8 @@ fn every_primitive_and_one_item_of_each_category_saves_reopens_and_needs_no_repa
             priority: None,
             rotation: None,
             measurements: Some("[]"),
+            analyses: None,
+            colors: None,
             source: None,
             mesh: &mesh,
         };

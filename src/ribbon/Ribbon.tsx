@@ -15,6 +15,7 @@ import {
 } from "../features";
 import { submenuEntries, type MenuEntry } from "../menus/entries";
 import { Menu } from "../menus/Menu";
+import { shownAnalysis, useAnalysis } from "../analysis/session";
 import { useBoolean } from "../boolean/store";
 import { useLibrary } from "../library/store";
 import { useMeasure } from "../measure/store";
@@ -41,7 +42,9 @@ export function Ribbon() {
   const measureOpen = useMeasure((m) => m.session !== null);
   const hideSoon = useStore((s) => s.hideSoon);
   const labelOpen = useLabel((l) => l.session !== null);
-  const tabs = ribbonTabs(repairing, booleanOpen, libraryOpen, measureOpen, labelOpen);
+  const shown = useAnalysis((a) => a.shown);
+  const analysisOpen = useStore((s) => shownAnalysis(shown, s.parts) !== null);
+  const tabs = ribbonTabs(repairing, booleanOpen, libraryOpen, measureOpen, labelOpen, analysisOpen);
   const tab = shownTab(selected, tabs);
   const groups = useMemo(() => groupsFor(tab, hideSoon), [tab, hideSoon]);
   const { stripRef, collapsed } = useCollapsedGroups(groups);

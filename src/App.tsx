@@ -10,6 +10,7 @@ import { Viewport } from "./viewport/Viewport";
 import { ContextMenu } from "./menus/ContextMenu";
 import { DialogHost } from "./dialogs/DialogHost";
 import { ArrangeBusy } from "./arrange/ArrangeBusy";
+import { AnalysisBusy } from "./analysis/AnalysisBusy";
 import { useCloseGuard, useFileDrop } from "./io/hooks";
 import { useKeyboardShortcuts } from "./keyboard";
 import { startBadgeChecks } from "./repair/badges";
@@ -46,6 +47,7 @@ export default function App() {
       <ContextMenu />
       <DialogHost />
       <ArrangeBusy />
+      <AnalysisBusy />
       <Toaster />
     </div>
   );

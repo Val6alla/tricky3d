@@ -68,6 +68,8 @@ interface PartView {
 export interface PartsLook {
   /** Not drawn here. */
   hidden: string | null;
+  /** More parts not drawn here (mesh compare draws both compared parts itself). */
+  hiddenMore?: ReadonlySet<string>;
   /** Parts drawn in these colours instead of their own or the selection colour. */
   colors: ReadonlyMap<string, string>;
   /** Every other drawn part is dimmed: see-through and without edges. */
@@ -120,8 +122,10 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
   const group = new Group();
   const views = new Map<string, PartView>();
   // Keyed by MeshData so duplicates and transform-only updates reuse one geometry. Entries outlive
-  // their GPU buffers while the MeshData is alive (an undo can bring the part back).
+  // their GPU buffers while the MeshData is alive (an undo can bring the part back). A part with a colour per
+  // triangle has a geometry of its own, keyed by its colours.
   const entries = new WeakMap<MeshData, GeometryEntry>();
+  const painted = new WeakMap<Uint8Array, GeometryEntry>();
   const shared = {
     back: surfaceMaterial(BackSide),
     /** Back faces of see-through parts while a plane cuts them, so the cut shows red there too. */
@@ -148,7 +152,17 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
   }
   setTransparent(shared.backSeeThrough, true);
 
-  function acquire(mesh: MeshData): GeometryEntry {
+  function acquire(mesh: MeshData, colors?: Uint8Array): GeometryEntry {
+    if (colors) {
+      let entry = painted.get(colors);
+      if (!entry) {
+        const edges = cachedProblemEdges(mesh) ?? problemEdgePositions(mesh.positions, mesh.indices);
+        entry = { mesh, surface: paintedSurface(mesh, colors), openEdges: segmentGeometry(edges), featureEdges: null, users: 0 };
+        painted.set(colors, entry);
+      }
+      entry.users++;
+      return entry;
+    }
     let entry = entries.get(mesh);
     if (!entry) {
       // The attributes wrap the store's typed arrays directly; nothing is copied.
@@ -177,7 +191,7 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
   }
 
   function createView(part: Part): PartView {
-    const entry = acquire(part.mesh);
+    const entry = acquire(part.mesh, part.colors);
     const root = new Group();
     root.matrixAutoUpdate = false;
     const front = new Mesh(entry.surface, surfaceMaterial(FrontSide));
@@ -195,8 +209,8 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
     return { part, entry, root, front, back, wire, openEdges, featureEdges: null, pick, ghost: null, redInside: true };
   }
 
-  function swapMesh(view: PartView, mesh: MeshData) {
-    const entry = acquire(mesh);
+  function swapMesh(view: PartView, mesh: MeshData, colors?: Uint8Array) {
+    const entry = acquire(mesh, colors);
     release(view.entry);
     view.entry = entry;
     for (const m of [view.front, view.back, view.wire, view.pick, view.ghost]) if (m) m.geometry = entry.surface;
@@ -217,7 +231,9 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
     view.featureEdges = lines;
   }
 
-  const colorOf = (part: Part) => state.look.colors.get(part.id) ?? (state.selection.has(part.id) ? state.theme.selected : part.color);
+  // A part with its own triangle colours shows them as they are (white multiplies by 1), tinted when selected.
+  const colorOf = (part: Part) =>
+    state.look.colors.get(part.id) ?? (state.selection.has(part.id) ? state.theme.selected : part.colors ? "#ffffff" : part.color);
   /** A part the mode does not draw in its own colours, while it dims the others. */
   const isDimmed = (part: Part) => state.look.dimOthers && !state.look.colors.has(part.id);
   const isSeeThrough = (part: Part) => part.transparent || isDimmed(part);
@@ -261,11 +277,12 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
   }
 
   function applyPart(view: PartView, part: Part) {
-    if (part.mesh !== view.part.mesh) swapMesh(view, part.mesh);
+    if (part.mesh !== view.part.mesh || part.colors !== view.part.colors) swapMesh(view, part.mesh, part.colors);
+    setVertexColors(view.front.material, !!part.colors && !state.look.colors.has(part.id));
     view.part = part;
     view.root.matrix.fromArray(part.matrix);
     view.root.matrixWorldNeedsUpdate = true;
-    view.root.visible = part.visible && part.id !== state.look.hidden;
+    view.root.visible = part.visible && part.id !== state.look.hidden && !state.look.hiddenMore?.has(part.id);
 
     const color = colorOf(part);
     const dimmed = isDimmed(part);
@@ -380,6 +397,35 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
       for (const material of Object.values(shared)) material.dispose();
     },
   };
+}
+
+/** The mesh's triangles one by one, each corner coloured with its triangle's r, g, b bytes. */
+function paintedSurface(mesh: MeshData, colors: Uint8Array): BufferGeometry {
+  const { positions, indices } = mesh;
+  const corners = new Float32Array(indices.length * 3);
+  const rgb = new Float32Array(indices.length * 3);
+  for (let i = 0; i < indices.length; i++) {
+    const v = indices[i] * 3;
+    corners[i * 3] = positions[v];
+    corners[i * 3 + 1] = positions[v + 1];
+    corners[i * 3 + 2] = positions[v + 2];
+    const t = Math.floor(i / 3) * 3;
+    rgb[i * 3] = colors[t] / 255;
+    rgb[i * 3 + 1] = colors[t + 1] / 255;
+    rgb[i * 3 + 2] = colors[t + 2] / 255;
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(corners, 3));
+  geometry.setAttribute("color", new BufferAttribute(rgb, 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function setVertexColors(material: MeshStandardMaterial, on: boolean) {
+  if (material.vertexColors === on) return;
+  material.vertexColors = on;
+  material.needsUpdate = true;
 }
 
 /** Line-segment geometry over pairs of points (x, y, z, x, y, z, ...). */

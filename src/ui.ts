@@ -1,3 +1,4 @@
+import type { AnalysisKind } from "./analysis/types";
 import { create } from "zustand";
 import type { TabId } from "./features";
 import type { PackMethod } from "./arrange/pack";
@@ -48,6 +49,13 @@ export type Dialog =
   | { kind: "pack"; method: PackMethod }
   /** Right-click › Packing settings for the parts `ids`: priority, permitted rotation, position lock. */
   | { kind: "packing-settings"; ids: string[] }
+  /**
+   * Home › New analysis and the Analyze tab: the settings of the analysis `analysis` for the part `partId` (for Mesh
+   * compare the reference, and `otherId` the comparison when two parts were selected).
+   */
+  | { kind: "analysis-settings"; analysis: AnalysisKind; partId: string; otherId?: string }
+  /** Analyze › Interlocking test: the parts by id, in the order they lift out, and those that cannot. */
+  | { kind: "interlock-result"; rounds: string[][]; trapped: string[] }
   // Prompts answer through resolve; null means the dialog was cancelled.
   | { kind: "place-on-import"; fileName: string; resolve(answer: PlaceAnswer | null): void }
   | { kind: "import-objects"; fileName: string; count: number; resolve(answer: ObjectsAnswer | null): void }

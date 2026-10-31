@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { Dialog } from "../dialogs/Dialog";
 import { formatFixed2, formatFixed3 } from "../info";
 import { errorMessage, withExtension } from "../io/files";
+import { copyText } from "../io/clipboard";
 import { pickSaveFile } from "../io/ipc";
 import { CANCELLED, cancelRepair } from "../repair/ipc";
 import { useStore, type Vec3 } from "../store";
@@ -41,25 +42,6 @@ interface Measured {
 }
 
 type Phase = { kind: "measuring"; job: number; progress: number } | { kind: "ready"; measured: Measured } | { kind: "failed"; message: string };
-
-/** Copies text, with the old way for a webview that does not allow the clipboard API. */
-async function copyText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return;
-  } catch {
-    // Falls through to the textarea copy.
-  }
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.style.position = "fixed";
-  area.style.opacity = "0";
-  document.body.appendChild(area);
-  area.select();
-  const ok = document.execCommand("copy");
-  area.remove();
-  if (!ok) throw new Error("the clipboard is not available");
-}
 
 export function PlatformStatsDialog({ onClose }: { onClose(): void }) {
   const [phase, setPhase] = useState<Phase>(() => ({ kind: "measuring", job: nextJob(), progress: 0 }));

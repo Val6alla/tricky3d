@@ -1,0 +1,377 @@
+/* Part analyses: the results panel, the settings dialogs and the busy box. */
+
+.an-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.an-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.an-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.an-part {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.an-stale {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-sm);
+}
+
+.an-stale svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.an-table {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-table thead th {
+  padding: 3px 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: right;
+}
+
+.an-table thead th:first-child,
+.an-table tbody th {
+  text-align: left;
+}
+
+.an-table tbody th {
+  padding: 2px 4px 2px 6px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Values never wrap; the quantity names do, so the tables fit the narrowest panel. */
+.an-table td {
+  padding: 2px 4px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.an-table thead th {
+  padding: 3px 4px;
+}
+
+.an-table thead th:first-child {
+  padding-left: 6px;
+}
+
+.an-table tbody tr + tr {
+  border-top: 1px solid var(--surface-3);
+}
+
+.an-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  list-style: none;
+}
+
+.an-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.an-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+}
+
+.an-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.an-row .dlg-btn,
+.an-actions .dlg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.an-actions {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* Settings dialogs: a label, a slider and a field with its unit on one row. */
+.dlg-analysis {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.dlg-analysis .dlg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.an-slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(70px, 110px) 110px;
+  align-items: center;
+  gap: 8px;
+}
+
+.an-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.an-number {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.an-number .dlg-input {
+  text-align: right;
+}
+
+.an-select-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+}
+
+.an-tile {
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.an-switch {
+  align-self: flex-end;
+}
+
+.an-verdict {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-align: center;
+}
+
+.an-verdict.is-pass {
+  background: rgba(58, 167, 87, 0.16);
+  color: #23803f;
+}
+
+.an-verdict.is-fail {
+  background: rgba(214, 69, 65, 0.16);
+  color: var(--danger);
+}
+
+.an-gradient {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-xs);
+}
+
+.an-gradient-bar {
+  height: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+}
+
+.an-gradient-labels,
+.an-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.an-tabs {
+  margin: 0 -10px;
+}
+
+.an-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.an-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 120px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.an-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 1px 1px 0 0;
+  cursor: pointer;
+}
+
+.an-bar.is-off {
+  opacity: 0.25;
+}
+
+.an-bar:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.an-compare-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dlg-btn.is-pressed {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+@media (prefers-color-scheme: dark) {
+  .an-verdict.is-pass {
+    color: #6fd08a;
+  }
+}
+
+.an-status-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.an-status {
+  font-weight: 600;
+}
+
+.an-status.is-pass {
+  color: #23803f;
+}
+
+.an-status.is-fail {
+  color: var(--danger);
+}
+
+.an-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.an-big {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.an-big.is-pass {
+  color: #3aa757;
+}
+
+.an-big.is-fail {
+  color: var(--danger);
+}
+
+.an-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  list-style: none;
+}
+
+.an-pairs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.an-pair-names {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.an-pair-kind {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.an-rounds {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--fs-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .an-status.is-pass {
+    color: #6fd08a;
+  }
+}
+
+/* In the narrow right panel a slider row puts its label on a line of its own. */
+.an-panel .an-slider-row {
+  grid-template-columns: minmax(0, 1fr) 110px;
+  row-gap: 2px;
+}
+
+.an-panel .an-slider-row > .dlg-label {
+  grid-column: 1 / -1;
+}

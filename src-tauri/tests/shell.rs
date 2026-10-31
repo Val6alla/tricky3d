@@ -281,6 +281,8 @@ fn a_hollow_part_saves_and_opens_again_as_3mf() {
         priority: None,
         rotation: None,
         measurements: None,
+        analyses: None,
+        colors: None,
         source: None,
         mesh,
     };

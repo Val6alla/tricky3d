@@ -71,3 +71,36 @@
 .viewport-tooltip[hidden] {
   display: none;
 }
+
+/* Collision detection's status, top left over the view. */
+.viewport-collisions {
+  position: absolute;
+  top: 10px;
+  left: 44px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.viewport-collisions.is-clear {
+  color: #23803f;
+}
+
+.viewport-collisions.is-hit {
+  color: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  .viewport-collisions.is-clear {
+    color: #6fd08a;
+  }
+}

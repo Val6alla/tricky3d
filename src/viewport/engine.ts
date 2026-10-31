@@ -1,4 +1,23 @@
-import { Box3, Matrix3, Matrix4, Object3D, OrthographicCamera, Raycaster, Scene, Sphere, Vector2, Vector3 } from "three";
+import {
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  DoubleSide,
+  Group,
+  LineBasicMaterial,
+  LineSegments,
+  Matrix3,
+  Matrix4,
+  Mesh as ThreeMesh,
+  MeshBasicMaterial,
+  Object3D,
+  OrthographicCamera,
+  Raycaster,
+  Scene,
+  Sphere,
+  Vector2,
+  Vector3,
+} from "three";
 import { useBoolean, type BooleanState } from "../boolean/store";
 import { useCut } from "../repair/cut/store";
 import { boundsOf, centreOf, partBounds, unionBounds, type Bounds } from "../mesh";
@@ -36,6 +55,11 @@ import { useMeasure } from "../measure/store";
 import { labelWidth, shapeOf } from "../label/session";
 import { useLabel } from "../label/store";
 import { createLabelLayer } from "./labelLayer";
+import { createAnalysisLayer, type AnalysisView } from "./analysisLayer";
+import { isOutOfDate, shownAnalysis, useAnalysis } from "../analysis/session";
+import { ANALYSIS_COLORS, PART_CLASS } from "../analysis/colors";
+import { useLibrary } from "../library/store";
+import { useCollisions } from "../analysis/collisions";
 
 export interface ViewportEngine {
   api: ViewportApi;
@@ -102,7 +126,31 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const planePreview = createPlanePreview(theme, requestRender);
   const measure = createMeasureLayer(theme, host);
   const labels = createLabelLayer(theme, host);
-  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group, labels.group);
+  const analysisLayer = createAnalysisLayer(parts);
+  // Collision detection: where parts cross (red, drawn over them) and the closest points of parts too close.
+  const collisionGroup = new Group();
+  const crossing = new ThreeMesh(new BufferGeometry(), new MeshBasicMaterial({ color: "#d64541", side: DoubleSide, transparent: true, opacity: 0.85, depthTest: false }));
+  crossing.renderOrder = 25;
+  const closest = new LineSegments(new BufferGeometry(), new LineBasicMaterial({ color: "#e08a1e", depthTest: false }));
+  closest.renderOrder = 25;
+  collisionGroup.add(crossing, closest);
+  collisionGroup.visible = false;
+  function syncCollisions() {
+    const c = useCollisions.getState();
+    const drawing = c.result?.drawing;
+    collisionGroup.visible = c.open && c.settings.display && !!drawing && !c.outdated;
+    if (!collisionGroup.visible || !drawing) return;
+    for (const [target, data] of [
+      [crossing, drawing.triangles],
+      [closest, drawing.lines],
+    ] as const) {
+      target.geometry.dispose();
+      const geometry = new BufferGeometry();
+      if (data) geometry.setAttribute("position", new BufferAttribute(data, 3));
+      target.geometry = geometry;
+    }
+  }
+  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group, labels.group, analysisLayer.group, collisionGroup);
   renderer.localClippingEnabled = true;
   const clipLayer = createClipLayer(parts, requestRender);
   const gizmo = createGizmo({ scene, camera, canvas, host, orbit: controls, requestRender });
@@ -221,12 +269,34 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const booleanOpen = () => useBoolean.getState().session !== null;
   const measureOpen = () => useMeasure.getState().session !== null;
 
+  /** The analysis on show, while no other mode is open (src/analysis/session.ts). */
+  function analysisView(): AnalysisView | null {
+    if (repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || useLibrary.getState().session !== null) return null;
+    const found = shownAnalysis();
+    return found ? { ...found, stale: isOutOfDate(found.part, found.analysis) } : null;
+  }
+
   /** How the mode draws the parts: see PartsLook. */
   function look(): PartsLook {
     const id = repairingId();
     if (id) return { hidden: id, colors: new Map(), dimOthers: true, pickable: new Set() };
     const session = useBoolean.getState().session;
-    if (!session) return PLAIN_LOOK;
+    if (!session) {
+      // An analysis that paints the part draws it itself; the others show it grey, except the standard analysis.
+      const view = analysisView();
+      if (!view || view.analysis.kind === "standard") return PLAIN_LOOK;
+      if (view.analysis.kind === "compare") {
+        // The compared copies stand in for their parts while the parts are where they were compared.
+        if (view.stale) return PLAIN_LOOK;
+        const roles = new Set((view.analysis.drawing.surfaces ?? []).map((s) => s.role));
+        const hide = new Set<string>();
+        if (roles.has("reference")) hide.add(view.part.id);
+        if (roles.has("comparison")) hide.add(view.analysis.settings.comparisonId);
+        return { hidden: null, hiddenMore: hide, colors: new Map(), dimOthers: false, pickable: null };
+      }
+      if (view.analysis.drawing.classes || view.analysis.drawing.values) return { hidden: view.part.id, colors: new Map(), dimOthers: false, pickable: null };
+      return { hidden: null, colors: new Map([[view.part.id, ANALYSIS_COLORS[PART_CLASS]]]), dimOthers: false, pickable: null };
+    }
     const pickable = new Set([...session.main, ...session.tool]);
     if (session.result) return { hidden: null, colors: new Map([[session.result.part.id, session.result.part.color]]), dimOthers: true, pickable };
     const colors = new Map<string, string>();
@@ -237,16 +307,20 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
 
   function syncParts(s: AppState) {
     const result = useBoolean.getState().session?.result;
-    // In Boolean operations the lists, not the selection, decide the colours.
-    parts.sync(result ? [...s.parts, result.part] : s.parts, booleanOpen() ? [] : s.selection, s.view.shading, look());
+    // In Boolean operations the lists, not the selection, decide the colours; in the analysis view the analysis does.
+    const plain = booleanOpen() || analysisView() !== null;
+    parts.sync(result ? [...s.parts, result.part] : s.parts, plain ? [] : s.selection, s.view.shading, look());
+    analysisLayer.sync(analysisView(), useAnalysis.getState().compare);
   }
 
   /**
    * In repair mode the gizmo stays hidden: the store's selection is the repaired part, which only the repair changes.
-   * In Boolean operations too: the parts stay where they are while the mode works on them.
+   * In Boolean operations too: the parts stay where they are while the mode works on them. While an analysis is on
+   * show as well: its results are for the part where it stood.
    */
   function syncGizmo(s: AppState) {
-    gizmo.sync(repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null ? { ...s, selection: [] } : s);
+    const hidden = repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || analysisView() !== null;
+    gizmo.sync(hidden ? { ...s, selection: [] } : s);
   }
 
   /** Measure mode: the measurements of the shown parts with their results and labels, and the clicks in progress. */
@@ -568,6 +642,10 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       const d = camera.getWorldDirection(new Vector3());
       return [d.x, d.y, d.z];
     },
+    probeAt(clientX, clientY) {
+      if (!aim(clientX, clientY)) return null;
+      return analysisLayer.probe(raycaster);
+    },
     surfaceAt(clientX, clientY) {
       if (!aim(clientX, clientY)) return null;
       const hit = raycaster.intersectObjects(parts.pickTargets(), false).find((h) => !clipLayer.isClipped(h.point));
@@ -602,13 +680,30 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const unsubscribeRepair = useRepair.subscribe(onRepairChange);
   const unsubscribeBoolean = useBoolean.subscribe(onBooleanChange);
   const unsubscribeMeasure = useMeasure.subscribe((m, prev) => {
-    if ((m.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    if ((m.session === null) !== (prev.session === null)) {
+      syncGizmo(useStore.getState());
+      syncParts(useStore.getState());
+    }
     syncMeasure();
     requestRender();
   });
   const unsubscribeLabel = useLabel.subscribe((l, prev) => {
-    if ((l.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    if ((l.session === null) !== (prev.session === null)) {
+      syncGizmo(useStore.getState());
+      syncParts(useStore.getState());
+    }
     syncLabels();
+    requestRender();
+  });
+  const unsubscribeCollisions = useCollisions.subscribe((c, prev) => {
+    if (c.result === prev.result && c.open === prev.open && c.settings === prev.settings && c.outdated === prev.outdated) return;
+    syncCollisions();
+    requestRender();
+  });
+  const unsubscribeAnalysis = useAnalysis.subscribe((a, prev) => {
+    if (a.shown === prev.shown && a.compare === prev.compare) return;
+    if (a.shown !== prev.shown) syncGizmo(useStore.getState());
+    syncParts(useStore.getState());
     requestRender();
   });
   const unwatchTheme = watchColorScheme(onThemeChange);
@@ -670,6 +765,13 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       measure.dispose();
       unsubscribeLabel();
       labels.dispose();
+      unsubscribeAnalysis();
+      analysisLayer.dispose();
+      unsubscribeCollisions();
+      crossing.geometry.dispose();
+      crossing.material.dispose();
+      closest.geometry.dispose();
+      closest.material.dispose();
       controls.removeEventListener("change", requestRender);
       controls.removeEventListener("start", motion.cancel);
       gizmo.dispose();

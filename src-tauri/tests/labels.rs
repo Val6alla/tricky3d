@@ -151,6 +151,8 @@ fn a_moved_part_is_labelled_where_it_stands_and_reopens_unchanged() {
         priority: None,
         rotation: None,
         measurements: None,
+        analyses: None,
+        colors: None,
         source: None,
         mesh: labelled,
     };

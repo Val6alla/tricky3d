@@ -1,10 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { useCollisions } from "../analysis/collisions";
+import { shownAnalysis, useAnalysis } from "../analysis/session";
 import { useBoolean } from "../boolean/store";
 import { useLibrary } from "../library/store";
 import { useLabel } from "../label/store";
 import { useMeasure } from "../measure/store";
 import { useRepair } from "../repair/store";
+import { useStore } from "../store";
 import { useUi, type PanelSection } from "../ui";
 import { ClipPanel } from "./ClipPanel";
 import { CutsPanel } from "./CutsPanel";
@@ -19,6 +22,8 @@ const BooleanPanel = lazy(() => import("../boolean/BooleanPanel").then((m) => ({
 const LibraryPanel = lazy(() => import("../library/LibraryPanel").then((m) => ({ default: m.LibraryPanel })));
 const MeasurePanel = lazy(() => import("../measure/MeasurePanel").then((m) => ({ default: m.MeasurePanel })));
 const LabelPanel = lazy(() => import("../label/LabelPanel").then((m) => ({ default: m.LabelPanel })));
+const AnalysisPanel = lazy(() => import("../analysis/AnalysisPanel").then((m) => ({ default: m.AnalysisPanel })));
+const CollisionPanel = lazy(() => import("../analysis/CollisionPanel").then((m) => ({ default: m.CollisionPanel })));
 
 export const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
 
@@ -51,7 +56,24 @@ export function RightPanel() {
   const libraryOpen = useLibrary((s) => s.session !== null);
   const measureOpen = useMeasure((s) => s.session !== null);
   const labelOpen = useLabel((s) => s.session !== null);
-  const mode = repairing ? "repair" : booleanOpen ? "boolean" : libraryOpen ? "library" : labelOpen ? "label" : measureOpen ? "measure" : null;
+  const shown = useAnalysis((a) => a.shown);
+  const analysisOpen = useStore((s) => shownAnalysis(shown, s.parts) !== null);
+  const collisionsOpen = useCollisions((c) => c.open);
+  const mode = repairing
+    ? "repair"
+    : booleanOpen
+      ? "boolean"
+      : libraryOpen
+        ? "library"
+        : labelOpen
+          ? "label"
+          : measureOpen
+            ? "measure"
+            : analysisOpen
+              ? "analysis"
+              : collisionsOpen
+                ? "collisions"
+                : null;
   // The library's gallery covers the view, so the clip planes have nothing to show.
   const sections = mode === "library" ? [] : mode ? MODE_SECTIONS : SECTIONS;
 
@@ -127,6 +149,10 @@ export function RightPanel() {
             <LabelPanel />
           ) : mode === "measure" ? (
             <MeasurePanel />
+          ) : mode === "analysis" ? (
+            <AnalysisPanel />
+          ) : mode === "collisions" ? (
+            <CollisionPanel />
           ) : (
             <QuickActions />
           )}

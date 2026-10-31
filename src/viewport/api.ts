@@ -19,6 +19,8 @@ export interface ViewportApi {
   viewDirection(): Vec3;
   /** The part under a page point (clip planes respected), the world point hit and the face's normal there. */
   surfaceAt(clientX: number, clientY: number): { partId: string; point: Vec3; normal: Vec3 } | null;
+  /** Mesh compare on show: the compared surface under the pointer and the distance there. */
+  probeAt(clientX: number, clientY: number): { point: Vec3; value: number } | null;
   /** The world ray through a page point. */
   rayAt(clientX: number, clientY: number): { origin: Vec3; direction: Vec3 } | null;
 }
@@ -37,5 +39,6 @@ export const viewport: ViewportApi = {
   centreOn: (point) => current?.centreOn(point),
   viewDirection: () => current?.viewDirection() ?? [0, 1, 0],
   surfaceAt: (x, y) => current?.surfaceAt(x, y) ?? null,
+  probeAt: (x, y) => current?.probeAt(x, y) ?? null,
   rayAt: (x, y) => current?.rayAt(x, y) ?? null,
 };

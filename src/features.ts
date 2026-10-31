@@ -17,7 +17,7 @@ import {
   RectangleHorizontal, Redo2, RefreshCcw, Rotate3d, Rows3, Ruler, RulerDimensionLine, Save, SaveAll, Scale3d, Scan,
   ScanLine, ScanSearch, Scissors, ScissorsLineDashed, ScrollText, Search, Settings, Settings2, Shapes, Shrink,
   SlidersHorizontal, Spline, SplinePointer, Split, Square, SquareArrowDown, SquareArrowOutUpRight, SquareCheckBig,
-  SquareDashed, SquareDashedBottom, SquareMinus, SquarePlus, SquareSquare, SquareStack,
+  SquareDashed, SquareMinus, SquarePlus, SquareSquare, SquareStack,
   SquareX, SquaresIntersect, SquaresUnite, Stamp, SwatchBook, Tag, Tags, Target, TextCursorInput, Timer, ToggleLeft,
   Trash, Triangle, TriangleAlert, TriangleDashed, TriangleRight, Type, Undo2, Unlink, Unlink2, VectorSquare,
   WandSparkles, WavesHorizontal, Waypoints, Wrench, X,
@@ -97,6 +97,9 @@ import {
   zoomToLabelPart,
 } from "./label/session";
 import type { LabelState } from "./label/store";
+import { closeAnalysisView, closeShownAnalysis, newAnalysis, shownAnalysis } from "./analysis/session";
+import type { AnalysisKind } from "./analysis/types";
+import { closeCollisions, interlockingTest, openCollisions } from "./analysis/collisions";
 import type { LabelKind } from "./label/types";
 import type { AlignHow, DuplicateMode } from "./arrange/types";
 import { openGenerateShell } from "./shell/session";
@@ -131,6 +134,7 @@ export type TabId =
   | "library"
   | "measure"
   | "label"
+  | "analysis"
   | "quick";
 export type FeatureStatus = "ready" | "soon";
 
@@ -211,13 +215,24 @@ export const MEASURE_TAB: RibbonTab = { id: "measure", label: "Measurement", con
 /** The contextual tab of label generation. Generate label › any kind selects it (src/label/session.ts). */
 export const LABEL_TAB: RibbonTab = { id: "label", label: "Label generation", contextual: true, icon: Tag };
 
+/** The contextual tab of an analysis on show. Picking an analysis in the parts tree selects it (src/analysis/session.ts). */
+export const ANALYSIS_TAB: RibbonTab = { id: "analysis", label: "Part analysis", contextual: true, icon: ChartArea };
+
 /** The tabs the ribbon shows: the fixed ones, and the open mode's contextual tab after them. */
-export function ribbonTabs(repairing: boolean, booleanOpen = false, libraryOpen = false, measureOpen = false, labelOpen = false): RibbonTab[] {
+export function ribbonTabs(
+  repairing: boolean,
+  booleanOpen = false,
+  libraryOpen = false,
+  measureOpen = false,
+  labelOpen = false,
+  analysisOpen = false,
+): RibbonTab[] {
   if (repairing) return [...TABS, REPAIR_TAB];
   if (booleanOpen) return [...TABS, BOOLEAN_TAB];
   if (libraryOpen) return [...TABS, LIBRARY_TAB];
   if (labelOpen) return [...TABS, LABEL_TAB];
-  return measureOpen ? [...TABS, MEASURE_TAB] : TABS;
+  if (measureOpen) return [...TABS, MEASURE_TAB];
+  return analysisOpen ? [...TABS, ANALYSIS_TAB] : TABS;
 }
 
 export const DEFAULT_TAB: TabId = "modify";
@@ -264,6 +279,8 @@ async function closeModes(): Promise<boolean> {
   if (!((await closeRepair()) && (await closeBooleanMode()))) return false;
   closePartLibrary();
   closeMeasure();
+  closeAnalysisView();
+  closeCollisions();
   return true;
 }
 
@@ -585,6 +602,28 @@ const kindIs = (kind: LabelKind) => (l: LabelState) => l.session?.kind === kind;
 
 const MEASURE_HINT = "Measure distances, angles, radii and wall thickness on the parts.";
 
+/** Home › New analysis ▸ a kind, and the Analyze tab's buttons: the same command. */
+const analysis = (kind: AnalysisKind) => () => newAnalysis(kind);
+
+const ANALYSIS_HINTS: Record<AnalysisKind, string> = {
+  standard: "Position, size, volume, mesh counts, damage and mesh quality of the selected part.",
+  gravity: "Where the centre of gravity of the selected part is, marked in the view.",
+  shadow: "The area the selected part covers seen from straight above. Needs a closed, sound part.",
+  support: "Estimate the support the selected part needs below its overhangs.",
+  skin: "Colour the nearly flat surfaces of the selected part: facing up green, facing down red, with their areas.",
+  wall: "Colour the selected part by how thick its walls are, and test whether too much of it is too thin.",
+  compare: "Colour two parts by how far each surface is from the other's, with the largest and average distances.",
+  removability: "Check that every body of the selected part can be lifted straight up without hitting another, and show the trapped ones.",
+};
+
+const COLLISIONS_HINT = "Check which parts cross or come too close, and keep checking as they move.";
+
+/** Part analysis › Zoom to part. */
+function zoomToAnalysisPart() {
+  const found = shownAnalysis();
+  if (found) zoomToBox(boundsOf(found.part.mesh, found.part.matrix));
+}
+
 const ORIENT_HINT = "Find the best way for the selected part to stand: least support area, lowest height or smallest footprint.";
 
 const DUPLICATE_HINTS: Record<DuplicateMode, string> = {
@@ -760,13 +799,13 @@ export const FEATURES: Feature[] = [
     { id: "home.quick-access-recent", label: "Recently run scripts", icon: History, status: "soon", parent: "home.quick-access" },
   ]),
   ...group("home", "Analyze", [
-    { id: "home.new-analysis", label: "New analysis", icon: ChartArea, status: "soon", size: "large" },
-    { id: "home.analysis-skin", label: "Up-/Down-skin", icon: ArrowDownToDot, status: "soon", parent: "home.new-analysis" },
-    { id: "home.analysis-gravity", label: "Center of gravity", icon: Crosshair, status: "soon", parent: "home.new-analysis" },
-    { id: "home.analysis-standard", label: "Standard analysis", icon: ClipboardList, status: "soon", parent: "home.new-analysis" },
-    { id: "home.analysis-shadow", label: "Shadow area", icon: SunDim, status: "soon", parent: "home.new-analysis" },
-    { id: "home.analysis-support-volume", label: "Support volume", icon: Construction, status: "soon", parent: "home.new-analysis" },
-    { id: "home.analysis-wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "soon", parent: "home.new-analysis" },
+    { id: "home.new-analysis", label: "New analysis", icon: ChartArea, status: "ready", size: "large", hint: "Analyze the selected part. Its results go under it in the parts tree." },
+    { id: "home.analysis-skin", label: "Up- and downskins", icon: ArrowDownToDot, status: "ready", run: analysis("skin"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.skin },
+    { id: "home.analysis-gravity", label: "Centre of gravity", icon: Crosshair, status: "ready", run: analysis("gravity"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.gravity },
+    { id: "home.analysis-standard", label: "Standard analysis", icon: ClipboardList, status: "ready", run: analysis("standard"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.standard },
+    { id: "home.analysis-shadow", label: "Shadow area", icon: SunDim, status: "ready", run: analysis("shadow"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.shadow },
+    { id: "home.analysis-support-volume", label: "Support volume", icon: Construction, status: "ready", run: analysis("support"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.support },
+    { id: "home.analysis-wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "ready", run: analysis("wall"), parent: "home.new-analysis", outsideRepair: true, hint: ANALYSIS_HINTS.wall },
     { id: "home.measure", label: "Measure", icon: Ruler, status: "ready", run: () => openMeasure(), size: "large", hint: MEASURE_HINT },
   ]),
   ...group("home", "Modify", [
@@ -821,26 +860,42 @@ export const FEATURES: Feature[] = [
   ]),
 
   // Analyze -----------------------------------------------------------------------------------
-  ...group("analyze", "Inspect", [
-    { id: "analyze.information", label: "Information", icon: Info, status: "ready", run: () => ui().focusSection("information"), size: "large", outsideRepair: true, hint: "Show size, volume and mesh counts in the right panel." },
+  ...group("analyze", "Edit", [
+    { id: "analyze.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: SAVE_HINT },
+    { id: "analyze.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, dropdown: () => historyMenu("undo"), shortcut: mod("Z"), hint: "Undo the last change. The arrow lists the recent changes, to undo several at once." },
+    { id: "analyze.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, dropdown: () => historyMenu("redo"), shortcut: mod("Shift+Z"), hint: "Redo the change you undid. The arrow lists the changes you can redo." },
+  ]),
+  ...group("analyze", "Overview", [
+    { id: "analyze.platform-statistics", label: "Platform statistics", icon: Sheet, status: "ready", run: openPlatformStats, size: "large", outsideRepair: true, hint: "List every part with its size, volume and mesh counts, and the platform's packing density." },
+    { id: "analyze.information", label: "Information", icon: Info, status: "ready", run: () => ui().focusSection("information"), outsideRepair: true, hint: "Show size, volume and mesh counts in the right panel." },
+  ]),
+  ...group("analyze", "Analysis", [
+    { id: "analyze.overhangs", label: "Up- and downskins", icon: ArrowDownToDot, status: "ready", run: analysis("skin"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.skin },
+    { id: "analyze.centre-of-mass", label: "Centre of gravity", icon: Crosshair, status: "ready", run: analysis("gravity"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.gravity },
+    { id: "analyze.standard", label: "Standard analysis", icon: ClipboardList, status: "ready", run: analysis("standard"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.standard },
+    { id: "analyze.footprint", label: "Shadow area", icon: SunDim, status: "ready", run: analysis("shadow"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.shadow },
+    { id: "analyze.support-volume", label: "Support volume", icon: Construction, status: "ready", run: analysis("support"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.support },
+    { id: "analyze.wall-thickness-map", label: "Wall thickness", icon: RulerDimensionLine, status: "ready", run: analysis("wall"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.wall },
     { id: "analyze.measure", label: "Measure", icon: Ruler, status: "ready", run: () => openMeasure(), size: "large", hint: MEASURE_HINT },
-    { id: "analyze.wall-thickness", label: "Wall thickness", icon: RulerDimensionLine, status: "ready", run: () => openMeasure("wall"), hint: "Click a point on a part to measure the wall straight through to the other side." },
-    { id: "analyze.shells", label: "Shell analysis", icon: Boxes, status: "soon" },
-    { id: "analyze.centre-of-mass", label: "Centre of mass", icon: Crosshair, status: "soon" },
+    { id: "analyze.compare", label: "Compare", icon: Diff, status: "ready", run: analysis("compare"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.compare },
+    { id: "analyze.layer-area", label: "Area per layer", icon: ChartArea, status: "soon", size: "large" },
+    { id: "analyze.wall-thickness", label: "Wall at a point", icon: RulerDimensionLine, status: "ready", run: () => openMeasure("wall"), hint: "Click a point on a part to measure the wall straight through to the other side." },
   ]),
-  ...group("analyze", "Surfaces", [
-    { id: "analyze.overhangs", label: "Overhang map", icon: ArrowDownToDot, status: "soon" },
-    { id: "analyze.footprint", label: "Footprint area", icon: SquareDashedBottom, status: "soon" },
-    { id: "analyze.layer-area", label: "Area per layer", icon: ChartArea, status: "soon" },
-  ]),
-  ...group("analyze", "Checks", [
-    { id: "analyze.compare", label: "Compare two meshes", icon: Diff, status: "soon" },
-    { id: "analyze.interlock", label: "Interlocked parts", icon: Link2, status: "soon" },
-    { id: "analyze.lift-out", label: "Lift-out check", icon: ArrowUpFromLine, status: "soon" },
+  ...group("analyze", "Collision and interlocking", [
+    { id: "analyze.collisions", label: "Collision detection", icon: OctagonAlert, status: "ready", run: openCollisions, size: "large", outsideRepair: true, hint: COLLISIONS_HINT },
+    { id: "analyze.interlock", label: "Interlocking test", icon: Link2, status: "ready", run: () => void interlockingTest(), size: "large", outsideRepair: true, hint: "Test whether the selected parts (or all shown parts) can be lifted out upwards one after another without hitting each other." },
+    { id: "analyze.lift-out", label: "Z-removability", icon: ArrowUpFromLine, status: "ready", run: analysis("removability"), size: "large", outsideRepair: true, hint: ANALYSIS_HINTS.removability },
   ]),
   ...group("analyze", "Documents", [
     { id: "analyze.report", label: "Report", icon: FileText, status: "soon", size: "large" },
     { id: "analyze.drawing", label: "Dimensioned drawing", icon: DraftingCompass, status: "soon" },
+  ]),
+  ...group("analyze", "Zoom to", [
+    { id: "analyze.zoom-everything", label: "Everything", icon: Fullscreen, status: "ready", run: zoomTo("everything"), hint: "Fit the platform and all parts in the view." },
+    { id: "analyze.zoom-platform", label: "Platform", icon: Scan, status: "ready", run: zoomTo("platform"), hint: "Fit the build platform in the view." },
+    { id: "analyze.zoom-parts", label: "All parts", icon: ScanSearch, status: "ready", run: zoomTo("parts"), shortcut: "A", hint: "Fit all parts in the view." },
+    { id: "analyze.zoom-selected", label: "Selected", icon: Focus, status: "ready", run: zoomTo("selected"), shortcut: "F", hint: "Fit the selected parts in the view." },
+    { id: "analyze.zoom-area", label: "Area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", hint: "Drag a rectangle in the view to zoom into it." },
   ]),
 
   // Modify ------------------------------------------------------------------------------------
@@ -945,7 +1000,7 @@ export const FEATURES: Feature[] = [
   ]),
   ...group("arrange", "Build room", [
     { id: "arrange.no-build-zones", label: "Keep-out zones", icon: Ban, status: "soon" },
-    { id: "arrange.collisions", label: "Collision check", icon: OctagonAlert, status: "soon" },
+    { id: "arrange.collisions", label: "Collision check", icon: OctagonAlert, status: "ready", run: openCollisions, outsideRepair: true, hint: COLLISIONS_HINT },
     { id: "arrange.platform-summary", label: "Platform summary", icon: ClipboardList, status: "soon" },
     { id: "arrange.platforms", label: "Platforms", icon: SquareStack, status: "soon" },
     { id: "arrange.add-platform", label: "Add a platform", icon: SquarePlus, status: "soon", parent: "arrange.platforms" },
@@ -1021,7 +1076,7 @@ export const FEATURES: Feature[] = [
     { id: "quick.model-package", label: "Create model package", icon: Package, status: "soon" },
     { id: "quick.slice", label: "Slice selected parts", icon: Layers, status: "soon" },
     { id: "quick.file-preview", label: "File preview browser", icon: FileSearch, status: "soon" },
-    { id: "quick.collisions", label: "Collision detection", icon: OctagonAlert, status: "soon" },
+    { id: "quick.collisions", label: "Collision detection", icon: OctagonAlert, status: "ready", run: openCollisions, outsideRepair: true, hint: COLLISIONS_HINT },
   ]),
 
   // Repair (contextual tab, shown in repair mode) ---------------------------------------------
@@ -1111,6 +1166,24 @@ export const FEATURES: Feature[] = [
   ]),
   ...group("measure", "Exit measurement", [
     { id: "measure.cancel", label: "Cancel", icon: X, status: "ready", run: closeMeasure, size: "large", hint: "Leave Measure. The measurements stay with their parts and show again next time." },
+  ]),
+
+  // Part analysis (contextual tab, shown while an analysis is on show) ------------------------
+  ...group("analysis", "Edit", [
+    { id: "analysis.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: SAVE_HINT },
+    { id: "analysis.undo", label: "Undo", icon: Undo2, status: "ready", run: undo, dropdown: () => historyMenu("undo"), shortcut: mod("Z"), hint: "Undo the last change. The arrow lists the recent changes, to undo several at once." },
+    { id: "analysis.redo", label: "Redo", icon: Redo2, status: "ready", run: redo, dropdown: () => historyMenu("redo"), shortcut: mod("Shift+Z"), hint: "Redo the change you undid. The arrow lists the changes you can redo." },
+  ]),
+  ...group("analysis", "Zoom to", [
+    { id: "analysis.zoom-part", label: "Zoom to part", icon: ScanSearch, status: "ready", run: zoomToAnalysisPart, size: "large", hint: "Fit the analysed part in the view." },
+    { id: "analysis.zoom-area", label: "Zoom to area", icon: ScanLine, status: "ready", run: viewTool("zoom-area"), viewTool: "zoom-area", size: "large", hint: "Drag a rectangle in the view to zoom into it." },
+  ]),
+  ...group("analysis", "Analyze", [
+    { id: "analysis.measure", label: "Measure", icon: Ruler, status: "ready", run: () => openMeasure(), size: "large", hint: MEASURE_HINT },
+  ]),
+  ...group("analysis", "Exit part analysis", [
+    { id: "analysis.ok", label: "OK", icon: Check, status: "ready", run: closeAnalysisView, size: "large", hint: "Leave the analysis. It stays in the parts tree under its part." },
+    { id: "analysis.close", label: "Close part analysis", icon: X, status: "ready", run: closeShownAnalysis, size: "large", hint: "Leave the analysis and take it off the part (one undo step)." },
   ]),
 
   // Label generation (contextual tab, shown while the mode is open) ---------------------------
