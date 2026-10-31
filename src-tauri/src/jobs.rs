@@ -30,7 +30,9 @@ use crate::repair::{
 };
 use crate::stats;
 
+mod analysis;
 mod arrange;
+pub use analysis::{ANALYSIS_PROGRESS, AnalysisProgress, analyze_part};
 pub use arrange::{
     ARRANGE_PROGRESS, ArrangeProgress, PRESETS_FILE, arrange, load_presets, save_presets,
 };
@@ -110,6 +112,12 @@ pub fn open_project_with_sources(
             }
             if let Some(measurements) = &part.measurements {
                 info.insert("measurements".into(), json!(measurements));
+            }
+            if let Some(analyses) = &part.analyses {
+                info.insert("analyses".into(), json!(analyses));
+            }
+            if let Some(colors) = &part.colors {
+                info.insert("colors".into(), json!(colors));
             }
             if let Some(source) = &part.source {
                 info.insert("source".into(), json!(source));
@@ -310,6 +318,8 @@ pub fn save_project(bundle: Bundle) -> Result<(), String> {
                 .and_then(Value::as_str)
                 .and_then(Rotation::from_word),
             measurements: m.info.get("measurements").and_then(Value::as_str),
+            analyses: m.info.get("analyses").and_then(Value::as_str),
+            colors: m.info.get("colors").and_then(Value::as_str),
             source: m.info.get("source").and_then(Value::as_str),
             mesh,
         })

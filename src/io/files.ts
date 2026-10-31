@@ -22,6 +22,13 @@ import {
 } from "../store";
 import { prompt, startTask, toast, type ObjectsAnswer, type PlaceAnswer, type TaskHandle } from "../ui";
 import { readMeasurements } from "../measure/persist";
+import { fromBase64, readAnalyses, toBase64, writeAnalyses } from "../analysis/persist";
+
+/** Triangle colours a project keeps for a part with `bytes` colour bytes (3 per triangle); undefined when they do not fit. */
+function readColors(text: string | undefined, bytes: number): Uint8Array | undefined {
+  const colors = text ? fromBase64(text) : null;
+  return colors && colors.length === bytes ? colors : undefined;
+}
 import { viewport } from "../viewport/api";
 import {
   exportEach,
@@ -329,6 +336,8 @@ export function projectPart(m: LoadedMesh): NewPart {
     transparent: m.transparent,
     locked: m.locked,
     measurements: readMeasurements(m.measurements),
+    analyses: readAnalyses(m.analyses, m.mesh.indices.length / 3),
+    colors: readColors(m.colors, m.mesh.indices.length),
     ...(m.priority !== undefined || m.rotation !== undefined
       ? { packing: { priority: m.priority ?? DEFAULT_PACKING.priority, rotation: m.rotation ?? DEFAULT_PACKING.rotation } }
       : {}),
@@ -348,6 +357,8 @@ export function projectMesh(p: Part): MeshOut {
     locked: p.locked,
     ...(p.packing ? { priority: p.packing.priority, rotation: p.packing.rotation } : {}),
     ...(p.measurements && p.measurements.length > 0 ? { measurements: JSON.stringify(p.measurements) } : {}),
+    ...(p.analyses && p.analyses.length > 0 ? { analyses: writeAnalyses(p.analyses) } : {}),
+    ...(p.colors ? { colors: toBase64(p.colors) } : {}),
     ...(p.source ? { source: p.source } : {}),
   };
 }

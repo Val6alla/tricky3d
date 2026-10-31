@@ -38,6 +38,10 @@ pub struct PartOut<'a> {
     pub rotation: Option<Rotation>,
     /// Measure mode's measurements on the part, as the window's JSON (src/measure), or None.
     pub measurements: Option<&'a str>,
+    /// The part's analyses with their results, as the window's JSON (src/analysis), or None.
+    pub analyses: Option<&'a str>,
+    /// A colour per triangle (r, g, b bytes) in base64, as the window sends it, or None.
+    pub colors: Option<&'a str>,
     /// The file the part (or the part it was made from) was imported from, or None.
     pub source: Option<&'a str>,
     /// Part-local, as the window holds it; written with `matrix` baked in.
@@ -57,6 +61,10 @@ pub struct Part {
     pub rotation: Option<Rotation>,
     /// The measurements' JSON as saved; the window checks it.
     pub measurements: Option<String>,
+    /// The analyses' JSON as saved; the window checks it.
+    pub analyses: Option<String>,
+    /// The triangle colours as saved (base64); the window checks them.
+    pub colors: Option<String>,
     /// The file the part was imported from, as saved.
     pub source: Option<String>,
     /// Part-local: `matrix` places it.
@@ -92,6 +100,12 @@ pub fn write<W: Write + Seek>(w: W, platform: [f64; 3], parts: &[PartOut]) -> io
             }
             if let Some(json) = p.measurements {
                 metadata.push(("tricky3d:measurements", json.to_string()));
+            }
+            if let Some(json) = p.analyses {
+                metadata.push(("tricky3d:analyses", json.to_string()));
+            }
+            if let Some(colors) = p.colors {
+                metadata.push(("tricky3d:colors", colors.to_string()));
             }
             if let Some(source) = p.source {
                 metadata.push(("tricky3d:source", source.to_string()));
@@ -130,6 +144,10 @@ pub fn save_file(path: &Path, platform: [f64; 3], parts: &[PartOut]) -> Result<(
 
 /// Longest measurements text a part may carry (bytes); anything longer is not ours.
 const MAX_MEASUREMENTS: usize = 4 << 20;
+
+/// Longest analyses text a part may carry (bytes): their colours take about 1.4 bytes per
+/// triangle, wall thickness and compare results about 5.5.
+const MAX_ANALYSES: usize = 256 << 20;
 
 /// Longest source path a part may carry (bytes).
 const MAX_SOURCE: usize = 4096;
@@ -242,6 +260,8 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Project, String> {
                     .and_then(Rotation::from_word),
                 measurements: field("measurements")
                     .filter(|m| !m.is_empty() && m.len() <= MAX_MEASUREMENTS),
+                analyses: field("analyses").filter(|a| !a.is_empty() && a.len() <= MAX_ANALYSES),
+                colors: field("colors").filter(|c| !c.is_empty() && c.len() <= MAX_ANALYSES),
                 source: field("source")
                     .filter(|s| !s.is_empty() && s.len() <= MAX_SOURCE && !s.contains('\0')),
                 mesh,

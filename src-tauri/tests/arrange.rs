@@ -536,3 +536,57 @@ fn thingi_models() -> Vec<(String, Mesh, Matrix)> {
     }
     out
 }
+
+/// Brief 16: packs the 50 Thingi10K models of `pack_report` with one method, then runs Collision
+/// detection (the Analyze tab's check, minimum distance 0) on the result: it must find nothing.
+/// Same environment as `pack_report`, run through scripts/corpus/capped.ps1.
+#[test]
+#[ignore = "needs the model corpus; run through scripts/corpus/capped.ps1"]
+fn collision_check_of_a_packed_platform() {
+    let parts = thingi_models();
+    let method: usize = std::env::var("TRICKY3D_PACK_METHOD").map_or(0, |m| m.parse().unwrap());
+    let (name, settings) = methods(false).swap_remove(method);
+    let list: Vec<Part> = parts.iter().map(|(_, m, x)| (m, *x, true)).collect();
+    let meta = run(
+        request(1, "pack", json!({"pack": settings}), &list),
+        &RepairJobs::default(),
+    )
+    .unwrap();
+    let packed = matrices(&meta, "matrices");
+    let fits: Vec<bool> = serde_json::from_value(meta["fits"].clone()).unwrap();
+    let mut out = Vec::new();
+    for (((_, mesh, _), m), fit) in parts.iter().zip(&packed).zip(&fits) {
+        if *fit {
+            let mut info = Map::new();
+            info.insert("name".into(), json!("part"));
+            info.insert("matrix".into(), json!(m.to_vec()));
+            out.push(OutMesh {
+                info,
+                positions: &mesh.positions,
+                indices: &mesh.indices,
+                edges: None,
+            });
+        }
+    }
+    let mut check = Map::new();
+    check.insert("job".into(), json!(2));
+    check.insert("kind".into(), json!("collisions"));
+    check.insert("settings".into(), json!({"minDistance": 0.0}));
+    let start = Instant::now();
+    let reply = decode(
+        &jobs::analyze_part(
+            decode(&encode(&check, &out)).unwrap(),
+            &RepairJobs::default(),
+            &mut |_| {},
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let found = reply.meta["result"]["pairs"].as_array().unwrap().len();
+    println!(
+        "COLLISIONS|{name}|{} parts|{found} pairs|{:.2} s",
+        out.len(),
+        start.elapsed().as_secs_f64()
+    );
+    assert_eq!(found, 0);
+}

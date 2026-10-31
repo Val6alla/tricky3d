@@ -622,3 +622,25 @@
     animation: none;
   }
 }
+
+/* Collision detection: a tick or a cross per part while its panel is open. */
+.ptree-collision {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.ptree-collision.is-clear {
+  color: #23803f;
+}
+
+.ptree-collision.is-collide,
+.ptree-collision.is-near {
+  color: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ptree-collision.is-clear {
+    color: #6fd08a;
+  }
+}

@@ -1,3 +1,4 @@
+import { probeClick } from "../analysis/session";
 import type { Vector3 } from "three";
 import { isBooleanOpen, selectInList } from "../boolean/session";
 import { addCutPoint } from "../repair/cut/session";
@@ -175,6 +176,8 @@ export function attachPicking(
       if (e.button === 0 && !menu) labelClick(viewport.surfaceAt(e.clientX, e.clientY));
       return;
     }
+    // Mesh compare's Add and Remove measure point take left clicks.
+    if (e.button === 0 && !menu && probeClick(e.clientX, e.clientY)) return;
     if (isMeasureOpen()) {
       if (menu) openPartMenuAt(e);
       else if (e.button === 0) {

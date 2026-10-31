@@ -660,6 +660,22 @@ pub async fn arrange(window: Window, request: Request<'_>) -> Result<Response, S
     .map(Response::new)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Part analyses (src/analysis/ipc.ts).
+
+#[tauri::command]
+pub async fn analyze_part(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "analyze the part")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::analyze_part(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::ANALYSIS_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
 #[tauri::command]
 pub async fn packing_presets_load(app: AppHandle) -> Result<Map<String, Value>, String> {
     let dir = config_dir(&app, "Could not read your packing presets")?;
@@ -800,6 +816,8 @@ mod tests {
             priority: None,
             rotation: None,
             measurements: None,
+            analyses: None,
+            colors: None,
             source: None,
             mesh: &mesh,
         };

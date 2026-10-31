@@ -31,10 +31,10 @@ describe("quickFeatures", () => {
     expect(quickFeatures(list, true).map((f) => f.id)).toEqual(["quick.a"]);
   });
 
-  it("finds the five quick-action buttons in the registry, Repair ready and the others Soon", () => {
+  it("finds the five quick-action buttons in the registry, Repair and Collision detection ready and the others Soon", () => {
     const quick = quickFeatures(FEATURES, false);
     expect(quick.map((f) => f.id)).toEqual(["quick.repair", "quick.model-package", "quick.slice", "quick.file-preview", "quick.collisions"]);
-    expect(quick.map((f) => f.status)).toEqual(["ready", "soon", "soon", "soon", "soon"]);
+    expect(quick.map((f) => f.status)).toEqual(["ready", "soon", "soon", "soon", "ready"]);
   });
 });
 

@@ -1,3 +1,4 @@
+import { closeAnalysisView, isAnalysisOpen } from "./analysis/session";
 import { useEffect } from "react";
 import { IS_MAC, blockedReason, featureById, runFeature } from "./features";
 import { isMenuOpen } from "./menus/Menu";
@@ -149,6 +150,7 @@ function onKeyDown(e: KeyboardEvent) {
     // to Select, and Select clears the selection.
     if (store.gizmoMode === "scale") finishScale();
     else if (store.gizmoMode) store.setGizmoMode(null);
+    else if (isAnalysisOpen()) closeAnalysisView();
     else store.clearSelection();
   } else if (action.startsWith("gizmo.")) {
     store.setGizmoMode(action.slice("gizmo.".length) as GizmoMode);

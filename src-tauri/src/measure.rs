@@ -926,7 +926,7 @@ pub fn pick_wall(index: &MeshIndex, triangle: u32, hit: V3) -> Result<Feature, S
 }
 
 /// Möller–Trumbore: the distance along unit `d` from `o` to the triangle, if the ray meets it.
-fn ray_triangle(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
+pub(crate) fn ray_triangle(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
     let (e1, e2) = (sub(b, a), sub(c, a));
     let p = cross(d, e2);
     let det = dot(e1, p);

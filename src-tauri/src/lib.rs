@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod arrange;
 pub mod bundle;
 mod commands;
@@ -118,6 +119,7 @@ pub fn run() {
             commands::repair_run,
             commands::repair_cancel,
             commands::arrange,
+            commands::analyze_part,
             commands::packing_presets_load,
             commands::packing_presets_save,
             commands::repair_check,

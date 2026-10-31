@@ -464,6 +464,8 @@ fn save_project(path: &Path, parts: &[Part]) {
             priority: None,
             rotation: None,
             measurements: None,
+            analyses: None,
+            colors: None,
             source: Some("C:\\models\\gun.obj"),
             mesh: &p.mesh,
         })

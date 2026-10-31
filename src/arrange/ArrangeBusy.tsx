@@ -20,7 +20,7 @@ export function ArrangeBusy() {
   return <BusyBox label={busy.label} fraction={busy.fraction} cancelling={busy.cancelling} />;
 }
 
-export function BusyBox({ label, fraction, cancelling }: { label: string; fraction: number; cancelling: boolean }) {
+export function BusyBox({ label, fraction, cancelling, onCancel = cancelArrange }: { label: string; fraction: number; cancelling: boolean; onCancel?: () => void }) {
   const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
   return (
     <div className="dlg-backdrop arr-busy-backdrop">
@@ -33,7 +33,7 @@ export function BusyBox({ label, fraction, cancelling }: { label: string; fracti
           <p className="dlg-note">Cancel stops it at once and leaves the project as it was.</p>
         </div>
         <div className="dlg-footer">
-          <button type="button" className="dlg-btn dlg-btn-primary" disabled={cancelling} onClick={cancelArrange}>
+          <button type="button" className="dlg-btn dlg-btn-primary" disabled={cancelling} onClick={onCancel}>
             {cancelling ? "Cancelling…" : "Cancel"}
           </button>
         </div>

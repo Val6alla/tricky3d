@@ -5,6 +5,7 @@ import { boundsOf, IDENTITY, makeBox, translation, unionBounds } from "./mesh";
 import { IS_MAC, selectHint } from "./platform";
 import type { MeshStats } from "./io/ipc";
 import type { Measurement } from "./measure/types";
+import type { PartAnalysis } from "./analysis/types";
 
 export type Vec3 = [number, number, number];
 
@@ -39,6 +40,10 @@ export interface Part {
   color: string; // CSS hex
   /** Measure mode's measurements on the part, in its own frame; absent when it has none. A new mesh drops them. */
   measurements?: readonly Measurement[];
+  /** Its analyses with their results (src/analysis); absent when it has none. A new mesh drops them. */
+  analyses?: readonly PartAnalysis[];
+  /** A colour per triangle (r, g, b bytes), drawn instead of `color`: Wall thickness's coloured part. A new mesh drops it. */
+  colors?: Uint8Array;
   /** Its own packing settings; absent means DEFAULT_PACKING. */
   packing?: PartPacking;
   /**
@@ -118,6 +123,8 @@ export interface NewPart {
   transparent?: boolean;
   locked?: boolean;
   measurements?: readonly Measurement[];
+  analyses?: readonly PartAnalysis[];
+  colors?: Uint8Array;
   packing?: PartPacking;
   source?: string;
 }
@@ -235,6 +242,8 @@ function buildParts(newParts: NewPart[], colorStart: number): Part[] {
       locked: p.locked ?? false,
       color: p.color ?? PART_COLORS[(colorStart + i) % PART_COLORS.length],
       ...(p.measurements && p.measurements.length > 0 ? { measurements: p.measurements } : {}),
+      ...(p.analyses && p.analyses.length > 0 ? { analyses: p.analyses } : {}),
+      ...(p.colors && p.colors.length === p.mesh.indices.length ? { colors: p.colors } : {}),
       ...(p.packing ? { packing: p.packing } : {}),
       ...(p.source ? { source: p.source } : {}),
     }),
@@ -308,6 +317,8 @@ export interface AppState {
   patchEach(patches: ReadonlyMap<string, PartPatch>, label: string): void;
   /** Sets the measurements of parts (by id; an empty list removes them) as one undo step labelled `label`. */
   setMeasurements(changes: ReadonlyMap<string, readonly Measurement[]>, label: string): void;
+  /** Sets the analyses of parts (by id; an empty list removes them) as one undo step labelled `label`. */
+  setAnalyses(changes: ReadonlyMap<string, readonly PartAnalysis[]>, label: string): void;
   /**
    * Sets part matrices (column-major, as Part.matrix). With a label this is one undo step. With
    * null it is a live preview, e.g. during a gizmo drag, that recordChange() later makes one step.
@@ -593,6 +604,19 @@ export const useStore = create<AppState>()((set, get) => {
         if ((p.measurements ?? []).length === 0 && list.length === 0) return p;
         const { measurements: _old, ...rest } = p;
         return list.length > 0 ? { ...rest, measurements: list } : rest;
+      });
+      if (parts === before.parts) return;
+      set({ parts });
+      commit(label, before);
+    },
+
+    setAnalyses(changes, label) {
+      const before = begin();
+      const parts = mapParts(before.parts, changes.keys(), (p) => {
+        const list = changes.get(p.id) ?? [];
+        if ((p.analyses ?? []).length === 0 && list.length === 0) return p;
+        const { analyses: _old, ...rest } = p;
+        return list.length > 0 ? { ...rest, analyses: list } : rest;
       });
       if (parts === before.parts) return;
       set({ parts });

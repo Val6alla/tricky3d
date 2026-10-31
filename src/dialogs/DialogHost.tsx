@@ -23,6 +23,8 @@ const MinBoxDialog = onDemand(() => import("../arrange/MinBoxDialog").then((m) =
 const OrientDialog = onDemand(() => import("../arrange/OrientDialog").then((m) => m.OrientDialog));
 const PackDialog = onDemand(() => import("../arrange/PackDialog").then((m) => m.PackDialog));
 const PackingSettingsDialog = onDemand(() => import("../arrange/PackingSettingsDialog").then((m) => m.PackingSettingsDialog));
+const AnalysisDialog = onDemand(() => import("../analysis/AnalysisDialog").then((m) => m.AnalysisDialog));
+const InterlockDialog = onDemand(() => import("../analysis/InterlockDialog").then((m) => m.InterlockDialog));
 const PlacePromptDialog = onDemand(() => import("./PlacePromptDialog").then((m) => m.PlacePromptDialog));
 const ImportObjectsDialog = onDemand(() => import("./ImportObjectsDialog").then((m) => m.ImportObjectsDialog));
 const ScaleMetresDialog = onDemand(() => import("./ScaleMetresDialog").then((m) => m.ScaleMetresDialog));
@@ -74,6 +76,10 @@ function OpenDialog({ dialog }: { dialog: Exclude<Dialog, null> }) {
       return <DuplicateDialog key={dialog.mode} mode={dialog.mode} onClose={close} />;
     case "min-box":
       return <MinBoxDialog onClose={close} />;
+    case "interlock-result":
+      return <InterlockDialog rounds={dialog.rounds} trapped={dialog.trapped} onClose={close} />;
+    case "analysis-settings":
+      return <AnalysisDialog key={dialog.analysis} kind={dialog.analysis} partId={dialog.partId} otherId={dialog.otherId} onClose={close} />;
     case "orient":
       return <OrientDialog key={dialog.partId} partId={dialog.partId} onClose={close} />;
     case "pack":

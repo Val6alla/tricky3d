@@ -51,6 +51,10 @@ export interface LoadedMesh {
   rotation?: PartRotation;
   /** Measure mode's measurements, as the project file holds them (JSON); checked by src/measure/persist.ts. */
   measurements?: string;
+  /** The part's analyses, as the project file holds them (JSON); checked by src/analysis/persist.ts. */
+  analyses?: string;
+  /** A colour per triangle (r, g, b bytes) in base64, as the project file holds it. */
+  colors?: string;
   /** The file the part was imported from, as the project file holds it. */
   source?: string;
 }
@@ -89,6 +93,10 @@ export interface MeshOut {
   rotation?: PartRotation;
   /** JSON of the part's measurements (projects only). */
   measurements?: string;
+  /** JSON of the part's analyses (projects only). */
+  analyses?: string;
+  /** Base64 of the part's triangle colours (projects only). */
+  colors?: string;
   /** The file the part was imported from (projects only). */
   source?: string;
 }
@@ -104,6 +112,8 @@ interface MeshInfo {
   priority?: number;
   rotation?: PartRotation;
   measurements?: string;
+  analyses?: string;
+  colors?: string;
   source?: string;
 }
 
