@@ -5,7 +5,16 @@ import { openPack } from "../arrange/pack";
 import { formatFixed2 } from "../info";
 import { useStore } from "../store";
 import { SliderNumber } from "./AnalysisDialog";
-import { closeCollisions, interlockingTest, setCollisionSettings, updateCollisions, useCollisions, type CollisionSettings } from "./collisions";
+import {
+  closeCollisions,
+  interlockingTest,
+  MAX_MOVE_STEP,
+  nudgeSelected,
+  setCollisionSettings,
+  updateCollisions,
+  useCollisions,
+  type CollisionSettings,
+} from "./collisions";
 import "./analysis.css";
 
 /** "No collisions", "1 collision", "2 collisions, 1 pair too close". */
@@ -24,7 +33,8 @@ export function CollisionPanel() {
   const { settings, result, running, tab } = state;
   const pairs = result?.pairs ?? [];
   const clear = pairs.length === 0;
-  const check = (key: keyof Omit<CollisionSettings, "minDistance">, label: string, help: string) => (
+  const hasSelection = useStore((s) => s.selection.length > 0);
+  const check = (key: keyof Omit<CollisionSettings, "minDistance" | "moveStep">, label: string, help: string) => (
     <label className="dlg-check" title={help}>
       <input type="checkbox" checked={settings[key]} onChange={(e) => setCollisionSettings({ [key]: e.target.checked })} />
       <span className="dlg-check-label">{label}</span>
@@ -55,6 +65,37 @@ export function CollisionPanel() {
             {check("whileDragging", "Update while dragging", "Also check while a part is being dragged, not only when it is dropped.")}
             {check("display", "Display collisions", "Draw where parts cross in the view; otherwise only the ticks and crosses show.")}
             {check("checkHidden", "Check hidden parts", "Include hidden parts in the check.")}
+            <div className="an-move" role="group" aria-label="Move by">
+              <SliderNumber
+                label="Move by"
+                value={settings.moveStep}
+                min={0}
+                max={MAX_MOVE_STEP}
+                sliderMax={10}
+                step={0.1}
+                unit="mm"
+                onChange={(v) => setCollisionSettings({ moveStep: v })}
+              />
+              <div className="an-move-buttons">
+                {([0, 1, 2] as const).flatMap((axis) =>
+                  ([-1, 1] as const).map((sign) => {
+                    const name = `${"XYZ"[axis]}${sign > 0 ? "+" : "−"}`;
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        className="dlg-btn"
+                        disabled={!hasSelection}
+                        onClick={() => nudgeSelected(axis, sign)}
+                        title={`Move the selected parts ${settings.moveStep} mm along ${sign > 0 ? "+" : "−"}${"XYZ"[axis]}.`}
+                      >
+                        {name}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="an-checks">

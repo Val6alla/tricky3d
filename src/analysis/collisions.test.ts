@@ -10,8 +10,17 @@ import { makeBox, translation } from "../mesh";
 import { useStore } from "../store";
 import { useUi } from "../ui";
 import { collisionStatus } from "./CollisionPanel";
-import { closeCollisions, interlockingTest, openCollisions, partCollision, setCollisionSettings, updateCollisions, useCollisions } from "./collisions";
-import { newAnalysis, useAnalysis } from "./session";
+import {
+  closeCollisions,
+  interlockingTest,
+  nudgeSelected,
+  openCollisions,
+  partCollision,
+  setCollisionSettings,
+  updateCollisions,
+  useCollisions,
+} from "./collisions";
+import { newAnalysis, runPartAnalysis, useAnalysis } from "./session";
 
 const s = () => useStore.getState();
 const lastToast = () => useUi.getState().toasts[useUi.getState().toasts.length - 1]?.message;
@@ -34,7 +43,7 @@ beforeEach(() => {
   repairIpc.cancelRepair.mockResolvedValue(undefined);
   s().newProject();
   closeCollisions();
-  setCollisionSettings({ autoUpdate: true, whileDragging: false, display: true, checkHidden: true, minDistance: 0 });
+  setCollisionSettings({ autoUpdate: true, whileDragging: false, display: true, checkHidden: true, minDistance: 0, moveStep: 1 });
   useAnalysis.setState({ busy: null, shown: null });
   useUi.setState({ toasts: [], dialog: null, tasks: [], viewTool: null });
 });
@@ -116,13 +125,52 @@ describe("the interlocking test", () => {
 });
 
 describe("Z-removability", () => {
-  it("runs on the selected part straight away and keeps the result on it", async () => {
+  it("asks for the minimum distance, then runs on the selected part and keeps the result on it", async () => {
     const [a] = three();
     s().select([a]);
-    ipc.runAnalysis.mockResolvedValue({ result: { removable: false, bodies: 2, trappedBodies: 1, trappedArea: 300 }, drawing: { classes: new Uint8Array(12) } });
+    ipc.runAnalysis.mockResolvedValue({
+      result: { minDistance: 0.5, removable: false, bodies: 2, trappedBodies: 1, trappedArea: 300 },
+      drawing: { classes: new Uint8Array(12) },
+    });
     newAnalysis("removability");
-    await vi.waitFor(() => expect(s().parts[0].analyses?.length).toBe(1));
+    expect(useUi.getState().dialog).toEqual({ kind: "analysis-settings", analysis: "removability", partId: a });
+    expect(ipc.runAnalysis).not.toHaveBeenCalled();
+    await runPartAnalysis("removability", a, { minDistance: 0.5 });
     expect(ipc.runAnalysis.mock.calls[0][0]).toBe("removability");
-    expect(s().parts[0].analyses?.[0].kind).toBe("removability");
+    expect(ipc.runAnalysis.mock.calls[0][1]).toEqual({ minDistance: 0.5 });
+    const kept = s().parts[0].analyses?.[0];
+    expect(kept?.kind).toBe("removability");
+    expect(kept?.settings).toEqual({ minDistance: 0.5 });
+  });
+});
+
+describe("Move by", () => {
+  it("moves the selected parts by the step along one axis as one undo step, locked parts staying", () => {
+    const [a, b, c] = three();
+    s().setPartLocked(c, true);
+    s().select([a, b, c]);
+    setCollisionSettings({ moveStep: 2.5 });
+    const steps = s().history.past.length;
+    expect(nudgeSelected(0, 1)).toBe(2);
+    expect(s().history.past.length).toBe(steps + 1);
+    const at = (id: string) => s().parts.find((p) => p.id === id)!.matrix.slice(12, 15);
+    expect(at(a)).toEqual([12.5, 10, 5]);
+    expect(at(b)).toEqual([17.5, 10, 5]);
+    expect(at(c)).toEqual([80, 80, 5]);
+    nudgeSelected(2, -1);
+    expect(at(a)).toEqual([12.5, 10, 2.5]);
+    s().undo();
+    expect(at(a)).toEqual([12.5, 10, 5]);
+  });
+
+  it("says what to do when nothing can move", () => {
+    const [, , c] = three();
+    s().clearSelection();
+    expect(nudgeSelected(1, 1)).toBe(0);
+    expect(lastToast()).toBe("Select the parts to move first.");
+    s().setPartLocked(c, true);
+    s().select([c]);
+    expect(nudgeSelected(1, 1)).toBe(0);
+    expect(lastToast()).toBe("Locked parts do not move.");
   });
 });

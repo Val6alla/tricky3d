@@ -369,6 +369,40 @@ function withResult(now: RepairSession, started: Uint8Array, result: RunResult, 
 }
 
 /**
+ * Puts a mesh tool's result (src/modify: Triangle reduction, Smoothing… run on the working copy) into the session as
+ * one inner undo step labelled `label`, if the working copy is still `from`, the mesh the tool ran on. The selection
+ * follows its triangles through `origin` (the input triangle of each result triangle; null when the triangles are the
+ * input's in order). Returns false, changing nothing, when the working copy changed meanwhile or a run is going.
+ */
+export function applyToolResult(label: string, from: MeshData, mesh: MeshData, origin: Uint32Array | null): boolean {
+  const now = session();
+  if (!now || now.mesh !== from || repair().busy) return false;
+  const count = triangleCount(mesh);
+  const picked: number[] = [];
+  for (let t = 0; t < count; t++) {
+    const was = origin ? origin[t] : t;
+    if (was < now.selection.length && now.selection[was]) picked.push(t);
+  }
+  const result: RunResult = {
+    changed: true,
+    mesh,
+    stats: null,
+    edges: null,
+    selection: Uint32Array.from(picked),
+    selected: false,
+    reports: [],
+    status: null,
+    highlights: null,
+    intersecting: null,
+    warnings: [],
+  };
+  const request: RunRequest = { label, steps: [], selection: result.selection, withStatus: false, clearSelection: false, announce: false, lastRun: false };
+  setSession(withResult(now, now.selection, result, request));
+  if (repair().autoUpdate) void refreshStatus();
+  return true;
+}
+
+/**
  * Opens the progress dialog of run `job` as soon as no other dialog is open, if the run is still going then. It never
  * takes another dialog's place: a prompt replaced counts as cancelled (src/ui.ts), so a file dropped on the window
  * during the run would silently not be imported.

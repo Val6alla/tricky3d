@@ -1,0 +1,69 @@
+/* The Manipulate mesh panel (src/modify/ManipulatePanel.tsx): the analysis panel's frame and rows, with tabs that wrap
+   onto two lines in a narrow panel. */
+.md-tabs {
+  flex-wrap: wrap;
+  /* Above the body, not in it: none of the analysis tabs' bleed into the body's padding. */
+  margin: 0;
+}
+
+.md-box {
+  margin: 0;
+}
+
+.md-field .an-number {
+  margin-left: auto;
+}
+
+.md-calc {
+  align-items: center;
+  gap: 8px;
+}
+
+.md-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.md-message {
+  margin: 0;
+  font-size: 12px;
+}
+
+.md-original {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.md-original[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.dlg-check.is-disabled {
+  opacity: 0.55;
+}
+
+/* The narrow right panel: nothing wider than it. A list takes the row's full width under its label, and the preset
+   list sits on a line of its own above its buttons. */
+.md-panel .an-body {
+  overflow-x: hidden;
+}
+
+.md-panel .dlg-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.md-panel .an-select-row > .dlg-select {
+  grid-column: 1 / -1;
+}
+
+.md-panel .arr-presets {
+  flex-wrap: wrap;
+}
+
+.md-panel .arr-presets .dlg-select {
+  flex: 1 1 100%;
+}

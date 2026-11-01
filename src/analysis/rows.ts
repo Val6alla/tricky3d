@@ -18,12 +18,23 @@ const cm2 = (mm2: number) => formatFixed3(mm2 / 100);
 const degrees = (v: number) => formatFixed2(v);
 const vec = (label: string, v: Vec3, f: (n: number) => string = mm) => [label, ...v.map(f)];
 
-function spreadRow(label: string, s: Spread, f: (n: number) => string): string[] {
+/** What a cell says when its value could not be measured, and why. */
+export const NOT_MEASURABLE = {
+  open: "not measurable, surface is open",
+  empty: "not measurable, no triangles",
+  noEdges: "not measurable, no edges",
+  skinOff: "not analysed, turned off in the settings",
+  noWall: "not measurable, no surface behind any triangle",
+  stopped: "not measured, the search stopped early",
+} as const;
+
+function spreadRow(label: string, s: Spread, f: (n: number) => string, missing: string | null): string[] {
+  if (missing !== null) return [label, missing, "", "", ""];
   return [label, f(s.min), f(s.max), f(s.average), f(s.deviation)];
 }
 
 function skinCells(t: SkinTotals): [string, string, string] {
-  if (!t.analyzed) return ["—", "—", "—"];
+  if (!t.analyzed) return [NOT_MEASURABLE.skinOff, "", ""];
   return [degrees(t.angle), cm2(t.area), formatCount(t.components)];
 }
 
@@ -31,12 +42,13 @@ export function resultTables(a: PartAnalysis): ResultTable[] {
   switch (a.kind) {
     case "standard": {
       const r = a.result;
+      const edgeless = r.triangles === 0 ? NOT_MEASURABLE.empty : r.edges === 0 ? NOT_MEASURABLE.noEdges : null;
       return [
         { columns: ["Position (mm)", ...AXES], rows: [vec("Minimum", r.min), vec("Maximum", r.max), vec("Size", r.size)] },
         {
           columns: ["Quantity", "Value"],
           rows: [
-            ["Volume (cm³)", r.volumeValid ? cm3(r.volume) : "—"],
+            ["Volume (cm³)", r.volumeValid ? cm3(r.volume) : NOT_MEASURABLE.open],
             ["Area (cm²)", cm2(r.area)],
             ["Points", formatCount(r.points)],
             ["Triangles", formatCount(r.triangles)],
@@ -54,10 +66,10 @@ export function resultTables(a: PartAnalysis): ResultTable[] {
         {
           columns: ["Mesh", "Min", "Max", "Avg", "Dev"],
           rows: [
-            spreadRow("Edges per point", r.edgesPerPoint, formatFixed2),
-            spreadRow("Triangles per edge", r.trianglesPerEdge, formatFixed2),
-            spreadRow("Triangle quality", r.triangleQuality, formatFixed2),
-            spreadRow("Edge length (mm)", r.edgeLength, mm),
+            spreadRow("Edges per point", r.edgesPerPoint, formatFixed2, edgeless),
+            spreadRow("Triangles per edge", r.trianglesPerEdge, formatFixed2, edgeless),
+            spreadRow("Triangle quality", r.triangleQuality, formatFixed2, r.triangles === 0 ? NOT_MEASURABLE.empty : null),
+            spreadRow("Edge length (mm)", r.edgeLength, mm, edgeless),
           ],
         },
       ];
@@ -124,12 +136,12 @@ export function resultTables(a: PartAnalysis): ResultTable[] {
         {
           columns: ["Quantity", "Value"],
           rows: [
-            ["Test", r.passed ? "Passed" : "Failed"],
+            ["Test", r.passed ? "Passed" : r.decided === false ? "Not decided" : "Failed"],
             ["Wall thickness threshold (mm)", mm(r.threshold)],
             ["Acceptance: thinner surface allowed (%)", formatFixed2(r.acceptance)],
             ["Surface thinner than the threshold (%)", share],
             ["Thinner area (cm²)", cm2(r.thinArea)],
-            ["Thinnest wall found (mm)", r.minThickness === null ? "—" : formatFixed3(r.minThickness)],
+            ["Thinnest wall found (mm)", r.minThickness === null ? (r.complete ? NOT_MEASURABLE.noWall : NOT_MEASURABLE.stopped) : formatFixed3(r.minThickness)],
             ...(r.unmeasured > 0 ? [["Triangles with nothing behind them", formatCount(r.unmeasured)]] : []),
           ],
         },
@@ -143,6 +155,7 @@ export function resultTables(a: PartAnalysis): ResultTable[] {
         {
           columns: ["Quantity", "Value"],
           rows: [
+            ["Minimum distance between items (mm)", mm(r.minDistance ?? 0)],
             ["Lifts out straight up", r.removable ? "Yes" : "No"],
             ["Bodies", formatCount(r.bodies)],
             ["Trapped bodies", formatCount(r.trappedBodies)],

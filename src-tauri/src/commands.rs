@@ -661,6 +661,22 @@ pub async fn arrange(window: Window, request: Request<'_>) -> Result<Response, S
 }
 
 // ---------------------------------------------------------------------------------------------
+// Modify's mesh tools (src/modify/ipc.ts).
+
+#[tauri::command]
+pub async fn modify_run(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "run the mesh tool")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        jobs::modify_run(bundle, &registry, &mut |progress| {
+            let _ = window.emit(jobs::MODIFY_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+// ---------------------------------------------------------------------------------------------
 // Part analyses (src/analysis/ipc.ts).
 
 #[tauri::command]
@@ -689,6 +705,30 @@ pub async fn packing_presets_save(
 ) -> Result<(), String> {
     let dir = config_dir(&app, "Could not save your packing presets")?;
     blocking(move || jobs::save_presets(&dir, &presets)).await
+}
+
+/// The analysis and mesh tool presets (`group` "analysis" or "modify", src/dialogs/presets.ts).
+#[tauri::command]
+pub async fn settings_presets_load(
+    app: AppHandle,
+    group: String,
+) -> Result<Map<String, Value>, String> {
+    let (file, what) =
+        jobs::preset_file(&group).ok_or_else(|| "Could not read the presets.".to_string())?;
+    let dir = config_dir(&app, &format!("Could not read your {what}"))?;
+    blocking(move || jobs::load_preset_file(&dir, file, what)).await
+}
+
+#[tauri::command]
+pub async fn settings_presets_save(
+    app: AppHandle,
+    group: String,
+    presets: Map<String, Value>,
+) -> Result<(), String> {
+    let (file, what) =
+        jobs::preset_file(&group).ok_or_else(|| "Could not save the presets.".to_string())?;
+    let dir = config_dir(&app, &format!("Could not save your {what}"))?;
+    blocking(move || jobs::save_preset_file(&dir, file, what, &presets)).await
 }
 
 /// A few numbers, so it runs right here.

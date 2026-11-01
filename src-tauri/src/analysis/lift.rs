@@ -7,6 +7,13 @@
 //! until none is left or the rest hold each other. Z-removability looks inside one part: its bodies
 //! (shells joined where they touch, a cavity kept with the body around it) are each lifted alone
 //! while the others stay; a body that would hit another is trapped.
+//!
+//! With a minimum distance d, a body is also trapped when it would pass closer than d to another:
+//! when some point of the other lies within d of the body already (`closer_than`), or above some
+//! point of the body and less than d from it seen from above. The second test grows each triangle's
+//! outline seen from above by d (an octagon round each corner, which holds the circle of radius d)
+//! and compares the other triangle's height over the overlap with the triangle's lowest corner, so
+//! it errs toward trapped by at most the slope of a triangle across its own width.
 
 use rayon::prelude::*;
 use serde::Serialize;
@@ -87,6 +94,142 @@ fn from_above(t: [V3; 3]) -> Option<([P2; 3], impl Fn(P2) -> f64)> {
     Some((flat, height))
 }
 
+/// The convex hull of `points`, anticlockwise (Andrew's monotone chain).
+fn hull(mut points: Vec<P2>) -> Vec<P2> {
+    points.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    points.dedup();
+    if points.len() < 3 {
+        return points;
+    }
+    let mut lower: Vec<P2> = Vec::new();
+    for &p in &points {
+        while lower.len() >= 2 && cross2(lower[lower.len() - 2], lower[lower.len() - 1], p) <= 0.0 {
+            lower.pop();
+        }
+        lower.push(p);
+    }
+    let mut upper: Vec<P2> = Vec::new();
+    for &p in points.iter().rev() {
+        while upper.len() >= 2 && cross2(upper[upper.len() - 2], upper[upper.len() - 1], p) <= 0.0 {
+            upper.pop();
+        }
+        upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower
+}
+
+/// The part of convex polygon `poly` inside anticlockwise convex polygon `by`.
+fn clip_convex(mut poly: Vec<P2>, by: &[P2]) -> Vec<P2> {
+    for k in 0..by.len() {
+        let (a, b) = (by[k], by[(k + 1) % by.len()]);
+        if poly.is_empty() {
+            break;
+        }
+        let input = std::mem::take(&mut poly);
+        for i in 0..input.len() {
+            let (p, q) = (input[i], input[(i + 1) % input.len()]);
+            let (sp, sq) = (cross2(a, b, p), cross2(a, b, q));
+            if sp >= 0.0 {
+                poly.push(p);
+            }
+            if (sp >= 0.0) != (sq >= 0.0) {
+                let t = sp / (sp - sq);
+                poly.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+            }
+        }
+    }
+    poly
+}
+
+fn area2(poly: &[P2]) -> f64 {
+    if poly.len() < 3 {
+        return 0.0;
+    }
+    (1..poly.len() - 1)
+        .map(|k| cross2(poly[0], poly[k], poly[k + 1]))
+        .sum::<f64>()
+        / 2.0
+}
+
+/// True when lifting `p` straight up would hit `q` or, with `clearance` > 0, pass closer to it
+/// than that (module comment). `bodies` are the same two solids for `closer_than`.
+pub fn blocks_with(p: &Solid, q: &Solid, clearance: f64, bodies: Option<(&Body, &Body)>) -> bool {
+    if blocks(p, q) {
+        return true;
+    }
+    if clearance <= 0.0 {
+        return false;
+    }
+    if let Some((bp, bq)) = bodies
+        && closer_than(bp, bq, clearance).is_some()
+    {
+        return true;
+    }
+    passes_near(p, q, clearance)
+}
+
+/// Some point of `q` lies above a point of `p` less than `d` away seen from above (module comment).
+fn passes_near(p: &Solid, q: &Solid, d: f64) -> bool {
+    let (Some(bp), Some(bq)) = (p.bounds, q.bounds) else {
+        return false;
+    };
+    let apart_xy = (0..2).any(|k| bq[1][k] <= bp[0][k] - d || bq[0][k] >= bp[1][k] + d);
+    if apart_xy || bq[1][2] <= bp[0][2] {
+        return false;
+    }
+    let scale = (0..3).fold(0.0f64, |m, k| {
+        m.max(bp[1][k] - bp[0][k]).max(bq[1][k] - bq[0][k])
+    });
+    let eps = 1e-9 * scale.max(1.0);
+    // An octagon round the circle of radius d.
+    let r = d / (std::f64::consts::PI / 8.0).cos();
+    let octagon: Vec<P2> = (0..8)
+        .map(|k| {
+            let a = (k as f64 + 0.5) * std::f64::consts::PI / 4.0;
+            [r * a.cos(), r * a.sin()]
+        })
+        .collect();
+    p.world.triangles.par_iter().enumerate().any(|(i, &t)| {
+        let tb = p.boxes[i];
+        let reach = [
+            [tb[0][0] - d, tb[0][1] - d, tb[0][2]],
+            [tb[1][0] + d, tb[1][1] + d, bq[1][2]],
+        ];
+        if !overlap(&reach, &bq) {
+            return false;
+        }
+        let corners = p.world.corners(t);
+        if from_above(corners).is_none() {
+            return false;
+        }
+        let lowest = corners.iter().fold(f64::INFINITY, |m, c| m.min(c[2]));
+        let grown = hull(
+            corners
+                .iter()
+                .flat_map(|c| octagon.iter().map(move |o| [c[0] + o[0], c[1] + o[1]]))
+                .collect(),
+        );
+        let mut hit = false;
+        q.bvh.query(&reach, |j| {
+            if hit {
+                return;
+            }
+            let Some((uf, uz)) = from_above(q.world.corners(q.world.triangles[j as usize])) else {
+                return;
+            };
+            let shared = clip_convex(uf.to_vec(), &grown);
+            if area2(&shared) <= eps * eps {
+                return;
+            }
+            hit = shared.iter().any(|&c| uz(c) - lowest > eps);
+        });
+        hit
+    })
+}
+
 /// True when lifting `p` straight up would hit `q`.
 pub fn blocks(p: &Solid, q: &Solid) -> bool {
     let (Some(bp), Some(bq)) = (p.bounds, q.bounds) else {
@@ -165,8 +308,14 @@ pub struct Interlock {
     pub trapped: Vec<usize>,
 }
 
-/// Which solid blocks which: `blocked[i]` lists the solids that lifting solid i would hit.
-fn blockers(solids: &[Solid], control: &mut Control) -> RepairResult<Vec<Vec<usize>>> {
+/// Which solid blocks which: `blocked[i]` lists the solids that lifting solid i would hit, or
+/// pass closer to than `clearance` (with `bodies`, the same solids for `closer_than`).
+fn blockers(
+    solids: &[Solid],
+    clearance: f64,
+    bodies: Option<&[Body]>,
+    control: &mut Control,
+) -> RepairResult<Vec<Vec<usize>>> {
     let n = solids.len();
     let mut blocked = vec![Vec::new(); n];
     let pairs = n * n.saturating_sub(1);
@@ -177,7 +326,8 @@ fn blockers(solids: &[Solid], control: &mut Control) -> RepairResult<Vec<Vec<usi
                 continue;
             }
             control.check()?;
-            if blocks(p, q) {
+            let pair = bodies.map(|b| (&b[i], &b[j]));
+            if blocks_with(p, q, clearance, pair) {
                 blocked[i].push(j);
             }
             done += 1;
@@ -189,7 +339,7 @@ fn blockers(solids: &[Solid], control: &mut Control) -> RepairResult<Vec<Vec<usi
 
 /// Lifts the solids out round by round.
 pub fn interlock(solids: &[Solid], control: &mut Control) -> RepairResult<Interlock> {
-    let blocked = blockers(solids, control)?;
+    let blocked = blockers(solids, 0.0, None, control)?;
     let mut left: Vec<bool> = vec![true; solids.len()];
     let mut rounds = Vec::new();
     loop {
@@ -214,6 +364,8 @@ pub fn interlock(solids: &[Solid], control: &mut Control) -> RepairResult<Interl
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Removability {
+    /// mm: the distance a body had to keep from the others.
+    pub min_distance: f64,
     pub removable: bool,
     pub bodies: u64,
     pub trapped_bodies: u64,
@@ -222,10 +374,11 @@ pub struct Removability {
 }
 
 /// Z-removability of one placed part, with a class per triangle: 1 for a body that lifts out
-/// freely, 2 for a trapped one.
+/// freely, 2 for a trapped one. A body must keep `min_distance` (mm) from the others.
 pub fn removability(
     mesh: &Mesh,
     world: &World,
+    min_distance: f64,
     control: &mut Control,
 ) -> RepairResult<(Removability, Vec<u8>)> {
     let edges = Edges::new(mesh);
@@ -289,17 +442,25 @@ pub fn removability(
         body_of_shell[s] = body_of_shell[r];
         bodies[body_of_shell[s]].push(s);
     }
-    let solids: Vec<Solid> = bodies
+    let worlds: Vec<World> = bodies
         .iter()
         .map(|list| {
             let triangles: Vec<u32> = list
                 .iter()
                 .flat_map(|&s| members[s].iter().copied())
                 .collect();
-            Solid::new(sub_world(world, &triangles))
+            sub_world(world, &triangles)
         })
         .collect();
-    let blocked = blockers(&solids, &mut control.sub(0.3, 1.0))?;
+    let near: Option<Vec<Body>> =
+        (min_distance > 0.0).then(|| worlds.iter().cloned().map(Body::new).collect());
+    let solids: Vec<Solid> = worlds.into_iter().map(Solid::new).collect();
+    let blocked = blockers(
+        &solids,
+        min_distance,
+        near.as_deref(),
+        &mut control.sub(0.3, 1.0),
+    )?;
     let trapped: Vec<bool> = blocked.iter().map(|b| !b.is_empty()).collect();
     let mut classes = vec![1u8; world.triangles.len()];
     let mut trapped_area = 0.0;
@@ -312,6 +473,7 @@ pub fn removability(
     let trapped_bodies = trapped.iter().filter(|&&t| t).count() as u64;
     Ok((
         Removability {
+            min_distance: min_distance.max(0.0),
             removable: trapped_bodies == 0,
             bodies: bodies.len() as u64,
             trapped_bodies,

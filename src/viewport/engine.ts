@@ -60,6 +60,8 @@ import { isOutOfDate, shownAnalysis, useAnalysis } from "../analysis/session";
 import { ANALYSIS_COLORS, PART_CLASS } from "../analysis/colors";
 import { useLibrary } from "../library/store";
 import { useCollisions } from "../analysis/collisions";
+import { previewPart, slimAngle, useModify } from "../modify/session";
+import { slimColors } from "./slimColors";
 
 export interface ViewportEngine {
   api: ViewportApi;
@@ -266,6 +268,13 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
 
   /** The part in repair mode, or null. */
   const repairingId = () => useRepair.getState().session?.partId ?? null;
+  /** Manipulate mesh's result, drawn in place of its part (or of the working copy in repair mode). */
+  const modifyPreview = (): Part | null => {
+    const preview = previewPart(useModify.getState(), useStore.getState().parts);
+    const slim = slimAngle(useModify.getState());
+    return preview && slim !== null ? { ...preview, colors: slimColors(preview.mesh, slim, preview.color) } : preview;
+  };
+  const modifyOpen = () => useModify.getState().session !== null;
   const booleanOpen = () => useBoolean.getState().session !== null;
   const measureOpen = () => useMeasure.getState().session !== null;
 
@@ -279,7 +288,19 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   /** How the mode draws the parts: see PartsLook. */
   function look(): PartsLook {
     const id = repairingId();
-    if (id) return { hidden: id, colors: new Map(), dimOthers: true, pickable: new Set() };
+    const preview = modifyPreview();
+    // Manipulate mesh's result (or Show slim faces) is drawn as a stand-in part, as it is: in the part's colour, or
+    // with a colour per triangle.
+    const keep = preview ? new Set([preview.id]) : undefined;
+    // Highlight triangles: the part the panel works on, or what stands in for it, with its triangles' edges.
+    const m = useModify.getState();
+    const wire = m.session && m.highlight ? new Set([preview?.id ?? m.session.target.partId]) : undefined;
+    if (id) return { hidden: id, colors: new Map(), dimOthers: true, pickable: new Set(), keep, wire };
+    if (preview) {
+      const target = m.session?.target.partId ?? null;
+      return { hidden: target, colors: new Map(), dimOthers: false, pickable: null, keep, wire };
+    }
+    if (wire) return { ...PLAIN_LOOK, wire };
     const session = useBoolean.getState().session;
     if (!session) {
       // An analysis that paints the part draws it itself; the others show it grey, except the standard analysis.
@@ -307,10 +328,13 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
 
   function syncParts(s: AppState) {
     const result = useBoolean.getState().session?.result;
+    const preview = modifyPreview();
     // In Boolean operations the lists, not the selection, decide the colours; in the analysis view the analysis does.
-    const plain = booleanOpen() || analysisView() !== null;
-    parts.sync(result ? [...s.parts, result.part] : s.parts, plain ? [] : s.selection, s.view.shading, look());
+    const plain = booleanOpen() || analysisView() !== null || preview !== null;
+    const drawn = result ? [...s.parts, result.part] : preview ? [...s.parts, preview] : s.parts;
+    parts.sync(drawn, plain ? [] : s.selection, s.view.shading, look());
     analysisLayer.sync(analysisView(), useAnalysis.getState().compare);
+    if (repairingId()) syncRepair();
   }
 
   /**
@@ -319,7 +343,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
    * show as well: its results are for the part where it stood.
    */
   function syncGizmo(s: AppState) {
-    const hidden = repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || analysisView() !== null;
+    const hidden = repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || analysisView() !== null || modifyOpen();
     gizmo.sync(hidden ? { ...s, selection: [] } : s);
   }
 
@@ -363,7 +387,10 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     const r = useRepair.getState();
     const s = useStore.getState();
     const part = r.session ? s.parts.find((p) => p.id === r.session?.partId) : undefined;
-    return repair.sync(r, part?.color ?? PART_COLORS[0], s.view.shading);
+    const changed = repair.sync(r, part?.color ?? PART_COLORS[0], s.view.shading);
+    // The working copy steps aside while a Manipulate mesh result stands in for it.
+    if (r.session) repair.group.visible = modifyPreview() === null;
+    return changed;
   }
 
   /**
@@ -700,6 +727,12 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     syncCollisions();
     requestRender();
   });
+  const unsubscribeModify = useModify.subscribe((m, prev) => {
+    if (m.session === prev.session && m.highlight === prev.highlight && m.settings.remesh === prev.settings.remesh) return;
+    if ((m.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    syncParts(useStore.getState());
+    requestRender();
+  });
   const unsubscribeAnalysis = useAnalysis.subscribe((a, prev) => {
     if (a.shown === prev.shown && a.compare === prev.compare) return;
     if (a.shown !== prev.shown) syncGizmo(useStore.getState());
@@ -766,6 +799,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       unsubscribeLabel();
       labels.dispose();
       unsubscribeAnalysis();
+      unsubscribeModify();
       analysisLayer.dispose();
       unsubscribeCollisions();
       crossing.geometry.dispose();

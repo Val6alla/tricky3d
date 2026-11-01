@@ -276,6 +276,10 @@ const FORMER_HOME_REPAIR = [
 
 /** The entries of the Repair tab that work today; every other entry of the tab is Soon. */
 const REPAIR_READY = new Set([
+  "repair.z-comp",
+  "repair.remesh",
+  "repair.offset",
+  "repair.extrude",
   "repair.script",
   "repair.edit-scripts",
   "repair.selection-info",
@@ -333,6 +337,7 @@ const REPAIR_MENU: [string, string][] = [
   ["repair-ctx.close-curved", "Close holes along the curvature"],
   ["repair-ctx.fill-three-edge", "Fill three-edge holes"],
   ["repair-ctx.grow-band", "Grow a band from a hole edge"],
+  ["repair-ctx.offset-holes", "Offset hole edges…"],
   ["repair-ctx.bridge-gap", "Bridge a gap"],
   ["repair-ctx.stitch", "Stitch triangles"],
   ["repair-ctx.remove-duplicates", "Remove duplicate triangles"],
@@ -351,7 +356,7 @@ const REPAIR_MENU: [string, string][] = [
   ["repair-ctx.extract-separate", "Separate selection as part"],
   ["repair-ctx.extract-shells", "Selected shells to new part"],
 ];
-const MENU_SOON = new Set(["repair-ctx.reduce", "repair-ctx.z-compensation", "repair-ctx.remesh", "repair-ctx.offset", "repair-ctx.bridge-gap"]);
+const MENU_SOON = new Set(["repair-ctx.bridge-gap"]);
 const MENU_NEEDS_SELECTION = new Set([
   "repair-ctx.expand",
   "repair-ctx.shrink",
@@ -423,6 +428,26 @@ describe("the registry", () => {
       expect([f.id, f.underCursor === true]).toEqual([f.id, f.id.startsWith("repair-ctx.add-")]);
     }
     expect([feature("repair-ctx.expand").shortcut, feature("repair-ctx.shrink").shortcut]).toEqual(["=", "-"]);
+  });
+
+  it("offers the mesh tools on the Modify tab: Manipulate mesh, Mirror, Invert and Shear", () => {
+    expect(childrenOf("modify.manipulate-mesh").map((f) => [f.id, effectiveStatus(f)])).toEqual([
+      ["modify.reduce-triangles", "ready"],
+      ["modify.smooth", "ready"],
+      ["modify.refine", "ready"],
+      ["modify.remesh", "ready"],
+      ["modify.offset-surface", "ready"],
+      ["modify.extrude", "ready"],
+      ["modify.offset-holes", "ready"],
+      ["modify.distort", "soon"],
+      ["modify.surface-pattern", "soon"],
+    ]);
+    expect(effectiveStatus(feature("modify.z-compensation"))).toBe("ready");
+    expect(childrenOf("modify.invert-normals").map((f) => [f.label, effectiveStatus(f)])).toEqual([
+      ["Turn the part inside out", "ready"],
+      ["Turn inside-out shells back", "ready"],
+    ]);
+    for (const id of ["modify.mirror", "modify.shear", "repair-ctx.reduce"]) expect([id, typeof feature(id).run]).toEqual([id, "function"]);
   });
 
   it("drops the Soon section of the repair context menu when Soon features are hidden, without a double separator", () => {
@@ -575,9 +600,9 @@ describe("the registry", () => {
   });
 
   it("toasts for a Soon repair entry instead of running anything", () => {
-    activate(feature("repair.z-comp"));
-    expect(lastToast()).toBe(soonMessage(feature("repair.z-comp")));
-    expect(blockedReason(feature("repair.z-comp"))).toBeNull();
+    activate(feature("repair.join-contours"));
+    expect(lastToast()).toBe(soonMessage(feature("repair.join-contours")));
+    expect(blockedReason(feature("repair.join-contours"))).toBeNull();
   });
 
   it("names the repair select tools in the status bar", () => {

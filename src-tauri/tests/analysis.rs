@@ -237,6 +237,21 @@ fn wall_thickness_answers_a_thickness_per_triangle_and_the_thinnest_spot() {
         panic!("no thicknesses");
     };
     assert_eq!(values.len(), 12);
+    // Simple mode: the answer says whether it stopped at a thin wall and whether that decided the
+    // test (a 12-triangle plate is one batch, so it runs to the end).
+    let simple = run(
+        request(
+            3,
+            "wall",
+            json!({"threshold": 4.0, "acceptance": 5.0, "stopEarly": false, "simple": true}),
+            &[(&plate, IDENTITY)],
+        ),
+        &jobs,
+    )
+    .unwrap();
+    assert_eq!(simple.meta["result"]["stoppedAtThin"], json!(false));
+    assert_eq!(simple.meta["result"]["decided"], json!(true));
+    assert_eq!(simple.meta["result"]["passed"], json!(false));
     for bad in [
         json!({"threshold": 0.0, "acceptance": 5.0, "stopEarly": false}),
         json!({"threshold": 1.0, "acceptance": 101.0, "stopEarly": false}),
@@ -422,10 +437,32 @@ fn interlocking_and_z_removability_through_the_job() {
     )
     .unwrap();
     assert_eq!(r.meta["result"]["removable"], json!(true));
+    assert_eq!(r.meta["result"]["minDistance"], json!(0.0));
     let Some(Blob::U32(classes)) = r.meshes[0].extra("classes") else {
         panic!("no classes");
     };
     assert_eq!(classes.len(), 12);
+    // Two boxes 2 mm apart in one part: free at 1 mm, trapped at 3 mm; a bad distance is refused.
+    let beside = make_box([22.0, 0.0, 0.0], [30.0, 20.0, 10.0]);
+    let two = tricky3d_lib::ops::concat(&[&bottom, &beside]).unwrap();
+    let at = |job: u64, d: f64| {
+        run(
+            request(
+                job,
+                "removability",
+                json!({"minDistance": d}),
+                &[(&two, IDENTITY)],
+            ),
+            &jobs,
+        )
+    };
+    assert_eq!(at(4, 1.0).unwrap().meta["result"]["removable"], json!(true));
+    let r = at(5, 3.0).unwrap();
+    assert_eq!(r.meta["result"]["removable"], json!(false));
+    assert_eq!(r.meta["result"]["trappedBodies"], json!(2));
+    assert_eq!(r.meta["result"]["minDistance"], json!(3.0));
+    assert!(at(6, -1.0).is_err());
+    assert!(jobs.is_idle());
 }
 
 /// The big-model timings in the report: one analysis on one model file, through the job the app

@@ -54,6 +54,8 @@ export type Dialog =
    * compare the reference, and `otherId` the comparison when two parts were selected).
    */
   | { kind: "analysis-settings"; analysis: AnalysisKind; partId: string; otherId?: string }
+  | { kind: "mirror" }
+  | { kind: "shear" }
   /** Analyze › Interlocking test: the parts by id, in the order they lift out, and those that cannot. */
   | { kind: "interlock-result"; rounds: string[][]; trapped: string[] }
   // Prompts answer through resolve; null means the dialog was cancelled.

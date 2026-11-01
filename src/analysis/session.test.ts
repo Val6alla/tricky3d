@@ -191,8 +191,11 @@ describe("results", () => {
     expect(tables[0].rows[2]).toEqual(["Size", text("Length (mm)"), text("Width (mm)"), text("Height (mm)")]);
     expect(value("Triangles")).toBe(text("Triangles"));
     expect(value("Shells")).toBe(text("Shells"));
-    // Open edges: no volume, as the panel shows none.
-    expect(resultTables(standard({ ...CUBE, volumeValid: false }))[1].rows[0]).toEqual(["Volume (cm³)", "—"]);
+    // Open edges: no volume, as the panel shows none; the cell says why.
+    expect(resultTables(standard({ ...CUBE, volumeValid: false }))[1].rows[0]).toEqual(["Volume (cm³)", "not measurable, surface is open"]);
+    // No triangles: the spreads say so instead of zeros.
+    const empty = resultTables(standard({ ...CUBE, triangles: 0, edges: 0 }))[2].rows;
+    expect(empty.map((r) => r[1])).toEqual(Array(4).fill("not measurable, no triangles"));
   });
 
   it("copy and CSV name the part and the analysis, then every table", () => {

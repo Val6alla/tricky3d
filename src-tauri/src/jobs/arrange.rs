@@ -352,14 +352,36 @@ fn pack_parts(
 /// settings the window saved. Never sent anywhere.
 pub const PRESETS_FILE: &str = "packing-presets.json";
 
+/// The other presets files, by the group the window names (`settings_presets_load`): the file
+/// and what the messages call its contents. Each holds presets by scope (an analysis, a mesh
+/// tool), then by name, as the packing presets do by method.
+pub fn preset_file(group: &str) -> Option<(&'static str, &'static str)> {
+    match group {
+        "analysis" => Some(("analysis-presets.json", "analysis presets")),
+        "modify" => Some(("mesh-tool-presets.json", "mesh tool presets")),
+        _ => None,
+    }
+}
+
 /// `packing_presets_load`: the presets file in `dir`; empty before anything was saved there.
 pub fn load_presets(dir: &Path) -> Result<Map<String, Value>, String> {
-    let text = match std::fs::read_to_string(dir.join(PRESETS_FILE)) {
+    load_preset_file(dir, PRESETS_FILE, "packing presets")
+}
+
+/// `packing_presets_save`: see `save_preset_file`.
+pub fn save_presets(dir: &Path, presets: &Map<String, Value>) -> Result<(), String> {
+    save_preset_file(dir, PRESETS_FILE, "packing presets", presets)
+}
+
+/// The presets file `file` in `dir`; empty before anything was saved there. `what` names its
+/// contents in messages ("packing presets").
+pub fn load_preset_file(dir: &Path, file: &str, what: &str) -> Result<Map<String, Value>, String> {
+    let text = match std::fs::read_to_string(dir.join(file)) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
         Err(e) => {
             return Err(format!(
-                "Could not read your packing presets: {}.",
+                "Could not read your {what}: {}.",
                 formats::read_error(&e)
             ));
         }
@@ -367,22 +389,27 @@ pub fn load_presets(dir: &Path) -> Result<Map<String, Value>, String> {
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(all)) if all.values().all(Value::is_object) => Ok(all),
         _ => Err(format!(
-            "Could not read your packing presets: {PRESETS_FILE} in the settings folder is damaged."
+            "Could not read your {what}: {file} in the settings folder is damaged."
         )),
     }
 }
 
-/// `packing_presets_save`: writes the presets to `dir` (created when missing) through a temporary
-/// file renamed into place, so a crash never leaves half a file.
-pub fn save_presets(dir: &Path, presets: &Map<String, Value>) -> Result<(), String> {
-    let fail = |reason: String| format!("Could not save your packing presets: {reason}.");
+/// Writes the presets to `file` in `dir` (created when missing) through a temporary file renamed
+/// into place, so a crash never leaves half a file.
+pub fn save_preset_file(
+    dir: &Path,
+    file: &str,
+    what: &str,
+    presets: &Map<String, Value>,
+) -> Result<(), String> {
+    let fail = |reason: String| format!("Could not save your {what}: {reason}.");
     if !presets.values().all(Value::is_object) {
         return Err(fail("they arrived in the wrong form".into()));
     }
     let mut text = serde_json::to_string_pretty(presets).map_err(|e| fail(e.to_string()))?;
     text.push('\n');
     std::fs::create_dir_all(dir).map_err(|e| fail(formats::write_error(&e)))?;
-    write_text(&dir.join(PRESETS_FILE), &text).map_err(|e| fail(formats::write_error(&e)))
+    write_text(&dir.join(file), &text).map_err(|e| fail(formats::write_error(&e)))
 }
 
 #[cfg(test)]
@@ -409,5 +436,26 @@ mod tests {
         let mut bad = Map::new();
         bad.insert("x".into(), json!(3));
         assert!(save_presets(&dir, &bad).is_err());
+    }
+
+    #[test]
+    fn analysis_and_tool_presets_have_files_of_their_own() {
+        let dir = crate::test_dir::temp_dir("settings-presets");
+        let (file, what) = preset_file("analysis").unwrap();
+        assert_ne!(file, PRESETS_FILE);
+        assert_ne!(Some((file, what)), preset_file("modify"));
+        assert_eq!(preset_file("scripts"), None);
+        let mut presets = Map::new();
+        presets.insert("wall".into(), json!({"Thin": {"threshold": 0.8}}));
+        save_preset_file(&dir, file, what, &presets).unwrap();
+        assert_eq!(load_preset_file(&dir, file, what), Ok(presets));
+        // The packing presets are untouched.
+        assert_eq!(load_presets(&dir), Ok(Map::new()));
+        std::fs::write(dir.join(file), "[]").unwrap();
+        let err = load_preset_file(&dir, file, what).unwrap_err();
+        assert!(
+            err.starts_with("Could not read your analysis presets"),
+            "{err}"
+        );
     }
 }

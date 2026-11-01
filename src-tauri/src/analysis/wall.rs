@@ -2,7 +2,8 @@
 //! it (src/measure.rs pick_wall): straight in against the triangle's outward normal to where the ray
 //! first meets the surface again. Each triangle is sampled at its centre and three points towards
 //! its corners and keeps the thinnest. The acceptance test fails when more than the given share of
-//! the surface is thinner than the threshold; the fast mode stops as soon as that is certain.
+//! the surface is thinner than the threshold; the fast mode stops as soon as that is certain, and
+//! the simple mode at the first wall thinner than the threshold.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -24,6 +25,9 @@ pub struct WallSettings {
     pub acceptance: f64,
     /// Stop as soon as the test fails (a fast yes or no; the colours are then incomplete).
     pub stop_early: bool,
+    /// Stop at the first wall thinner than the threshold (projects saved before it have none).
+    #[serde(default)]
+    pub simple: bool,
 }
 
 /// `WallResult` in src/analysis/types.ts.
@@ -33,6 +37,11 @@ pub struct WallResult {
     pub threshold: f64,
     pub acceptance: f64,
     pub passed: bool,
+    /// False when the simple mode stopped at a thin wall before the test could tell: `passed` is
+    /// then false but the test is undecided.
+    pub decided: bool,
+    /// The simple mode stopped at the first thin wall.
+    pub stopped_at_thin: bool,
     /// Percent of the surface measured thinner than the threshold (of the whole surface; with an
     /// early stop, at least this much).
     pub thin_percent: f64,
@@ -143,11 +152,18 @@ pub fn wall_thickness(
     let mut unmeasured = 0u64;
     let mut done = 0;
     let mut stopped = false;
+    let mut stopped_at_thin = false;
     while done < n {
         control.check()?;
-        // Small batches in the fast mode, so it stops soon after the test fails.
-        let batch = if s.stop_early { BATCH / 16 } else { BATCH };
+        // Small batches in the fast and simple modes, so they stop soon after the test fails or
+        // the first thin wall.
+        let batch = if s.stop_early || s.simple {
+            BATCH / 16
+        } else {
+            BATCH
+        };
         let end = (done + batch * rayon::current_num_threads().max(1)).min(n);
+        let first = done;
         let found: Vec<Option<(f64, V3, V3)>> = (done..end)
             .into_par_iter()
             .map(|t| {
@@ -161,13 +177,15 @@ pub fn wall_thickness(
         if cancel.load(Ordering::Relaxed) {
             return Err(RepairError::Cancelled);
         }
+        let mut thin_seen = false;
         for (k, f) in found.into_iter().enumerate() {
-            let t = done + k;
+            let t = first + k;
             match f {
                 Some((d, from, to)) => {
                     thickness[t] = d as f32;
                     if d < s.threshold {
                         thin_area += areas[t];
+                        thin_seen = true;
                     }
                     if min.is_none_or(|(m, _, _)| d < m) {
                         min = Some((d, from, to));
@@ -183,6 +201,11 @@ pub fn wall_thickness(
             stopped = true;
             break;
         }
+        if s.simple && thin_seen && done < n {
+            stopped = true;
+            stopped_at_thin = true;
+            break;
+        }
     }
     let percent = if total_area > 0.0 {
         100.0 * thin_area / total_area
@@ -193,7 +216,9 @@ pub fn wall_thickness(
         result: WallResult {
             threshold: s.threshold,
             acceptance: s.acceptance,
-            passed: thin_area <= limit,
+            passed: thin_area <= limit && !stopped_at_thin,
+            decided: !stopped_at_thin || thin_area > limit,
+            stopped_at_thin,
             thin_percent: percent,
             thin_area,
             total_area,

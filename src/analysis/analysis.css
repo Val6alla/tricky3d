@@ -375,3 +375,21 @@
 .an-panel .an-slider-row > .dlg-label {
   grid-column: 1 / -1;
 }
+
+/* Collision detection › Move by: the step, then X−/X+, Y−/Y+, Z−/Z+ in a grid of pairs. */
+.an-move {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.an-move-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.an-move-buttons .dlg-btn {
+  min-width: 0;
+}

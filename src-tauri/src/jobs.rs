@@ -32,10 +32,13 @@ use crate::stats;
 
 mod analysis;
 mod arrange;
+mod modify;
 pub use analysis::{ANALYSIS_PROGRESS, AnalysisProgress, analyze_part};
 pub use arrange::{
-    ARRANGE_PROGRESS, ArrangeProgress, PRESETS_FILE, arrange, load_presets, save_presets,
+    ARRANGE_PROGRESS, ArrangeProgress, PRESETS_FILE, arrange, load_preset_file, load_presets,
+    preset_file, save_preset_file, save_presets,
 };
+pub use modify::{MODIFY_PROGRESS, ModifyProgress, modify_run};
 
 /// `import_mesh`: reads, welds and measures a file; returns the bundle described in src/io/ipc.ts.
 pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<Vec<u8>, String> {
