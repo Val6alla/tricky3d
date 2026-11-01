@@ -10,6 +10,7 @@ pub mod library;
 pub mod measure;
 pub mod mesh;
 pub mod migrate;
+pub mod modify;
 mod open_dialog;
 pub mod ops;
 mod power;
@@ -120,8 +121,11 @@ pub fn run() {
             commands::repair_cancel,
             commands::arrange,
             commands::analyze_part,
+            commands::modify_run,
             commands::packing_presets_load,
             commands::packing_presets_save,
+            commands::settings_presets_load,
+            commands::settings_presets_save,
             commands::repair_check,
             commands::repair_shells,
             commands::repair_cut_path,

@@ -89,6 +89,17 @@ export function scaleAbout([sx, sy, sz]: V3, pivot: V3 = [0, 0, 0]): number[] {
   return aboutPivot([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1], pivot);
 }
 
+/**
+ * Shear keeping `pivot` fixed: each point moves along the world axis `along` by `factor` times its distance from the
+ * pivot along the axis `by` (x' = x + factor · (z − pz) for along X, by Z). Volumes do not change.
+ */
+export function shearAbout(along: Axis, by: Axis, factor: number, pivot: V3 = [0, 0, 0]): number[] {
+  const l = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  // Column `by`, row `along` (column-major).
+  if (along !== by) l[by * 4 + along] = factor;
+  return aboutPivot(l, pivot);
+}
+
 /** Applies a world-space `delta` to each part (new matrix = delta × matrix), keyed by part id. */
 export function applyDelta(
   parts: readonly { id: string; matrix: readonly number[] }[],

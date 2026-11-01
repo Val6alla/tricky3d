@@ -459,3 +459,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Manage settings (src/dialogs/PresetRow.tsx): the preset list and its buttons on one line. */
+.arr-presets {
+  display: flex;
+  gap: 6px;
+}
+
+.arr-presets .dlg-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.arr-presets .dlg-btn {
+  flex: none;
+  min-width: 0;
+  white-space: nowrap;
+}

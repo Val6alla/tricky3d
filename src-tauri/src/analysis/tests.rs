@@ -637,10 +637,21 @@ fn a_tilted_face_counts_from_its_tilt_and_small_islands_are_filtered() {
 // Wall thickness
 
 fn wall(mesh: &Mesh, threshold: f64, acceptance: f64, stop_early: bool) -> super::wall::WallDetail {
+    wall_with(mesh, threshold, acceptance, stop_early, false)
+}
+
+fn wall_with(
+    mesh: &Mesh,
+    threshold: f64,
+    acceptance: f64,
+    stop_early: bool,
+    simple: bool,
+) -> super::wall::WallDetail {
     let s = super::wall::WallSettings {
         threshold,
         acceptance,
         stop_early,
+        simple,
     };
     silent(|c| super::wall::wall_thickness(&World::new(mesh, &IDENTITY), &s, c)).unwrap()
 }
@@ -722,6 +733,38 @@ fn the_fast_mode_stops_once_the_test_has_failed() {
         1.0,
         1e-6,
     );
+}
+
+#[test]
+fn the_simple_mode_stops_at_the_first_thin_wall() {
+    // A 50 x 50 plate, 1 mm thick at X < 25 and 4 mm elsewhere, finely refined: the first batch
+    // already holds a 1 mm wall.
+    let thin = make_box([0.0; 3], [25.0, 50.0, 1.0]);
+    let thick = make_box([25.0, 0.0, 0.0], [50.0, 50.0, 4.0]);
+    let plate = concat(&[&thin, &thick]).unwrap();
+    let (points, triangles) = super::compare::refine(&World::new(&plate, &IDENTITY), 300_000);
+    let fine = Mesh {
+        positions: points,
+        indices: triangles,
+    };
+    let full = wall_with(&fine, 2.0, 60.0, false, false);
+    assert!(full.result.complete && full.result.decided && full.result.passed);
+    assert!(!full.result.stopped_at_thin);
+    let simple = wall_with(&fine, 2.0, 60.0, false, true);
+    assert!(simple.result.stopped_at_thin && !simple.result.complete);
+    // One thin wall does not decide a test that allows 60 % thin surface.
+    assert!(!simple.result.decided && !simple.result.passed);
+    assert!(simple.result.min_thickness.unwrap() < 2.0);
+    assert!(
+        simple.thickness.iter().any(|d| d.is_nan()),
+        "it stopped early"
+    );
+    // With nothing allowed thin, the first thin wall fails the test.
+    let strict = wall_with(&fine, 2.0, 0.0, false, true);
+    assert!(strict.result.decided && !strict.result.passed);
+    // A part with no thin wall runs to the end and passes.
+    let ok = wall_with(&fine, 0.5, 0.0, false, true);
+    assert!(ok.result.complete && ok.result.decided && ok.result.passed);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -957,7 +1000,7 @@ fn a_ring_round_a_post_is_interlocked() {
 #[test]
 fn z_removability_of_a_cup_a_chain_and_a_trapped_ball() {
     let removable = |mesh: &Mesh| {
-        silent(|c| super::lift::removability(mesh, &World::new(mesh, &IDENTITY), c)).unwrap()
+        silent(|c| super::lift::removability(mesh, &World::new(mesh, &IDENTITY), 0.0, c)).unwrap()
     };
     // A cup upside down: walls and a lid that touch it (two shells, one body).
     let walls = extrude(
@@ -1004,4 +1047,35 @@ fn z_removability_of_a_cup_a_chain_and_a_trapped_ball() {
     }
     let (r, _) = removable(&concat(&[&outer, &cavity]).unwrap());
     assert_eq!((r.removable, r.bodies), (true, 1));
+}
+
+#[test]
+fn z_removability_keeps_the_minimum_distance() {
+    let removable = |mesh: &Mesh, d: f64| {
+        silent(|c| super::lift::removability(mesh, &World::new(mesh, &IDENTITY), d, c))
+            .unwrap()
+            .0
+    };
+    // Two 10 mm boxes side by side, 2 mm apart: free at any distance under 2 mm, trapped above.
+    let a = make_box([0.0; 3], [10.0; 3]);
+    let b = make_box([12.0, 0.0, 0.0], [22.0, 10.0, 10.0]);
+    let pair = concat(&[&a, &b]).unwrap();
+    assert!(removable(&pair, 0.0).removable);
+    assert!(removable(&pair, 1.9).removable);
+    let r = removable(&pair, 2.1);
+    assert_eq!((r.removable, r.trapped_bodies), (false, 2));
+    close("min distance", r.min_distance, 2.1, 0.0);
+    // A roof 5 mm above a block and 1 mm aside of it (seen from above): lifting the block passes
+    // 1 mm from the roof's edge, the roof lifts away freely.
+    let block = make_box([0.0; 3], [10.0, 10.0, 4.0]);
+    let roof = make_box([11.0, 0.0, 9.0], [20.0, 10.0, 10.0]);
+    let pair = concat(&[&block, &roof]).unwrap();
+    let r = removable(&pair, 0.5);
+    assert_eq!((r.removable, r.trapped_bodies), (true, 0));
+    let r = removable(&pair, 1.5);
+    assert_eq!((r.removable, r.trapped_bodies), (false, 1));
+    // The same roof 3 mm aside is clear at 1.5 mm: the corners' octagons reach at most
+    // 1.5 / cos(22.5°) = 1.62 mm.
+    let roof = make_box([13.0, 0.0, 9.0], [20.0, 10.0, 10.0]);
+    assert!(removable(&concat(&[&block, &roof]).unwrap(), 1.5).removable);
 }

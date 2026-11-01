@@ -199,8 +199,9 @@ pub fn generate(mesh: &Mesh, s: &ShellSettings, control: &mut Control) -> Repair
     })
 }
 
-/// The offset surface, facing out of the offset solid; None when the solid is empty.
-fn offset_surface(
+/// The offset surface, facing out of the offset solid; None when the solid is empty. Also Modify's
+/// Manifold remeshing (src/modify/remesh.rs).
+pub(crate) fn offset_surface(
     surface: &Surface,
     bounds: &Aabb,
     offset: Offset,

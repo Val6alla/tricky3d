@@ -103,6 +103,8 @@ import { closeCollisions, interlockingTest, openCollisions } from "./analysis/co
 import type { LabelKind } from "./label/types";
 import type { AlignHow, DuplicateMode } from "./arrange/types";
 import { openGenerateShell } from "./shell/session";
+import { invertParts, openManipulate } from "./modify/session";
+import { openMirror, openShear } from "./modify/transforms";
 import { alignParts, layFlatAuto, openDuplicate, openMinBox, openOrient, startLayFlat } from "./arrange/session";
 import { openPack, PACK_METHODS, type PackMethod } from "./arrange/pack";
 import { GROUP_ICONS, toolIcon } from "./measure/icons";
@@ -915,20 +917,24 @@ export const FEATURES: Feature[] = [
   ]),
   ...group("modify", "Mirror and scale", [
     { id: "modify.scale", label: "Scale", icon: Scale3d, status: "ready", run: scale, size: "large", outsideRepair: true, hint: "Resize the selected parts by a factor or to a size." },
-    { id: "modify.mirror", label: "Mirror", icon: ArrowLeftRight, status: "soon" },
-    { id: "modify.invert-normals", label: "Invert normals", icon: ArrowDownUp, status: "soon" },
+    { id: "modify.mirror", label: "Mirror", icon: ArrowLeftRight, status: "ready", run: openMirror, outsideRepair: true, hint: "Flip the selected parts across a plane in X, Y or Z." },
+    { id: "modify.invert-normals", label: "Invert", icon: ArrowDownUp, status: "ready", hint: "Turn a part inside out, or turn inside-out shells back." },
+    { id: "modify.invert-part", label: "Turn the part inside out", icon: ArrowDownUp, status: "ready", run: () => void invertParts("invert"), parent: "modify.invert-normals", hint: "Turn every triangle of the selected parts the other way." },
+    { id: "modify.invert-negative", label: "Turn inside-out shells back", icon: IterationCcw, status: "ready", run: () => void invertParts("invert-negative"), parent: "modify.invert-normals", hint: "Turn the closed shells of the selected parts whose volume is negative." },
     { id: "modify.convert-units", label: "Convert units", icon: Ruler, status: "soon" },
-    { id: "modify.shear", label: "Shear", icon: MoveDiagonal2, status: "soon" },
+    { id: "modify.shear", label: "Shear", icon: MoveDiagonal2, status: "ready", run: openShear, outsideRepair: true, hint: "Lean the selected parts: move points along one axis in proportion to another." },
   ]),
   ...group("modify", "Enhance", [
     { id: "modify.tessellation", label: "Tessellation", icon: Hexagon, status: "soon" },
-    { id: "modify.z-compensation", label: "Z-compensation", icon: ChevronsDownUp, status: "soon" },
-    { id: "modify.manipulate-mesh", label: "Manipulate mesh", icon: SplinePointer, status: "soon" },
-    { id: "modify.reduce-triangles", label: "Simplify mesh", icon: Minimize2, status: "soon", parent: "modify.manipulate-mesh" },
-    { id: "modify.smooth", label: "Smooth", icon: WavesHorizontal, status: "soon", parent: "modify.manipulate-mesh" },
-    { id: "modify.remesh", label: "Remesh", icon: LayoutGrid, status: "soon", parent: "modify.manipulate-mesh" },
-    { id: "modify.offset-surface", label: "Offset selected surface", icon: Expand, status: "soon", parent: "modify.manipulate-mesh" },
-    { id: "modify.extrude", label: "Extrude", icon: ArrowBigUp, status: "soon", parent: "modify.manipulate-mesh" },
+    { id: "modify.z-compensation", label: "Z-compensation", icon: ChevronsDownUp, status: "ready", run: () => openManipulate("zcomp"), hint: "Move the surfaces facing down up a little, to make up for a printer that cures too deep." },
+    { id: "modify.manipulate-mesh", label: "Manipulate mesh", icon: SplinePointer, status: "ready", hint: "Reduce, smooth, refine or remesh the triangles of the selected part, or move a selected surface." },
+    { id: "modify.reduce-triangles", label: "Reduce triangles", icon: Minimize2, status: "ready", run: () => openManipulate("reduce"), parent: "modify.manipulate-mesh", hint: "Use fewer, larger triangles within a deviation you set." },
+    { id: "modify.smooth", label: "Smooth", icon: WavesHorizontal, status: "ready", run: () => openManipulate("smooth"), parent: "modify.manipulate-mesh", hint: "Flatten rough surfaces without shrinking the part; sharp edges can stay sharp." },
+    { id: "modify.refine", label: "Refine", icon: Grid3x3, status: "ready", run: () => openManipulate("refine"), parent: "modify.manipulate-mesh", hint: "Split triangles until no edge is longer than a length you set." },
+    { id: "modify.remesh", label: "Remesh", icon: LayoutGrid, status: "ready", run: () => openManipulate("remesh"), parent: "modify.manipulate-mesh", hint: "Rebuild the surface with new, even triangles." },
+    { id: "modify.offset-surface", label: "Offset selected surface", icon: Expand, status: "ready", run: () => openManipulate("offset"), parent: "modify.manipulate-mesh", hint: "Move the selected triangles along their normals, with a smooth transition if you like. Opens repair mode to select them." },
+    { id: "modify.extrude", label: "Extrude", icon: ArrowBigUp, status: "ready", run: () => openManipulate("extrude"), parent: "modify.manipulate-mesh", hint: "Move a selected surface out or in, with new side walls or stretching the triangles round it. Opens repair mode to select it." },
+    { id: "modify.offset-holes", label: "Offset hole edges", icon: CircleFadingPlus, status: "ready", run: () => openManipulate("holes"), parent: "modify.manipulate-mesh", hint: "Grow a band of new triangles from each hole's edge, as far as you set." },
     { id: "modify.distort", label: "Drag points freely", icon: HandGrab, status: "soon", parent: "modify.manipulate-mesh" },
     { id: "modify.surface-pattern", label: "Surface pattern", icon: Grid2x2, status: "soon", parent: "modify.manipulate-mesh" },
     { id: "modify.texture-colour", label: "Texture and colour", icon: Palette, status: "soon" },
@@ -1106,9 +1112,9 @@ export const FEATURES: Feature[] = [
     { id: "repair.hide-triangles", label: "Hide selected triangles", icon: EyeOff, status: "ready", run: () => void hideTriangles(), parent: "repair.select-advanced", hint: "Hide the selected triangles, or show them all again." },
   ]),
   ...group("repair", "Refine mesh", [
-    { id: "repair.z-comp", label: "Z-comp", icon: ChevronsDownUp, status: "soon" },
-    { id: "repair.remesh", label: "Remesh", icon: LayoutGrid, status: "soon" },
-    { id: "repair.offset", label: "Offset", icon: Expand, status: "soon" },
+    { id: "repair.z-comp", label: "Z-comp", icon: ChevronsDownUp, status: "ready", run: () => openManipulate("zcomp"), hint: "Move the surfaces facing down up a little, to make up for a printer that cures too deep." },
+    { id: "repair.remesh", label: "Remesh", icon: LayoutGrid, status: "ready", run: () => openManipulate("remesh"), hint: "Rebuild the working copy, or the selected triangles, with new, even triangles." },
+    { id: "repair.offset", label: "Offset", icon: Expand, status: "ready", run: () => openManipulate("offset"), hint: "Move the selected triangles along their normals." },
     { id: "repair.join-contours", label: "Join contours", icon: Waypoints, status: "soon" },
     { id: "repair.close-freeform", label: "Close freeform holes", icon: CircleDashed, status: "soon" },
     { id: "repair.split-non-manifold", label: "Split non-manifold edges", icon: Unlink2, status: "ready", run: repairAction("split_non_manifold_edges"), hint: "Separate edges shared by more than two triangles." },
@@ -1126,7 +1132,7 @@ export const FEATURES: Feature[] = [
     { id: "repair.flip-selected", label: "Flip selected", icon: RefreshCcw, status: "ready", run: flipTriangles, needsTriangles: true, hint: "Turn the selected triangles to face the other way." },
     { id: "repair.move-nodes", label: "Move nodes", icon: Move, status: "ready", run: () => void moveNodes(), repairActive: editIs("move-nodes"), hint: "Drag a point of the surface; the triangles round it follow." },
     { id: "repair.cut-surfaces", label: "Cut surfaces", icon: PenLine, status: "ready", run: () => void cutSurfaces(), repairActive: editIs("cut"), hint: "Draw a line on the surface through clicked points and cut the surface open along it." },
-    { id: "repair.extrude", label: "Extrude surfaces", icon: ArrowBigUp, status: "soon" },
+    { id: "repair.extrude", label: "Extrude surfaces", icon: ArrowBigUp, status: "ready", run: () => openManipulate("extrude"), hint: "Move the selected surface out or in, with new side walls or stretching the triangles round it." },
     { id: "repair.extract", label: "Extract parts", icon: SquareArrowOutUpRight, status: "ready", hint: "Make a new part from the selected triangles." },
     { id: "repair.extract-copy", label: "Extract selected triangles as part", icon: SquareArrowOutUpRight, status: "ready", run: extractCopy, parent: "repair.extract", needsTriangles: true, hint: "Add the selected triangles as a new part and keep them here too." },
     { id: "repair.extract-separate", label: "Separate selection as part", icon: PackageOpen, status: "ready", run: extractSeparate, parent: "repair.extract", needsTriangles: true, hint: "Move the selected triangles out into a new part." },
@@ -1232,13 +1238,13 @@ export const FEATURES: Feature[] = [
     { id: "repair-ctx.hide-triangles", label: "Hide selected triangles", icon: EyeOff, status: "ready", run: () => void hideTriangles(), hint: "Hide the selected triangles, or show them all again." },
   ]),
   ...group("repair-context", "Mesh", [
-    { id: "repair-ctx.reduce", label: "Reduce triangles", icon: Minimize2, status: "soon" },
+    { id: "repair-ctx.reduce", label: "Reduce triangles", icon: Minimize2, status: "ready", run: () => openManipulate("reduce"), hint: "Open Manipulate mesh on the working copy: reduce, smooth or refine the selected triangles or all of them." },
     { id: "repair-ctx.refine", label: "Refine triangle mesh", icon: Grid3x3, status: "ready", run: () => void refineTriangles(), hint: "Split each selected triangle, or every triangle, into four." },
     { id: "repair-ctx.insert-point", label: "Add point", icon: Plus, status: "ready", run: () => void addPoint(), needsTriangles: true, hint: "Add a point in the middle of each selected triangle." },
     { id: "repair-ctx.smooth", label: "Smooth triangles", icon: WavesHorizontal, status: "ready", run: repairAction("smooth_triangles"), hint: "Move each point inside the selection, or of the whole part, to the average of its neighbours." },
-    { id: "repair-ctx.z-compensation", label: "Z-compensation", icon: ChevronsDownUp, status: "soon" },
-    { id: "repair-ctx.remesh", label: "Remesh", icon: LayoutGrid, status: "soon" },
-    { id: "repair-ctx.offset", label: "Offset selection", icon: Expand, status: "soon" },
+    { id: "repair-ctx.z-compensation", label: "Z-compensation", icon: ChevronsDownUp, status: "ready", run: () => openManipulate("zcomp"), hint: "Move the surfaces facing down up a little, to make up for a printer that cures too deep." },
+    { id: "repair-ctx.remesh", label: "Remesh", icon: LayoutGrid, status: "ready", run: () => openManipulate("remesh"), hint: "Rebuild the working copy, or the selected triangles, with new, even triangles." },
+    { id: "repair-ctx.offset", label: "Offset selection", icon: Expand, status: "ready", run: () => openManipulate("offset"), hint: "Move the selected triangles along their normals." },
   ]),
   ...group("repair-context", "Holes", [
     { id: "repair-ctx.close-trivial", label: "Close trivial holes", icon: CircleSmall, status: "ready", run: repairAction("close_trivial_holes"), hint: "Fill holes bordered by 3 edges, or by 4 edges that are nearly flat." },
@@ -1247,6 +1253,7 @@ export const FEATURES: Feature[] = [
     { id: "repair-ctx.close-curved", label: "Close holes along the curvature", icon: Spline, status: "ready", run: () => void closeHolesCurved(), hint: "Fill the holes with patches that carry on the curve of the surface round them, flat holes too." },
     { id: "repair-ctx.fill-three-edge", label: "Fill three-edge holes", icon: TriangleRight, status: "ready", run: () => void addTriangle(), hint: "Fill each hole bordered by three edges with one triangle; with none, close the trivial holes." },
     { id: "repair-ctx.grow-band", label: "Grow a band from a hole edge", icon: CircleFadingPlus, status: "ready", run: () => void offsetHoleEdge(), hint: "Add a band of triangles along an open edge." },
+    { id: "repair-ctx.offset-holes", label: "Offset hole edges…", icon: CircleFadingPlus, status: "ready", run: () => openManipulate("holes"), hint: "Grow a band of new triangles from each hole's edge, as far as you set." },
     { id: "repair-ctx.bridge-gap", label: "Bridge a gap", icon: Bridge, status: "soon" },
     { id: "repair-ctx.stitch", label: "Stitch triangles", icon: Link, status: "ready", run: repairAction("stitch_triangles"), hint: "Join open edges that lie within 0.010 mm, closing gaps and cracks." },
   ]),

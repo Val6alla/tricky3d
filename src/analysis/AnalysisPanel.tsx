@@ -17,7 +17,7 @@ const NOTES: Partial<Record<string, string>> = {
   wall: "Measured straight in from each triangle against its outward normal, as Wall at a point measures. The pink line marks the thinnest wall.",
   compare: "Each point of one surface to the nearest point of the other: above is outside the other part, below inside it.",
   removability:
-    "Each body of the part (its shells, joined where they touch, with any cavity inside) is lifted straight up alone. A body that would hit another is trapped.",
+    "Each body of the part (its shells, joined where they touch, with any cavity inside) is lifted straight up alone. A body that would hit another, or pass closer to one than the minimum distance, is trapped.",
 };
 
 function Tables({ analysis }: { analysis: PartAnalysis }) {
@@ -61,9 +61,15 @@ function WallSummary({ analysis }: { analysis: Extract<PartAnalysis, { kind: "wa
   return (
     <>
       <p className={`an-verdict ${r.passed ? "is-pass" : "is-fail"}`} role="status">
-        {r.passed ? "Test passed" : "Test failed"}
+        {r.passed ? "Test passed" : r.decided === false ? "Thin wall found" : "Test failed"}
       </p>
-      {!r.complete && <p className="an-stale">Stopped as soon as the test failed, so the colours and the share are incomplete.</p>}
+      {!r.complete && (
+        <p className="an-stale">
+          {r.stoppedAtThin
+            ? "Simple mode stopped at the first wall thinner than the threshold, so the results are incomplete."
+            : "Stopped as soon as the test failed, so the colours and the share are incomplete."}
+        </p>
+      )}
       {s.colors !== "red-green" && (
         <div className="an-gradient" aria-label="Colours in the view">
           <span className="an-gradient-bar" style={{ background: `linear-gradient(to right, ${css(0)}, ${css(s.threshold)}, ${css(2 * s.threshold)})` }} />

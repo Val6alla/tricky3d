@@ -253,9 +253,18 @@ pub fn analyze_part(
         }
         "removability" => {
             let part = one()?;
+            // Projects and windows before the minimum distance send no settings: 0.
+            let min_distance = match meta.get("settings") {
+                None | Some(Value::Null) => 0.0,
+                Some(s) => s
+                    .get("minDistance")
+                    .and_then(Value::as_f64)
+                    .filter(|d| (0.0..=MAX_MIN_DISTANCE).contains(d))
+                    .ok_or_else(damaged)?,
+            };
             let world = World::new(&part.mesh, &part.matrix);
             let (found, classes) =
-                removability(&part.mesh, &world, &mut control).map_err(run_error)?;
+                removability(&part.mesh, &world, min_distance, &mut control).map_err(run_error)?;
             drawing.classes = Some(classes.iter().map(|&c| c as u32).collect());
             json!(found)
         }

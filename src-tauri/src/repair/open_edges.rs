@@ -151,6 +151,19 @@ pub fn add_triangle(
 /// length of its two loop edges away, out across the loop in the plane of the triangle beside it,
 /// and each loop edge two triangles to the new points, facing as that triangle faces.
 pub fn grow_band(mesh: &Mesh, selection: &[u32], control: &mut Control) -> RepairResult<Outcome> {
+    grow_band_by(mesh, selection, None, control)
+}
+
+/// Grow a band with each corner's new point `width` out (Modify's Offset hole edges), measured at
+/// right angles to the loop's edges: at a corner the point goes out along the bisector, further by
+/// 1 / cos(half the turn), at most twice the width. None: a quarter of the mean length of the
+/// corner's two loop edges, as `grow_band`.
+pub fn grow_band_by(
+    mesh: &Mesh,
+    selection: &[u32],
+    width: Option<f64>,
+    control: &mut Control,
+) -> RepairResult<Outcome> {
     control.check()?;
     let edges = Edges::new(mesh);
     let sides = open_sides(mesh, &edges, selection);
@@ -196,7 +209,11 @@ pub fn grow_band(mesh: &Mesh, selection: &[u32], control: &mut Control) -> Repai
             }
             let span =
                 (hypot(sub(at(prev.b), at(prev.a))) + hypot(sub(at(side.b), at(side.a)))) / 2.0;
-            let dist = span * 0.25;
+            let dist = match width {
+                // |a + b| / 2 is the cosine of half the turn between the two edges' directions.
+                Some(w) => w / (len / 2.0).max(0.5),
+                None => span * 0.25,
+            };
             let p = at(side.a);
             ids.push(base + (points.len() / 3) as u32);
             for k in 0..3 {

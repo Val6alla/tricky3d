@@ -111,6 +111,8 @@ export interface WallSettings {
   /** Percent of the surface that may be thinner before the test fails. */
   acceptance: number;
   stopEarly: boolean;
+  /** Stop at the first wall thinner than the threshold. */
+  simple: boolean;
   colors: WallColors;
   colouredPart: boolean;
 }
@@ -120,6 +122,10 @@ export interface WallResult {
   threshold: number;
   acceptance: number;
   passed: boolean;
+  /** False when the simple mode stopped at a thin wall before the test could tell (projects saved before it: absent). */
+  decided?: boolean;
+  /** The simple mode stopped at the first thin wall. */
+  stoppedAtThin?: boolean;
   thinPercent: number;
   thinArea: number;
   totalArea: number;
@@ -167,8 +173,18 @@ export interface CompareResult {
   fit: CompareFit | null;
 }
 
+/** Rust `RemovabilitySettings`. */
+export interface RemovabilitySettings {
+  /** mm: a body lifted out must keep at least this far from the other bodies; 0: it only must not hit them. */
+  minDistance: number;
+}
+
+export const DEFAULT_REMOVABILITY: RemovabilitySettings = { minDistance: 0 };
+
 /** Rust `Removability`: the bodies of one part lifted straight up, each alone. */
 export interface RemovabilityResult {
+  /** mm, the minimum distance it ran with (projects saved before it: absent, which was 0). */
+  minDistance?: number;
   removable: boolean;
   bodies: number;
   trappedBodies: number;
@@ -227,9 +243,9 @@ export type PartAnalysis =
   | (Base & { kind: "skin"; settings: SkinSettings; result: SkinResult })
   | (Base & { kind: "wall"; settings: WallSettings; result: WallResult })
   | (Base & { kind: "compare"; settings: CompareSettings; result: CompareResult; probes?: Probe[] })
-  | (Base & { kind: "removability"; settings: null; result: RemovabilityResult });
+  | (Base & { kind: "removability"; settings: RemovabilitySettings | null; result: RemovabilityResult });
 
-export type AnalysisSettings = SupportSettings | SkinSettings | WallSettings | CompareSettings | null;
+export type AnalysisSettings = SupportSettings | SkinSettings | WallSettings | CompareSettings | RemovabilitySettings | null;
 
 /** `AnalysisProgress` in src-tauri/src/jobs/analysis.rs. */
 export interface AnalysisProgress {
@@ -251,7 +267,7 @@ export const DEFAULT_SKIN: SkinSettings = {
 /** Highest threshold the up- and downskin angles take (src-tauri/src/analysis/skin.rs MAX_ANGLE). */
 export const MAX_SKIN_ANGLE = 89.9;
 
-export const DEFAULT_WALL: WallSettings = { threshold: 0.4, acceptance: 5, stopEarly: false, colors: "red-green", colouredPart: false };
+export const DEFAULT_WALL: WallSettings = { threshold: 0.4, acceptance: 5, stopEarly: false, simple: false, colors: "red-green", colouredPart: false };
 
 /** How the view shows a comparison: the panel's controls, kept while the analysis is on show. */
 export interface CompareView {

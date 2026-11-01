@@ -59,8 +59,8 @@ describe("RibbonButton", () => {
   });
 
   it("shows a Soon entry with its pill and not as blocked, and a main command outside repair mode as ready", () => {
-    const soon = renderToStaticMarkup(<RibbonButton f={feature("repair.z-comp")} />);
-    expect(buttonTag(soon, "Z-comp")).toContain('class="rb-btn rb-small is-soon"');
+    const soon = renderToStaticMarkup(<RibbonButton f={feature("repair.join-contours")} />);
+    expect(buttonTag(soon, "Join contours")).toContain('class="rb-btn rb-small is-soon"');
     expect(soon).toContain('<span class="soon-pill rb-pill">Soon</span>');
     const cut = buttonTag(renderToStaticMarkup(<RibbonButton f={feature("modify.cut")} />), "Cut");
     expect(cut).toContain('class="rb-btn rb-large"');

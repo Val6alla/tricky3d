@@ -26,6 +26,8 @@ export interface CollisionSettings {
   checkHidden: boolean;
   /** mm: parts nearer than this count as too close; 0 checks only for collisions. */
   minDistance: number;
+  /** mm: how far Move by moves the selected parts per click, 0 to 1000. */
+  moveStep: number;
 }
 
 /** One pair found: by part id. */
@@ -50,7 +52,10 @@ export interface CollisionState {
 
 const SETTINGS_KEY = "tricky3d.collisionSettings";
 
-export const DEFAULT_COLLISIONS: CollisionSettings = { autoUpdate: true, whileDragging: false, display: true, checkHidden: true, minDistance: 0 };
+export const DEFAULT_COLLISIONS: CollisionSettings = { autoUpdate: true, whileDragging: false, display: true, checkHidden: true, minDistance: 0, moveStep: 1 };
+
+/** Largest Move by step, mm. */
+export const MAX_MOVE_STEP = 1000;
 
 function loadSettings(): CollisionSettings {
   try {
@@ -61,6 +66,7 @@ function loadSettings(): CollisionSettings {
       if (typeof raw[key] === typeof out[key]) (out as Record<string, unknown>)[key] = raw[key];
     }
     out.minDistance = Math.min(100, Math.max(0, Number.isFinite(out.minDistance) ? out.minDistance : 0));
+    out.moveStep = Math.min(MAX_MOVE_STEP, Math.max(0, Number.isFinite(out.moveStep) ? out.moveStep : DEFAULT_COLLISIONS.moveStep));
     return out;
   } catch {
     return DEFAULT_COLLISIONS;
@@ -108,6 +114,32 @@ export function setCollisionSettings(patch: Partial<CollisionSettings>): void {
   useCollisions.setState({ settings });
   // A new minimum distance or another set of parts needs a new check.
   if (patch.minDistance !== undefined || patch.checkHidden !== undefined) void updateCollisions();
+}
+
+/**
+ * Move by: moves the selected parts (locked ones stay) by the step along one axis, as one undo step. Auto-update then
+ * checks again once the move settles. Returns how many parts moved.
+ */
+export function nudgeSelected(axis: 0 | 1 | 2, sign: 1 | -1): number {
+  const step = useCollisions.getState().settings.moveStep;
+  const chosen = new Set(s().selection);
+  const parts = s().parts.filter((p) => chosen.has(p.id) && !p.locked);
+  if (parts.length === 0) {
+    toast(s().parts.some((p) => chosen.has(p.id)) ? "Locked parts do not move." : "Select the parts to move first.");
+    return 0;
+  }
+  if (!(step > 0)) {
+    toast("Enter a step greater than 0 mm.");
+    return 0;
+  }
+  const matrices = new Map<string, number[]>();
+  for (const p of parts) {
+    const m = [...p.matrix];
+    m[12 + axis] += sign * step;
+    matrices.set(p.id, m);
+  }
+  s().setPartMatrices(matrices, `Move by ${sign > 0 ? "+" : "−"}${"XYZ"[axis]}`);
+  return parts.length;
 }
 
 /** Runs the check now (Update), replacing a check still running. */

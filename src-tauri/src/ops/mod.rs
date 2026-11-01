@@ -1,6 +1,7 @@
 //! Mesh operations behind Split shells, Merge parts, Cut and Generate shell. They work on world-space
 //! meshes (the jobs bake each part's matrix first) and never touch Tauri types.
 
+pub(crate) mod collapse;
 pub mod cut;
 pub mod shell;
 pub mod shells;

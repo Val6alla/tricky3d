@@ -59,7 +59,7 @@ export const useAnalysis = create<AnalysisState>(() => ({ busy: null, shown: nul
 const s = () => useStore.getState();
 
 /** The kinds that ask for settings before they run. */
-const HAS_SETTINGS: ReadonlySet<AnalysisKind> = new Set(["support", "skin", "wall", "compare"]);
+const HAS_SETTINGS: ReadonlySet<AnalysisKind> = new Set(["support", "skin", "wall", "compare", "removability"]);
 
 export const ONE_PART = "Analyses run on one part at a time. Select just one part.";
 export const PICK_PART = "Select the part to analyze first.";

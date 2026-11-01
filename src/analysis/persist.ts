@@ -115,7 +115,12 @@ function validResult(kind: unknown, r: unknown, settings: unknown): boolean {
       );
     }
     case "removability":
-      return isBool(r.removable) && hasNums(r, ["bodies", "trappedBodies", "trappedArea"]);
+      return (
+        isBool(r.removable) &&
+        hasNums(r, ["bodies", "trappedBodies", "trappedArea"]) &&
+        (r.minDistance === undefined || isNum(r.minDistance)) &&
+        (settings === null || settings === undefined || (isObj(settings) && isNum(settings.minDistance)))
+      );
     case "wall": {
       const s = settings;
       const point = (v: unknown) => v === null || isVec3(v);
@@ -129,6 +134,9 @@ function validResult(kind: unknown, r: unknown, settings: unknown): boolean {
         isObj(s) &&
         hasNums(s, ["threshold", "acceptance"]) &&
         isBool(s.stopEarly) &&
+        (s.simple === undefined || isBool(s.simple)) &&
+        (r.decided === undefined || isBool(r.decided)) &&
+        (r.stoppedAtThin === undefined || isBool(r.stoppedAtThin)) &&
         isBool(s.colouredPart) &&
         (s.colors === "red-green" || s.colors === "red-green-gradient" || s.colors === "blue-yellow-gradient")
       );

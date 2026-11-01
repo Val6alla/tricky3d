@@ -1,7 +1,7 @@
 // Pack: the methods, their fields as the dialog holds them, checked into the settings Rust takes
 // (src-tauri/src/arrange/pack.rs Method), the presets kept in the app's settings folder, and the run itself: the parts
 // packed, Rust's answer applied as one undo step, and those that do not fit named.
-import { invoke } from "@tauri-apps/api/core";
+import { presetsWith, presetsWithout, type PresetMap, type PresetValues } from "../dialogs/presets";
 import { loadSetting, saveSetting, useStore, type Part } from "../store";
 import { parseField, transformTargets } from "../transformTools";
 import { toast, useUi } from "../ui";
@@ -250,24 +250,22 @@ export async function runPack(fields: PackFields): Promise<{ packed: number; asi
 // ---------------------------------------------------------------------------------------------
 // Presets: by method, then by name, in the app's settings folder (src-tauri/src/jobs/arrange.rs PRESETS_FILE).
 
-export type Presets = Record<string, Record<string, Partial<PackFields>>>;
+// The row itself is src/dialogs/PresetRow.tsx, shared with the analyses and the mesh tools.
 
-export function loadPresets(): Promise<Presets> {
-  return invoke<Presets>("packing_presets_load");
-}
+export type Presets = PresetMap;
 
-export function savePresets(presets: Presets): Promise<void> {
-  return invoke("packing_presets_save", { presets });
+/** What a packing preset keeps: the fields without the method, which is its scope. */
+export function presetValues(fields: PackFields): PresetValues {
+  const { method: _method, ...rest } = fields;
+  return rest;
 }
 
 /** `presets` with the fields saved as `name` for the fields' method (replacing one of that name). */
 export function withPreset(presets: Presets, name: string, fields: PackFields): Presets {
-  const { method, ...rest } = fields;
-  return { ...presets, [method]: { ...(presets[method] ?? {}), [name]: rest } };
+  return presetsWith(presets, fields.method, name, presetValues(fields));
 }
 
 /** `presets` without `name` for `method`. */
 export function withoutPreset(presets: Presets, method: PackMethod, name: string): Presets {
-  const { [name]: _gone, ...left } = presets[method] ?? {};
-  return { ...presets, [method]: left };
+  return presetsWithout(presets, method, name);
 }

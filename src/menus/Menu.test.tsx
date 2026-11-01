@@ -38,7 +38,7 @@ describe("MenuItem", () => {
     expect(html).toContain('class="menu-item"');
     expect(html).not.toContain("aria-disabled");
     expect(html).toContain('title="Close all holes — Fill every hole."');
-    const soon = item("repair-ctx.remesh");
+    const soon = item("repair-ctx.bridge-gap");
     expect(soon).toContain('class="menu-item is-soon"');
     expect(soon).toContain('<span class="soon-pill">Soon</span>');
     expect(soon).not.toContain("aria-disabled");

@@ -1,11 +1,15 @@
 // The settings of the analyses that have some: Up- and downskins (angles, minimum component size, filter small
-// triangles) and Support volume (threshold angle). Each opens on the settings used last; OK runs the analysis.
+// triangles), Support volume (threshold angle), Wall thickness, Mesh compare and Z-removability (minimum distance).
+// Each opens on the settings used last, with Manage settings to save and load presets; OK runs the analysis.
 import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "../dialogs/Dialog";
+import { PresetRow } from "../dialogs/PresetRow";
+import { ANALYSIS_PRESETS, fitPreset } from "../dialogs/presets";
 import { loadSetting, saveSetting, useStore } from "../store";
 import "./analysis.css";
 import { runPartAnalysis } from "./session";
 import {
+  DEFAULT_REMOVABILITY,
   DEFAULT_SKIN,
   DEFAULT_SUPPORT,
   DEFAULT_WALL,
@@ -14,6 +18,7 @@ import {
   type AnalysisKind,
   type CompareDirection,
   type CompareSettings,
+  type RemovabilitySettings,
   type SkinSettings,
   type SupportSettings,
   type WallColors,
@@ -115,7 +120,20 @@ function Box({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Manage settings for the analysis `kind`: the presets of that kind, loaded over `defaults`'s keys only. */
+function Presets<T extends object>({ kind, values, defaults, onLoad }: { kind: string; values: T; defaults: T; onLoad(v: Partial<T>): void }) {
+  return (
+    <PresetRow
+      store={ANALYSIS_PRESETS}
+      scope={kind}
+      values={values as Record<string, unknown>}
+      onLoad={(saved) => onLoad(fitPreset(saved, defaults))}
+    />
+  );
+}
+
 export function AnalysisDialog({ kind, partId, otherId, onClose }: { kind: AnalysisKind; partId: string; otherId?: string; onClose(): void }) {
+  if (kind === "removability") return <RemovabilityDialog partId={partId} onClose={onClose} />;
   if (kind === "skin") return <SkinDialog partId={partId} onClose={onClose} />;
   if (kind === "support") return <SupportDialog partId={partId} onClose={onClose} />;
   if (kind === "wall") return <WallDialog partId={partId} onClose={onClose} />;
@@ -141,6 +159,7 @@ function WallDialog({ partId, onClose }: { partId: string; onClose(): void }) {
   }
   return (
     <Dialog title={KIND_LABELS.wall} onClose={onClose} onOk={run} okDisabled={bad} className="dlg-analysis">
+      <Presets kind="wall" values={s} defaults={DEFAULT_WALL} onLoad={edit} />
       <Box title="Wall thickness analysis">
         <SliderNumber label="Wall thickness threshold" value={s.threshold} min={0} max={1000} sliderMax={5} step={0.05} unit="mm" onChange={(v) => edit({ threshold: v })} />
       </Box>
@@ -170,6 +189,13 @@ function WallDialog({ partId, onClose }: { partId: string; onClose(): void }) {
             <span className="dlg-help">A quick yes or no for big parts. The colours and numbers are then incomplete.</span>
           </span>
         </label>
+        <label className="dlg-check">
+          <input type="checkbox" checked={s.simple} onChange={(e) => edit({ simple: e.target.checked })} />
+          <span>
+            <span className="dlg-check-label">Simple mode</span>
+            <span className="dlg-help">Stop at the first wall thinner than the threshold. Quickest, and the results are incomplete.</span>
+          </span>
+        </label>
       </Box>
       <Box title="When closing">
         <label className="dlg-check">
@@ -191,11 +217,13 @@ const DIRECTIONS: { value: CompareDirection; label: string }[] = [
   { value: "comparison-to-reference", label: "Comparison → reference" },
 ];
 
+const COMPARE_OPTIONS: { direction: CompareDirection; align: boolean } = { direction: "both", align: false };
+
 function CompareDialog({ partId, otherId, onClose }: { partId: string; otherId?: string; onClose(): void }) {
   const parts = useStore((st) => st.parts);
   const [reference, setReference] = useState(partId);
   const [comparison, setComparison] = useState(otherId ?? "");
-  const [options, setOptions] = useState(() => lastSettings("compare-options", { direction: "both" as CompareDirection, align: false }));
+  const [options, setOptions] = useState(() => lastSettings("compare-options", COMPARE_OPTIONS));
   const referencePart = parts.find((p) => p.id === reference);
   const comparisonPart = parts.find((p) => p.id === comparison && p.id !== reference);
   const listId = useId();
@@ -215,6 +243,7 @@ function CompareDialog({ partId, otherId, onClose }: { partId: string; otherId?:
   }
   return (
     <Dialog title="Compare meshes" onClose={onClose} onOk={run} okDisabled={!comparisonPart || !referencePart} className="dlg-analysis">
+      <Presets kind="compare" values={options} defaults={COMPARE_OPTIONS} onLoad={(v) => setOptions((o) => ({ ...o, ...v }))} />
       <Box title="Meshes">
         <div className="an-slider-row an-select-row">
           <span className="dlg-label">Reference</span>
@@ -293,6 +322,7 @@ function SkinDialog({ partId, onClose }: { partId: string; onClose(): void }) {
   }
   return (
     <Dialog title={KIND_LABELS.skin} onClose={onClose} onOk={run} okDisabled={nothing} className="dlg-analysis">
+      <Presets kind="skin" values={s} defaults={DEFAULT_SKIN} onLoad={edit} />
       <Box title="Angles">
         <label className="dlg-check">
           <input type="checkbox" checked={s.upskins} onChange={(e) => edit({ upskins: e.target.checked })} />
@@ -348,11 +378,43 @@ function SupportDialog({ partId, onClose }: { partId: string; onClose(): void })
   }
   return (
     <Dialog title={KIND_LABELS.support} onClose={onClose} onOk={run} className="dlg-analysis">
+      <Presets kind="support" values={s} defaults={DEFAULT_SUPPORT} onLoad={(v) => setS((old) => ({ ...old, ...v }))} />
       <Box title="Support definition">
         <SliderNumber label="Threshold angle" value={s.angle} min={0} max={90} step={0.5} unit="°" onChange={(angle) => setS({ angle })} />
         <p className="dlg-note">
           Surfaces facing down and tilted against the platform by at most this angle need support. The result is an estimate: solid
           blocks from those surfaces straight down to the platform.
+        </p>
+      </Box>
+    </Dialog>
+  );
+}
+
+/** Z-removability: the minimum distance a body must keep from the others while it is lifted out; Start runs it. */
+function RemovabilityDialog({ partId, onClose }: { partId: string; onClose(): void }) {
+  const [s, setS] = useState<RemovabilitySettings>(() => lastSettings("removability", DEFAULT_REMOVABILITY));
+  function run() {
+    rememberSettings("removability", s);
+    onClose();
+    void runPartAnalysis("removability", partId, s);
+  }
+  return (
+    <Dialog title={KIND_LABELS.removability} onClose={onClose} onOk={run} okLabel="Start" className="dlg-analysis">
+      <Presets kind="removability" values={s} defaults={DEFAULT_REMOVABILITY} onLoad={(v) => setS((old) => ({ ...old, ...v }))} />
+      <Box title="Settings">
+        <SliderNumber
+          label="Minimum distance between items"
+          value={s.minDistance}
+          min={0}
+          max={100}
+          sliderMax={5}
+          step={0.05}
+          unit="mm"
+          onChange={(minDistance) => setS({ minDistance })}
+        />
+        <p className="dlg-note">
+          Each body of the part is lifted straight up alone. It counts as trapped when it would hit another body, or pass closer to one
+          than this distance. At 0 only a hit counts.
         </p>
       </Box>
     </Dialog>

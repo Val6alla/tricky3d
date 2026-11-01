@@ -1,28 +1,14 @@
 // Home › Pack and Arrange › Packing: one dialog, the method chosen at the top, then the reference's layout for that
 // method: Manage settings (presets), Performance, the method's options in its boxes, and Pack platform. The run shows
 // its progress and Cancel in the busy box (src/arrange/ArrangeBusy.tsx); Cancel leaves the project as it was.
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "../dialogs/Dialog";
+import { PresetRow } from "../dialogs/PresetRow";
+import { PACKING_PRESETS } from "../dialogs/presets";
 import "../dialogs/transform.css";
-import { errorMessage } from "../io/files";
 import { useStore } from "../store";
-import { toast } from "../ui";
 import "./arrange.css";
-import {
-  checkPack,
-  loadPack,
-  loadPresets,
-  PACK_METHODS,
-  pickFields,
-  runPack,
-  savePresets,
-  withoutPreset,
-  withPreset,
-  Z_STEPS,
-  type PackFields,
-  type PackMethod,
-  type Presets,
-} from "./pack";
+import { checkPack, loadPack, PACK_METHODS, pickFields, presetValues, runPack, Z_STEPS, type PackFields, type PackMethod } from "./pack";
 
 export function PackDialog({ method, onClose }: { method: PackMethod; onClose(): void }) {
   const platformHeight = useStore((s) => s.platform[2]);
@@ -39,7 +25,12 @@ export function PackDialog({ method, onClose }: { method: PackMethod; onClose():
   return (
     <Dialog title="Pack parts" onClose={onClose} onOk={pack} okLabel="Pack platform" okDisabled={!check.settings} className="dlg-arrange dlg-pack">
       <MethodPicker value={fields.method} onChange={(m) => setFields(loadPack(m))} />
-      <PresetRow fields={fields} onLoad={(saved) => setFields((f) => ({ ...f, ...pickFields(saved) }))} />
+      <PresetRow
+        store={PACKING_PRESETS}
+        scope={fields.method}
+        values={presetValues(fields)}
+        onLoad={(saved) => setFields((f) => ({ ...f, ...pickFields(saved as Partial<PackFields>) }))}
+      />
       <PackForm fields={fields} edit={edit} />
       {check.problem && (
         <p className="dlg-error" role="alert">
@@ -65,123 +56,6 @@ function MethodPicker({ value, onChange }: { value: PackMethod; onChange(m: Pack
         ))}
       </select>
     </div>
-  );
-}
-
-/** Manage settings: pick a saved preset to load it; save the fields as a new preset or over the picked one; delete it. */
-function PresetRow({ fields, onLoad }: { fields: PackFields; onLoad(saved: Partial<PackFields>): void }) {
-  const [presets, setPresets] = useState<Presets | null>(null);
-  const [picked, setPicked] = useState("");
-  const [naming, setNaming] = useState<string | null>(null);
-  const id = useId();
-  const mine = presets?.[fields.method] ?? {};
-  const names = Object.keys(mine).sort((a, b) => a.localeCompare(b));
-
-  useEffect(() => {
-    let live = true;
-    loadPresets()
-      .then((p) => live && setPresets(p))
-      .catch((err: unknown) => {
-        if (!live) return;
-        setPresets({});
-        toast(errorMessage(err, "Could not read your packing presets"), "error");
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-  // Another method has other presets.
-  useEffect(() => setPicked(""), [fields.method]);
-
-  async function store(next: Presets, pick: string) {
-    try {
-      await savePresets(next);
-      setPresets(next);
-      setPicked(pick);
-    } catch (err) {
-      toast(errorMessage(err, "Could not save your packing presets"), "error");
-    }
-  }
-
-  function addPreset() {
-    const name = (naming ?? "").trim();
-    if (!name || !presets) return;
-    setNaming(null);
-    void store(withPreset(presets, name, fields), name);
-  }
-
-  return (
-    <section className="dlg-section" aria-label="Manage settings">
-      <h3 className="dlg-section-title">Manage settings</h3>
-      {naming === null ? (
-        <div className="arr-presets">
-          <select
-            id={id}
-            aria-label="Preset"
-            className="dlg-input dlg-select"
-            value={picked}
-            disabled={!presets}
-            onChange={(e) => {
-              setPicked(e.target.value);
-              if (e.target.value && mine[e.target.value]) onLoad(mine[e.target.value]);
-            }}
-          >
-            <option value="">New setting</option>
-            {names.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="dlg-btn" disabled={!presets} onClick={() => setNaming("")} title="Save these settings as a new preset.">
-            Save as…
-          </button>
-          <button
-            type="button"
-            className="dlg-btn"
-            disabled={!presets || !picked}
-            onClick={() => presets && void store(withPreset(presets, picked, fields), picked)}
-            title="Save these settings over the picked preset."
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            className="dlg-btn"
-            disabled={!presets || !picked}
-            onClick={() => presets && void store(withoutPreset(presets, fields.method, picked), "")}
-            title="Delete the picked preset."
-          >
-            Delete
-          </button>
-        </div>
-      ) : (
-        <div className="arr-presets">
-          <input
-            aria-label="Preset name"
-            className="dlg-input"
-            type="text"
-            maxLength={80}
-            placeholder="Name of the preset"
-            value={naming}
-            onChange={(e) => setNaming(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                e.stopPropagation();
-                addPreset();
-              }
-            }}
-          />
-          <button type="button" className="dlg-btn" disabled={!naming.trim()} onClick={addPreset}>
-            Add
-          </button>
-          <button type="button" className="dlg-btn" onClick={() => setNaming(null)}>
-            Back
-          </button>
-        </div>
-      )}
-    </section>
   );
 }
 

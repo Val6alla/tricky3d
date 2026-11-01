@@ -25,6 +25,8 @@ const PackDialog = onDemand(() => import("../arrange/PackDialog").then((m) => m.
 const PackingSettingsDialog = onDemand(() => import("../arrange/PackingSettingsDialog").then((m) => m.PackingSettingsDialog));
 const AnalysisDialog = onDemand(() => import("../analysis/AnalysisDialog").then((m) => m.AnalysisDialog));
 const InterlockDialog = onDemand(() => import("../analysis/InterlockDialog").then((m) => m.InterlockDialog));
+const MirrorDialog = onDemand(() => import("../modify/TransformDialogs").then((m) => m.MirrorDialog));
+const ShearDialog = onDemand(() => import("../modify/TransformDialogs").then((m) => m.ShearDialog));
 const PlacePromptDialog = onDemand(() => import("./PlacePromptDialog").then((m) => m.PlacePromptDialog));
 const ImportObjectsDialog = onDemand(() => import("./ImportObjectsDialog").then((m) => m.ImportObjectsDialog));
 const ScaleMetresDialog = onDemand(() => import("./ScaleMetresDialog").then((m) => m.ScaleMetresDialog));
@@ -80,6 +82,10 @@ function OpenDialog({ dialog }: { dialog: Exclude<Dialog, null> }) {
       return <InterlockDialog rounds={dialog.rounds} trapped={dialog.trapped} onClose={close} />;
     case "analysis-settings":
       return <AnalysisDialog key={dialog.analysis} kind={dialog.analysis} partId={dialog.partId} otherId={dialog.otherId} onClose={close} />;
+    case "mirror":
+      return <MirrorDialog onClose={close} />;
+    case "shear":
+      return <ShearDialog onClose={close} />;
     case "orient":
       return <OrientDialog key={dialog.partId} partId={dialog.partId} onClose={close} />;
     case "pack":

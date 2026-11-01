@@ -79,9 +79,54 @@ impl Surface {
         Some((found.1, closest_on_triangle(p, a, b, c)))
     }
 
+    /// The triangle nearest `p` among those nearer than `limit` (squared), with its normal (not
+    /// unit length).
+    pub(crate) fn nearest_normal(&self, p: P3, limit: f64) -> Option<P3> {
+        let (t, _) = self.bvh.nearest(p, limit, |t| {
+            let [a, b, c] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+            let q = closest_on_triangle(p, a, b, c);
+            let d = sub(q, p);
+            dot(d, d)
+        })?;
+        let [a, b, c] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+        Some(exact::cross(sub(b, a), sub(c, a)))
+    }
+
+    /// The nearest point of the triangles facing less than a right angle away from `n`, among
+    /// those nearer than `limit` (squared): in a thin wall, the near side's, not the far side's.
+    pub(crate) fn nearest_facing(&self, p: P3, n: P3, limit: f64) -> Option<P3> {
+        let (t, _) = self.bvh.nearest(p, limit, |t| {
+            let [a, b, c] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+            if dot(exact::cross(sub(b, a), sub(c, a)), n) <= 0.0 {
+                return f64::INFINITY;
+            }
+            let q = closest_on_triangle(p, a, b, c);
+            let d = sub(q, p);
+            dot(d, d)
+        })?;
+        let [a, b, c] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+        Some(closest_on_triangle(p, a, b, c))
+    }
+
     /// The distance from `p` to the surface, or `cap` when it is at least that.
     pub(crate) fn distance(&self, p: P3, cap: f64) -> f64 {
         self.nearest(p, cap * cap).map_or(cap, |(d, _)| d.sqrt())
+    }
+
+    /// Where the segment from `a` to `b` last meets the surface, as a fraction of the way (None
+    /// when it does not meet it).
+    pub(crate) fn last_hit(&self, a: P3, b: P3) -> Option<f64> {
+        let dir = sub(b, a);
+        let mut last: Option<f64> = None;
+        self.bvh.segment(a, b, |t| {
+            let [x, y, z] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+            if let Some(s) = crate::repair::levelset::segment_hit(a, dir, x, y, z)
+                && last.is_none_or(|l| s > l)
+            {
+                last = Some(s);
+            }
+        });
+        last
     }
 }
 

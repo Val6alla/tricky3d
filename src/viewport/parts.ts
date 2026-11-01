@@ -74,6 +74,10 @@ export interface PartsLook {
   colors: ReadonlyMap<string, string>;
   /** Every other drawn part is dimmed: see-through and without edges. */
   dimOthers: boolean;
+  /** Parts drawn as they are (their own colours, per triangle too) and never dimmed: Manipulate mesh's stand-in. */
+  keep?: ReadonlySet<string>;
+  /** Parts drawn with every triangle's edges over their surface (Manipulate mesh's Highlight triangles). */
+  wire?: ReadonlySet<string>;
   /** The parts a click can hit; null for every drawn part. */
   pickable: ReadonlySet<string> | null;
 }
@@ -235,7 +239,7 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
   const colorOf = (part: Part) =>
     state.look.colors.get(part.id) ?? (state.selection.has(part.id) ? state.theme.selected : part.colors ? "#ffffff" : part.color);
   /** A part the mode does not draw in its own colours, while it dims the others. */
-  const isDimmed = (part: Part) => state.look.dimOthers && !state.look.colors.has(part.id);
+  const isDimmed = (part: Part) => state.look.dimOthers && !state.look.colors.has(part.id) && !state.look.keep?.has(part.id);
   const isSeeThrough = (part: Part) => part.transparent || isDimmed(part);
 
   /**
@@ -302,7 +306,7 @@ export function createPartsLayer(theme: VpTheme): PartsLayer {
     const shaded = state.shading !== "wireframe";
     view.front.visible = shaded;
     view.back.visible = shaded && view.redInside;
-    view.wire.visible = !shaded;
+    view.wire.visible = !shaded || !!state.look.wire?.has(part.id);
     // Dimmed parts are only context for the mode: their problem and feature edges stay out of the way.
     view.openEdges.visible = !dimmed;
     const edges = state.shading === "shaded-edges" && !dimmed;

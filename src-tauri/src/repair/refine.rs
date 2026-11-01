@@ -84,9 +84,9 @@ pub fn add_point(mesh: &Mesh, selection: &[u32], control: &mut Control) -> Repai
 }
 
 /// A mesh with some triangles split, and the input triangle of each output triangle.
-struct Split {
-    mesh: Mesh,
-    origin: Vec<u32>,
+pub(crate) struct Split {
+    pub mesh: Mesh,
+    pub origin: Vec<u32>,
 }
 
 /// The edit's outcome, with nothing selected afterwards.
@@ -106,7 +106,7 @@ fn cleared(out: Split, message: String) -> Outcome {
 /// Splits the edges marked in `split` at their midpoints and every triangle on them. The new
 /// points come after the old ones in edge order; each triangle's pieces take its place in order.
 /// None when no edge is marked.
-fn split_edges(
+pub(crate) fn split_edges(
     mesh: &Mesh,
     edges: &Edges,
     split: &[bool],

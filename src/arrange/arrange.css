@@ -133,22 +133,6 @@
   width: 500px;
 }
 
-.arr-presets {
-  display: flex;
-  gap: 6px;
-}
-
-.arr-presets .dlg-input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.arr-presets .dlg-btn {
-  flex: none;
-  min-width: 0;
-  white-space: nowrap;
-}
-
 .arr-slider {
   width: 100%;
   accent-color: var(--accent);
