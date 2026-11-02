@@ -18,11 +18,12 @@ import {
   ScanLine, ScanSearch, Scissors, ScissorsLineDashed, ScrollText, Search, Settings, Settings2, Shapes, Shrink,
   SlidersHorizontal, Spline, SplinePointer, Split, Square, SquareArrowDown, SquareArrowOutUpRight, SquareCheckBig,
   SquareDashed, SquareMinus, SquarePlus, SquareSquare, SquareStack,
-  SquareX, SquaresIntersect, SquaresUnite, Stamp, SwatchBook, Tag, Tags, Target, TextCursorInput, Timer, ToggleLeft,
+  SquareX, SquaresIntersect, SquaresUnite, Stamp, SwatchBook, Tag, Tags, Target, TextCursorInput, Timer, TimerOff, ToggleLeft, Droplet,
   Trash, Triangle, TriangleAlert, TriangleDashed, TriangleRight, Type, Undo2, Unlink, Unlink2, VectorSquare,
   WandSparkles, WavesHorizontal, Waypoints, Wrench, X,
 } from "lucide-react";
 import { browserOnly, confirmDiscard, exportSelection, importPart, openFile, saveProject, saveProjectAs } from "./io/files";
+import { recentRows, useRecent } from "./io/recent";
 import { boundsOf, unionBounds, type Bounds } from "./mesh";
 import { acceptBoolean, CLOSE_BOOLEAN_FIRST, closeBooleanMode, isBooleanOpen, openBooleanMode, zoomToBooleanPart } from "./boolean/session";
 import { useBoolean, type BooleanState, type BooleanTool } from "./boolean/store";
@@ -103,6 +104,7 @@ import { closeCollisions, interlockingTest, openCollisions } from "./analysis/co
 import type { LabelKind } from "./label/types";
 import type { AlignHow, DuplicateMode } from "./arrange/types";
 import { openGenerateShell } from "./shell/session";
+import { openHollow } from "./hollow/session";
 import { invertParts, openManipulate } from "./modify/session";
 import { openMirror, openShear } from "./modify/transforms";
 import { alignParts, layFlatAuto, openDuplicate, openMinBox, openOrient, startLayFlat } from "./arrange/session";
@@ -157,6 +159,8 @@ export interface Feature {
    * the steps they would take back or bring back).
    */
   dropdown?: () => (Feature | "-")[];
+  /** A menu row whose submenu is built when it opens (File › Recent files), instead of from entries naming it as parent. */
+  submenu?: () => (Feature | "-")[];
   /** One sentence for the tooltip and status bar. */
   hint?: string;
   /** Display string, e.g. "Ctrl+Z". Shortcuts themselves are bound in src/keyboard.ts. */
@@ -253,6 +257,7 @@ const boolean = openBooleanMode;
 const splitShells = () => void splitShellsCommand();
 const generateShell = openGenerateShell;
 const SHELL_HINT = "Make a hollow, slimmer or fuller version of the selected part as a new part.";
+const HOLLOW_HINT = "Hollow the selected part for resin printing: set the wall, see the cavity, place drain holes, apply.";
 const mergeParts = () => void mergePartsCommand();
 
 export { IS_MAC };
@@ -709,15 +714,13 @@ export function measureStatus(m: MeasureState): Tool | null {
 // the system's save dialog listing every format tricky3D writes (src/io/files.ts exportParts). The formats still to
 // come are listed under File › More export formats.
 
-const EXPORT_HINT = "Save the selected parts, or every visible part, as STL, 3MF, OBJ, PLY, AMF or OFF.";
+const EXPORT_HINT = "Save the selected parts, or every visible part, as STL, 3MF, OBJ, PLY, AMF, OFF, VRML, X3D, 3DS or GTS.";
+const AUTOSAVE_HINT =
+  "Save the open project every few minutes into tricky3D's own folder, never over your file. After a crash, tricky3D offers the latest one when it starts.";
 const SAVE_HINT = "Save the whole project as a tricky3D project file (.3mf). For an STL or another mesh file, use Export.";
 
 const SOON_EXPORT_FORMATS: [key: string, label: string][] = [
   ["color-stl", "Colour STL"],
-  ["gts", "GTS"],
-  ["x3d", "X3D"],
-  ["3ds", "3DS"],
-  ["vrml", "VRML"],
   ["binvox", "BINVOX"],
   ["compressed", "Compressed mesh"],
   ["formlabs", "Formlabs"],
@@ -753,15 +756,28 @@ export const FEATURES: Feature[] = [
     { id: "file.open", label: "Open…", icon: FolderOpen, status: "ready", run: openProject, shortcut: mod("O"), hint: "Open a project, or a mesh file as a new project." },
     { id: "file.save", label: "Save project (.3mf)", icon: Save, status: "ready", run: saveProject, shortcut: mod("S"), hint: SAVE_HINT },
     { id: "file.save-as", label: "Save project as (.3mf)…", icon: SaveAll, status: "ready", run: saveProjectAs, hint: "Save the project as a tricky3D project file (.3mf) under a new name." },
-    { id: "file.recent", label: "Recent files", icon: FileClock, status: "soon" },
-    { id: "file.autosave", label: "Autosave", icon: Timer, status: "soon" },
+    {
+      id: "file.recent",
+      label: "Recent files",
+      icon: FileClock,
+      status: "ready",
+      submenu: () => recentRows(useRecent.getState().files),
+      hint: "Open one of the last ten files you opened, imported or saved.",
+    },
+    { id: "file.autosave", label: "Autosave", icon: Timer, status: "ready", hint: AUTOSAVE_HINT },
+  ]),
+  ...group("file", "Autosave", [
+    { id: "file.autosave-off", label: "Off", icon: TimerOff, status: "ready", parent: "file.autosave", isActive: (s) => s.autosaveMinutes === 0, run: () => useStore.getState().setAutosaveMinutes(0), hint: "Never save the project automatically." },
+    { id: "file.autosave-2", label: "Every 2 minutes", icon: Timer, status: "ready", parent: "file.autosave", isActive: (s) => s.autosaveMinutes === 2, run: () => useStore.getState().setAutosaveMinutes(2), hint: AUTOSAVE_HINT },
+    { id: "file.autosave-5", label: "Every 5 minutes", icon: Timer, status: "ready", parent: "file.autosave", isActive: (s) => s.autosaveMinutes === 5, run: () => useStore.getState().setAutosaveMinutes(5), hint: AUTOSAVE_HINT },
+    { id: "file.autosave-10", label: "Every 10 minutes", icon: Timer, status: "ready", parent: "file.autosave", isActive: (s) => s.autosaveMinutes === 10, run: () => useStore.getState().setAutosaveMinutes(10), hint: AUTOSAVE_HINT },
   ]),
   ...group("file", "Part", [
     { id: "file.import", label: "Import part…", icon: Import, status: "ready", run: importPart, hint: "Add parts from mesh files." },
     { id: "file.import-split", label: "Import file as separate parts", icon: Split, status: "soon" },
     { id: "file.import-slices", label: "Open slice file", icon: FileStack, status: "soon" },
     { id: "file.preview", label: "Preview a file", icon: FileSearch, status: "soon" },
-    { id: "file.import-options", label: "Import options", icon: FileSliders, status: "soon" },
+    { id: "file.import-options", label: "Import options…", icon: FileSliders, status: "ready", run: () => ui().openDialog({ kind: "import-options" }), hint: "The unit files are read in, and what a file with several objects becomes." },
     { id: "file.formats", label: "Supported formats…", icon: FileAxis3d, status: "ready", run: () => ui().openDialog({ kind: "formats" }), hint: "File formats tricky3D can read and write." },
     { id: "file.export", label: "Export part…", icon: FileOutput, status: "ready", run: exportSelection, shortcut: mod("E"), hint: EXPORT_HINT },
     { id: "file.export-more", label: "More export formats", icon: FileAxis3d, status: "soon" },
@@ -813,6 +829,7 @@ export const FEATURES: Feature[] = [
   ...group("home", "Modify", [
     { id: "home.boolean", label: "Boolean", icon: SquaresUnite, status: "ready", run: boolean, size: "large", outsideRepair: true, hint: "Unite the selected parts, subtract some from the others, or keep what they share." },
     { id: "home.generate-shell", label: "Generate shell", icon: Cylinder, status: "ready", run: generateShell, outsideRepair: true, hint: SHELL_HINT },
+    { id: "home.hollow-tool", label: "Hollow", icon: Droplet, status: "ready", run: openHollow, outsideRepair: true, hint: HOLLOW_HINT },
     { id: "home.generate-label", label: "Generate label", icon: Tag, status: "ready" },
     { id: "home.label-text", label: "Text label", icon: Type, status: "ready", run: label("text"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.text },
     { id: "home.label-image", label: "Image label", icon: Stamp, status: "ready", run: label("image"), parent: "home.generate-label", outsideRepair: true, hint: LABEL_HINTS.image },
@@ -952,6 +969,7 @@ export const FEATURES: Feature[] = [
     { id: "modify.remove-add-ons", label: "Remove parametric add-ons", icon: PackageMinus, status: "soon" },
   ]),
   ...group("modify", "Hollowing", [
+    { id: "modify.hollow-tool", label: "Hollow", icon: Droplet, status: "ready", run: openHollow, outsideRepair: true, hint: HOLLOW_HINT },
     { id: "modify.hollow", label: "Generate shell", icon: Cylinder, status: "ready", run: generateShell, outsideRepair: true, hint: SHELL_HINT },
     { id: "modify.perforation", label: "Add perforation", icon: Drill, status: "soon" },
   ]),
@@ -1328,6 +1346,11 @@ export function isMenu(f: Feature): boolean {
   return childMap.has(f.id);
 }
 
+/** A menu row that opens a submenu: entries name it as their parent, or it builds its rows itself. */
+export function hasSubmenu(f: Feature): boolean {
+  return isMenu(f) || f.submenu !== undefined;
+}
+
 /** A menu is ready when at least one child is ready; anything else uses its own status. */
 export function effectiveStatus(f: Feature): FeatureStatus {
   const kids = childrenOf(f.id);
@@ -1422,8 +1445,9 @@ export function registryProblems(): string[] {
     if (f.measureActive && f.tab !== "measure") problems.push(`${f.id}: Measure state outside its tab`);
     if (f.labelActive && f.tab !== "label") problems.push(`${f.id}: label generation state outside its tab`);
     if (MODE_TABS.includes(f.tab) && f.outsideRepair) problems.push(`${f.id}: a mode's entry cannot be blocked in its mode`);
-    if (isMenu(f)) {
+    if (hasSubmenu(f)) {
       if (f.run) problems.push(`${f.id}: a menu cannot have run`);
+      if (isMenu(f) && f.submenu) problems.push(`${f.id}: a menu builds its rows or has children, not both`);
       continue;
     }
     if (f.status === "ready" && !f.run) problems.push(`${f.id}: ready but has no run`);

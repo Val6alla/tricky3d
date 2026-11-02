@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boundsOf, IDENTITY, makeBox, translation, unionBounds } from "../mesh";
-import { useStore, type ExportOptions, type MeshData, type NewPart, type Part, type Vec3 } from "../store";
+import { useStore, type ExportOptions, type ImportOptions, type MeshData, type NewPart, type Part, type Vec3 } from "../store";
 import { useUi, type ObjectsAnswer, type PlaceAnswer } from "../ui";
 import {
   askPlacement,
@@ -80,7 +80,7 @@ describe("paths", () => {
   });
 
   it("lists the export types as the dialog does: STL, 3MF, OBJ, PLY, AMF, OFF", () => {
-    expect(EXPORT_TYPES).toEqual(["stl", "3mf", "obj", "ply", "amf", "off"]);
+    expect(EXPORT_TYPES).toEqual(["stl", "3mf", "obj", "ply", "amf", "off", "wrl", "x3d", "3ds", "gts"]);
   });
 
   it("takes the export format from the name picked, else from the type selected; STL as the options say", () => {
@@ -111,7 +111,7 @@ describe("paths", () => {
 
   it("names up to three unsupported files and points at the formats help", () => {
     expect(unsupportedMessage(["C:\\a\\notes.txt"])).toBe(
-      `Can't import "notes.txt". tricky3D reads STL, OBJ, PLY, 3MF, AMF and OFF files; see File › Supported formats.`,
+      `Can't import "notes.txt". tricky3D reads STL, OBJ, PLY, 3MF, AMF, OFF, VRML, X3D, 3DS and GTS files; see File › Supported formats.`,
     );
     expect(unsupportedMessage(["/a.step", "/b.iges", "/c.x3d", "/d.wrl", "/e"])).toMatch(/^Can't import "a.step", "b.iges", "c.x3d" and 2 more\. /);
   });
@@ -325,6 +325,8 @@ function result(meshes: LoadedMesh[], extra: Partial<ImportResult> = {}): Import
 
 interface FakeEnv extends ImportEnv {
   reads: { path: string; merge: boolean }[];
+  /** The unit each read asked for (mm per unit, or null for the file's own). */
+  units: (number | null)[];
   asked: string[];
   added: { parts: NewPart[]; label: string }[];
   warnings: string[];
@@ -337,16 +339,20 @@ function fakeEnv(opts: {
   place?: boolean | null;
   /** Whether the project is still open, asked at each check. */
   current?: () => boolean;
+  options?: ImportOptions;
 }): FakeEnv {
   const env: FakeEnv = {
     reads: [],
+    units: [],
     asked: [],
     added: [],
     warnings: [],
-    read: async (path, merge) => {
+    read: async (path, merge, units) => {
       env.reads.push({ path, merge });
+      env.units.push(units);
       return opts.read(merge);
     },
+    ...(opts.options ? { options: () => opts.options! } : {}),
     askObjects: async (name, count) => {
       env.asked.push(`objects:${name}:${count}`);
       return opts.objects ?? null;
@@ -460,6 +466,61 @@ describe("importFile", () => {
     const withUnits = fakeEnv({ read: () => result([loaded("u", tiny)], { format: "3mf" }) });
     await importFile("/in/u.3mf", withUnits);
     expect(withUnits.asked).toEqual(["place:u.3mf"]);
+  });
+
+  it("reads in the unit Import options pick, and then never asks about metres", async () => {
+    const tiny = makeBox([0.04, 0.02, 0.01]);
+    const inch = fakeEnv({ read: () => result([loaded("m", tiny)], { unit: 25.4 }), options: { units: "inch", objects: "ask" } });
+    expect(await importFile("/in/m.stl", inch)).toBe("added");
+    expect(inch.units).toEqual([25.4]);
+    expect(inch.asked).toEqual(["place:m.stl"]);
+    for (const [units, mm] of [["mm", 1], ["cm", 10], ["m", 1000], ["foot", 304.8], ["detect", null]] as const) {
+      const env = fakeEnv({ read: () => result([loaded("n", box)]), options: { units, objects: "ask" } });
+      await importFile("/in/n.stl", env);
+      expect(env.units).toEqual([mm]);
+    }
+    // A file that names its unit is not asked about, nor is one of a format that may name one but here did.
+    const named = fakeEnv({ read: () => result([loaded("x", tiny)], { format: "x3d", unit: 1 }) });
+    await importFile("/in/x.x3d", named);
+    expect(named.asked).toEqual(["place:x.x3d"]);
+    const unnamed = fakeEnv({ read: () => result([loaded("w", tiny)], { format: "wrl", unit: null }), scale: false });
+    await importFile("/in/w.wrl", unnamed);
+    expect(unnamed.asked[0]).toMatch(/^scale:w\.wrl:/);
+  });
+
+  it("merges or splits a file of several objects as Import options say, without asking", async () => {
+    const split = result([loaded("a - x", box), loaded("a - y", box)], { format: "3mf", splittable: true });
+    const merged = result([loaded("a", box)], { format: "3mf", objectCount: 2 });
+    const merge = fakeEnv({ read: (m) => (m ? merged : split), options: { units: "detect", objects: "merge" } });
+    await importFile("/in/a.3mf", merge);
+    expect(merge.reads.map((r) => r.merge)).toEqual([true]);
+    expect(merge.asked).toEqual(["place:a.3mf"]);
+    expect(merge.added[0].parts.map((p) => p.name)).toEqual(["a"]);
+    const separate = fakeEnv({ read: (m) => (m ? merged : split), options: { units: "detect", objects: "separate" } });
+    await importFile("/in/a.3mf", separate);
+    expect(separate.reads.map((r) => r.merge)).toEqual([false]);
+    expect(separate.asked).toEqual(["place:a.3mf"]);
+    expect(separate.added[0].parts.map((p) => p.name)).toEqual(["a - x", "a - y"]);
+  });
+
+  it("gives the parts the colours the file names", async () => {
+    const colours = new Uint8Array(box.indices.length).fill(7);
+    const env = fakeEnv({
+      read: () =>
+        result([
+          { ...loaded("red", box), color: "#ff0000" },
+          { ...loaded("painted", box), triangleColors: colours },
+          { ...loaded("odd", box), color: "red", triangleColors: new Uint8Array(3) },
+        ]),
+    });
+    await importFile("/in/c.wrl", env);
+    const [red, painted, odd] = env.added[0].parts;
+    expect(red.color).toBe("#ff0000");
+    expect(red.colors).toBeUndefined();
+    expect(painted.colors).toBe(colours);
+    // A colour that is not a plain hex one, and colours that do not fit the triangles, are left out.
+    expect(odd.color).toBeUndefined();
+    expect(odd.colors).toBeUndefined();
   });
 
   it("stops when its project is closed while the file is read, before any prompt", async () => {
@@ -668,7 +729,7 @@ describe("exportParts", () => {
   it("asks for the options first, remembers them, and offers every type with the source format selected", async () => {
     const env = fakeEnv({ options: { stl: "ascii", parts: "one-file" } });
     const done = await exportParts([part("gun", String.raw`D:\Models\gun.stl`)], context(), env);
-    expect(env.askOptions).toHaveBeenCalledWith(1, binaryOneFile);
+    expect(env.askOptions).toHaveBeenCalledWith(1, binaryOneFile, 1);
     expect(env.remember).toHaveBeenCalledWith({ stl: "ascii", parts: "one-file" });
     // The source's own name and folder, so saving as is replaces it, which the system asks about (each: false).
     expect(env.pick).toHaveBeenCalledWith({
@@ -710,12 +771,21 @@ describe("exportParts", () => {
     const parts = [part("barrel", String.raw`D:\Models\gun.stl`), part("stand", String.raw`D:\Models\gun.stl`)];
     const one = fakeEnv({});
     await exportParts(parts, context(), one);
-    expect(one.askOptions).toHaveBeenCalledWith(2, binaryOneFile);
+    expect(one.askOptions).toHaveBeenCalledWith(2, binaryOneFile, 2);
     expect(one.writeOne).toHaveBeenCalledWith(String.raw`D:\Models\gun.stl`, "stl-binary", parts);
     const single = fakeEnv({});
     await exportParts([parts[0]], context({ stl: "binary", parts: "per-part" }), single);
     expect(single.pick.mock.calls[0][0].each).toBe(false);
     expect(single.writeEach).not.toHaveBeenCalled();
+  });
+
+  it("writes one file per shell when asked, for one part too", async () => {
+    const parts = [part("pair", String.raw`D:\Models\gun.stl`)];
+    const env = fakeEnv({ pick: () => ({ path: String.raw`D:\Out\anything`, format: "stl" }) });
+    await exportParts(parts, context({ stl: "binary", parts: "per-shell" }), env);
+    expect(env.pick.mock.calls[0][0]).toMatchObject({ title: "Export 1 part, one file per shell", each: true });
+    expect(env.writeEach).toHaveBeenCalledWith(String.raw`D:\Out\anything`, "stl-binary", false, parts, true);
+    expect(env.writeOne).not.toHaveBeenCalled();
   });
 
   it("writes one file per part in the folder picked, named after the parts", async () => {
@@ -728,7 +798,7 @@ describe("exportParts", () => {
       defaultPath: String.raw`D:\Models\barrel.stl`,
     });
     // Rust gets the path exactly as picked; it takes its folder.
-    expect(env.writeEach).toHaveBeenCalledWith(String.raw`D:\Out\anything`, "stl-ascii", false, parts);
+    expect(env.writeEach).toHaveBeenCalledWith(String.raw`D:\Out\anything`, "stl-ascii", false, parts, false);
     expect(env.askReplace).not.toHaveBeenCalled();
     expect(done).toEqual({ folder: String.raw`D:\Out\ `.trim(), files: ["barrel.stl", "stand.stl"] });
   });
@@ -753,5 +823,26 @@ describe("exportParts", () => {
     const env = fakeEnv({});
     env.writeOne.mockRejectedValueOnce('Could not write "gun.stl": the disk is full.');
     await expect(exportParts([part("gun", "/m/gun.stl")], context(), env)).rejects.toBe('Could not write "gun.stl": the disk is full.');
+  });
+});
+
+describe("new formats", () => {
+  it("reads VRML, X3D, 3DS and GTS by any of their extensions, and exports a gzipped VRML as VRML", () => {
+    for (const [path, format] of [
+      ["a.wrl", "wrl"],
+      ["a.VRML", "wrl"],
+      ["a.wrz", "wrl"],
+      ["a.x3dv", "wrl"],
+      ["a.x3d", "x3d"],
+      ["a.X3DZ", "x3d"],
+      ["a.3ds", "3ds"],
+      ["a.gts", "gts"],
+      ["a.dae", null],
+    ] as const) {
+      expect([path, importFormatOf(path)]).toEqual([path, format]);
+    }
+    expect(exportType([{ source: String.raw`D:\m\ship.wrz` }])).toBe("wrl");
+    expect(exportType([{ source: String.raw`D:\m\ship.x3dz` }])).toBe("x3d");
+    expect(exportType([{ source: String.raw`D:\m\ship.3ds` }])).toBe("3ds");
   });
 });

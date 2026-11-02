@@ -3,11 +3,16 @@
 //! into the full sentence the user sees, naming the file.
 
 pub mod amf;
+pub mod gts;
 pub mod obj;
 pub mod off;
 pub mod ply;
+pub mod scene;
 pub mod stl;
+pub mod tds;
 pub mod threemf;
+pub mod vrml;
+pub mod x3d;
 pub(crate) mod xml;
 
 use std::fs::{File, OpenOptions};
@@ -26,17 +31,26 @@ pub enum ImportFormat {
     ThreeMf,
     Amf,
     Off,
+    /// VRML 2.0 / VRML97, and X3D's classic text encoding.
+    Vrml,
+    X3d,
+    Tds,
+    Gts,
 }
 
 impl ImportFormat {
     /// Every format tricky3D reads, in menu order.
-    pub const ALL: [ImportFormat; 6] = [
+    pub const ALL: [ImportFormat; 10] = [
         ImportFormat::Stl,
         ImportFormat::Obj,
         ImportFormat::Ply,
         ImportFormat::ThreeMf,
         ImportFormat::Amf,
         ImportFormat::Off,
+        ImportFormat::Vrml,
+        ImportFormat::X3d,
+        ImportFormat::Tds,
+        ImportFormat::Gts,
     ];
 
     /// The format for `path`'s extension, in any letter case.
@@ -44,11 +58,11 @@ impl ImportFormat {
         let ext = path.extension()?.to_str()?;
         ImportFormat::ALL
             .into_iter()
-            .find(|f| f.id().eq_ignore_ascii_case(ext))
+            .find(|f| f.extensions().iter().any(|e| e.eq_ignore_ascii_case(ext)))
     }
 
     /// The `format` field of the import result (src/io/ipc.ts `ImportFormat`), which is also the
-    /// format's file extension.
+    /// format's main file extension.
     pub fn id(self) -> &'static str {
         match self {
             ImportFormat::Stl => "stl",
@@ -57,18 +71,68 @@ impl ImportFormat {
             ImportFormat::ThreeMf => "3mf",
             ImportFormat::Amf => "amf",
             ImportFormat::Off => "off",
+            ImportFormat::Vrml => "wrl",
+            ImportFormat::X3d => "x3d",
+            ImportFormat::Tds => "3ds",
+            ImportFormat::Gts => "gts",
+        }
+    }
+
+    /// Every extension files of the format have.
+    pub fn extensions(self) -> &'static [&'static str] {
+        match self {
+            ImportFormat::Vrml => &["wrl", "vrml", "wrz", "x3dv", "x3dvz"],
+            ImportFormat::X3d => &["x3d", "x3dz"],
+            ImportFormat::Stl => &["stl"],
+            ImportFormat::Obj => &["obj"],
+            ImportFormat::Ply => &["ply"],
+            ImportFormat::ThreeMf => &["3mf"],
+            ImportFormat::Amf => &["amf"],
+            ImportFormat::Off => &["off"],
+            ImportFormat::Tds => &["3ds"],
+            ImportFormat::Gts => &["gts"],
+        }
+    }
+
+    /// The name in the open dialog's format menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            ImportFormat::Stl => "STL",
+            ImportFormat::Obj => "OBJ",
+            ImportFormat::Ply => "PLY",
+            ImportFormat::ThreeMf => "3MF",
+            ImportFormat::Amf => "AMF",
+            ImportFormat::Off => "OFF",
+            ImportFormat::Vrml => "VRML",
+            ImportFormat::X3d => "X3D",
+            ImportFormat::Tds => "3DS",
+            ImportFormat::Gts => "GTS",
         }
     }
 }
 
+/// How a file is read: several objects merged into one part or not, and its unit.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ImportOptions {
+    /// Join a file's objects into one part.
+    pub merge: bool,
+    /// Millimetres per unit of the file's numbers, whatever the file says; None reads the unit
+    /// the file names, else millimetres.
+    pub units: Option<f64>,
+}
+
 /// One object a reader found, already welded, before it gets its part name.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Object {
     /// The name the file gives the object, if any.
     pub name: Option<String>,
     /// Placement from the file (3MF build items); None means identity.
     pub matrix: Option<Matrix>,
     pub mesh: Mesh,
+    /// The object's colour (sRGB), where the file gives one.
+    pub color: Option<[u8; 3]>,
+    /// A colour per triangle (r, g, b), where the file gives several.
+    pub colors: Option<Vec<u8>>,
 }
 
 /// What a reader returns.
@@ -77,18 +141,20 @@ pub struct Loaded {
     pub objects: Vec<Object>,
     /// Objects in the file before any merging.
     pub object_count: usize,
-    /// True when the file has several objects that `merge` would join (OBJ only).
+    /// True when the file has several objects that `merge` would join.
     pub splittable: bool,
     pub warnings: Vec<String>,
+    /// Millimetres per unit, when the file names its unit (3MF and AMF always do: millimetres
+    /// unless they say otherwise; X3D with a UNIT statement). The reader has applied it.
+    pub unit: Option<f64>,
 }
 
 impl Loaded {
     pub fn single(mesh: Mesh) -> Loaded {
         Loaded {
             objects: vec![Object {
-                name: None,
-                matrix: None,
                 mesh,
+                ..Object::default()
             }],
             object_count: 1,
             ..Loaded::default()
@@ -101,6 +167,8 @@ pub struct ImportedPart {
     pub name: String,
     pub matrix: Option<Matrix>,
     pub mesh: Mesh,
+    pub color: Option<[u8; 3]>,
+    pub colors: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -110,31 +178,62 @@ pub struct Imported {
     pub splittable: bool,
     pub warnings: Vec<String>,
     pub parts: Vec<ImportedPart>,
+    /// Millimetres per unit the numbers were read in: the one asked for, else the file's own (None
+    /// when it names none and was read as millimetres).
+    pub unit: Option<f64>,
 }
 
-pub const SUPPORTED: &str = "tricky3D opens STL, OBJ, PLY, 3MF, AMF and OFF files";
+pub const SUPPORTED: &str =
+    "tricky3D opens STL, OBJ, PLY, 3MF, AMF, OFF, VRML, X3D, 3DS and GTS files";
 
-/// Reads a mesh file into welded, named parts. `merge` joins an OBJ's objects into one part.
+/// Reads a mesh file into welded, named parts. `merge` joins the file's objects into one part.
 pub fn import_file(path: &Path, merge: bool, progress: &mut Progress) -> Result<Imported, String> {
+    import_with(path, &ImportOptions { merge, units: None }, progress)
+}
+
+/// Reads a mesh file into welded, named parts, as `options` say.
+pub fn import_with(
+    path: &Path,
+    options: &ImportOptions,
+    progress: &mut Progress,
+) -> Result<Imported, String> {
     let file = display_name(path);
     let Some(format) = ImportFormat::from_path(path) else {
         return Err(format!("Could not open \"{file}\": {SUPPORTED}."));
     };
-    let loaded = read_format(path, format, merge, progress)
-        .map_err(|reason| format!("Could not read \"{file}\": {reason}."))?;
+    let fail = |reason: String| format!("Could not read \"{file}\": {reason}.");
+    let loaded = read_format(path, format, options.merge, progress).map_err(fail)?;
     let Loaded {
         objects,
         object_count,
-        splittable,
         warnings,
+        unit,
+        ..
     } = loaded;
-    let objects: Vec<Object> = objects
+    let mut objects: Vec<Object> = objects
         .into_iter()
         .filter(|o| !o.mesh.indices.is_empty())
         .collect();
     if objects.is_empty() {
-        return Err(format!("Could not read \"{file}\": it has no triangles."));
+        return Err(fail("it has no triangles".into()));
     }
+    let splittable = objects.len() > 1 && !options.merge;
+    if options.merge && objects.len() > 1 {
+        objects = vec![merged(objects).map_err(fail)?];
+    }
+    // A unit asked for replaces the one the reader applied.
+    let unit = match options.units {
+        Some(asked) if asked.is_finite() && asked > 0.0 => {
+            let factor = asked / unit.unwrap_or(1.0);
+            if factor != 1.0 {
+                for o in &mut objects {
+                    rescale(o, factor);
+                }
+            }
+            Some(asked)
+        }
+        _ => unit,
+    };
     let names = part_names(&file_stem(path), objects.iter().map(|o| o.name.as_deref()));
     let parts = objects
         .into_iter()
@@ -143,6 +242,8 @@ pub fn import_file(path: &Path, merge: bool, progress: &mut Progress) -> Result<
             name,
             matrix: o.matrix.filter(|m| *m != crate::mesh::IDENTITY),
             mesh: o.mesh,
+            color: o.color,
+            colors: o.colors,
         })
         .collect();
     Ok(Imported {
@@ -151,7 +252,63 @@ pub fn import_file(path: &Path, merge: bool, progress: &mut Progress) -> Result<
         splittable,
         warnings,
         parts,
+        unit,
     })
+}
+
+/// The objects as one: each placed by its matrix, side by side in one mesh (not welded together,
+/// so objects that touch stay separate shells), with a colour per triangle when they had colours.
+fn merged(objects: Vec<Object>) -> Result<Object, String> {
+    let baked: Vec<Mesh> = objects
+        .iter()
+        .map(|o| match &o.matrix {
+            Some(m) => crate::mesh::bake(&o.mesh, m),
+            None => o.mesh.clone(),
+        })
+        .collect();
+    let refs: Vec<&Mesh> = baked.iter().collect();
+    let mesh = crate::ops::concat(&refs)?;
+    let coloured = objects
+        .iter()
+        .any(|o| o.color.is_some() || o.colors.is_some());
+    let colors = coloured.then(|| {
+        let mut out = Vec::with_capacity(mesh.indices.len());
+        for o in &objects {
+            match &o.colors {
+                Some(c) => out.extend_from_slice(c),
+                None => {
+                    let c = o.color.unwrap_or(DEFAULT_COLOR);
+                    for _ in 0..o.mesh.triangle_count() {
+                        out.extend_from_slice(&c);
+                    }
+                }
+            }
+        }
+        out
+    });
+    let color = objects.iter().find_map(|o| o.color);
+    Ok(Object {
+        name: None,
+        matrix: None,
+        mesh,
+        color,
+        colors,
+    })
+}
+
+/// The colour a triangle gets in a part with colours per triangle when its own object had none.
+const DEFAULT_COLOR: [u8; 3] = [204, 204, 204];
+
+/// Every length of the object times `factor`: its points, and its matrix's translation.
+fn rescale(o: &mut Object, factor: f64) {
+    for x in &mut o.mesh.positions {
+        *x = (*x as f64 * factor) as f32;
+    }
+    if let Some(m) = &mut o.matrix {
+        for x in &mut m[12..15] {
+            *x *= factor;
+        }
+    }
 }
 
 fn read_format(
@@ -170,6 +327,10 @@ fn read_format(
         }
         ImportFormat::Amf => amf::read(&read_all(path, progress)?, progress),
         ImportFormat::Off => off::read(&read_all(path, progress)?, progress),
+        ImportFormat::Vrml => vrml::read(&read_all(path, progress)?, progress),
+        ImportFormat::X3d => x3d::read(&read_all(path, progress)?, progress),
+        ImportFormat::Tds => tds::read(&read_all(path, progress)?, progress),
+        ImportFormat::Gts => gts::read(&read_all(path, progress)?, progress),
     }
 }
 
@@ -310,6 +471,10 @@ pub enum ExportFormat {
     ThreeMf,
     Amf,
     Off,
+    Vrml,
+    X3d,
+    Tds,
+    Gts,
 }
 
 impl ExportFormat {
@@ -323,6 +488,10 @@ impl ExportFormat {
             "3mf" => ExportFormat::ThreeMf,
             "amf" => ExportFormat::Amf,
             "off" => ExportFormat::Off,
+            "wrl" => ExportFormat::Vrml,
+            "x3d" => ExportFormat::X3d,
+            "3ds" => ExportFormat::Tds,
+            "gts" => ExportFormat::Gts,
             _ => return None,
         })
     }
@@ -336,6 +505,10 @@ impl ExportFormat {
             ExportFormat::ThreeMf => "3mf",
             ExportFormat::Amf => "amf",
             ExportFormat::Off => "off",
+            ExportFormat::Vrml => "wrl",
+            ExportFormat::X3d => "x3d",
+            ExportFormat::Tds => "3ds",
+            ExportFormat::Gts => "gts",
         }
     }
 }
@@ -403,8 +576,8 @@ pub struct NamedMesh<'a> {
 }
 
 /// Writes `parts` into one file of `format`, each where it sits on the platform: the callers bake
-/// every part's matrix into its vertices first, and no writer moves anything. STL, PLY and OFF merge
-/// the parts into one mesh; OBJ, 3MF and AMF keep one object per part. `title` labels the whole file where the format has a slot.
+/// every part's matrix into its vertices first, and no writer moves anything. STL, PLY, OFF and GTS
+/// merge the parts into one mesh; OBJ, 3MF, AMF, VRML, X3D and 3DS keep one object per part. `title` labels the whole file where the format has a slot.
 pub fn write_export<W: Write + Seek>(
     w: W,
     format: ExportFormat,
@@ -419,6 +592,10 @@ pub fn write_export<W: Write + Seek>(
         ExportFormat::ThreeMf => threemf::write_export(w, parts),
         ExportFormat::Amf => amf::write(w, parts),
         ExportFormat::Off => off::write(w, parts),
+        ExportFormat::Vrml => vrml::write(w, parts),
+        ExportFormat::X3d => x3d::write(w, parts),
+        ExportFormat::Tds => tds::write(w, parts),
+        ExportFormat::Gts => gts::write(w, parts),
     }
 }
 
@@ -463,7 +640,8 @@ mod tests {
         let err = import_file(Path::new("model.dae"), false, &mut Progress::silent()).unwrap_err();
         assert_eq!(
             err,
-            "Could not open \"model.dae\": tricky3D opens STL, OBJ, PLY, 3MF, AMF and OFF files."
+            "Could not open \"model.dae\": tricky3D opens STL, OBJ, PLY, 3MF, AMF, OFF, VRML, X3D, \
+             3DS and GTS files."
         );
     }
 

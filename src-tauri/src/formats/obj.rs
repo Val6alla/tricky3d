@@ -42,17 +42,16 @@ pub fn read(bytes: &[u8], merge: bool, progress: &mut Progress) -> Result<Loaded
         let mesh = weld_indexed(&positions, &indices)?;
         progress.report(Stage::Weld, 1.0);
         vec![Object {
-            name: None,
-            matrix: None,
             mesh,
+            ..Object::default()
         }]
     } else {
         let mut objects = Vec::with_capacity(models.len());
         for (k, m) in models.iter().enumerate() {
             objects.push(Object {
                 name: clean_name(Some(&m.name)).filter(|n| n != "unnamed_object"),
-                matrix: None,
                 mesh: weld_indexed(&m.mesh.positions, &m.mesh.indices)?,
+                ..Object::default()
             });
             progress.report(Stage::Weld, (k + 1) as f64 / models.len() as f64);
         }
@@ -62,7 +61,7 @@ pub fn read(bytes: &[u8], merge: bool, progress: &mut Progress) -> Result<Loaded
         objects,
         object_count,
         splittable: object_count > 1 && !merge,
-        warnings: Vec::new(),
+        ..Loaded::default()
     })
 }
 

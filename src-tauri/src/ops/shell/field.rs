@@ -113,6 +113,30 @@ impl Surface {
         self.nearest(p, cap * cap).map_or(cap, |(d, _)| d.sqrt())
     }
 
+    /// Every place the segment from `a` to `b` meets the surface, nearest first: the fraction of
+    /// the way, the triangle, and the dot product of its normal (not unit length) with `b - a`,
+    /// positive where the segment leaves through the triangle's front.
+    pub(crate) fn hits(&self, a: P3, b: P3) -> Vec<(f64, u32, f64)> {
+        let dir = sub(b, a);
+        let mut out = Vec::new();
+        self.bvh.segment(a, b, |t| {
+            let [x, y, z] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+            if let Some(s) = crate::repair::levelset::segment_hit(a, dir, x, y, z) {
+                out.push((s, t, dot(exact::cross(sub(y, x), sub(z, x)), dir)));
+            }
+        });
+        out.sort_by(|p, q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)));
+        out
+    }
+
+    /// The unit normal of triangle `t`, facing its front.
+    pub(crate) fn unit_normal(&self, t: u32) -> P3 {
+        let [a, b, c] = self.triangles[t as usize].map(|v| self.points[v as usize]);
+        let n = exact::cross(sub(b, a), sub(c, a));
+        let l = exact::length(n);
+        if l > 0.0 { exact::scale(n, 1.0 / l) } else { n }
+    }
+
     /// Where the segment from `a` to `b` last meets the surface, as a fraction of the way (None
     /// when it does not meet it).
     pub(crate) fn last_hit(&self, a: P3, b: P3) -> Option<f64> {

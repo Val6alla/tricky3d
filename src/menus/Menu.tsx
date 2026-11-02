@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
 import { useBoolean } from "../boolean/store";
-import { activate, blockedReason, effectiveStatus, featureById, hoverHintFor, isMenu, tooltipFor, type Feature } from "../features";
+import { activate, blockedReason, effectiveStatus, featureById, hasSubmenu, hoverHintFor, tooltipFor, type Feature } from "../features";
 import { useMeasure } from "../measure/store";
 import { useLabel } from "../label/store";
 import { useRepair } from "../repair/store";
@@ -103,6 +103,9 @@ export function Menu({ entries, anchor, label, onClose }: MenuProps) {
 
 interface OpenSubmenu {
   id: string;
+  /** Its rows, built when it opened. */
+  entries: MenuEntry[];
+  label: string;
   item: HTMLElement;
   anchor: Rect;
   focusFirst: boolean;
@@ -161,13 +164,17 @@ function MenuPanel({ entries, anchor, side, label, onClose, panelRef, focus, onB
 
   function openSubmenu(f: Feature, item: HTMLElement, focusFirst: boolean) {
     window.clearTimeout(closeTimer.current);
-    setSub({ id: f.id, item, anchor: submenuAnchor(item, ref.current), focusFirst });
+    const entries = f.submenu ? f.submenu() : submenuEntries(f.id);
+    setSub({ id: f.id, entries, label: f.label, item, anchor: submenuAnchor(item, ref.current), focusFirst });
   }
+
+  /** The feature of a row: a registered one, or one of the open submenu's built rows. */
+  const rowFeature = (id: string) => featureById(id) ?? rows.find((r): r is Feature => r !== "-" && r.id === id);
 
   function hover(f: Feature, item: HTMLElement) {
     useUi.getState().setHoverHint(hoverHintFor(f, blockedReason(f)));
     window.clearTimeout(closeTimer.current);
-    if (isMenu(f)) {
+    if (hasSubmenu(f)) {
       if (sub?.id !== f.id) openSubmenu(f, item, false);
     } else if (sub) {
       // A short grace period lets the pointer cross other rows on its way into the open submenu.
@@ -176,7 +183,7 @@ function MenuPanel({ entries, anchor, side, label, onClose, panelRef, focus, onB
   }
 
   function choose(f: Feature, item: HTMLElement) {
-    if (isMenu(f)) {
+    if (hasSubmenu(f)) {
       // Hovering has usually opened it already, so a click keeps it open; a Soon menu also toasts.
       activate(f);
       if (sub?.id !== f.id) openSubmenu(f, item, false);
@@ -192,12 +199,12 @@ function MenuPanel({ entries, anchor, side, label, onClose, panelRef, focus, onB
     const items = itemsOf(ref.current);
     const i = items.indexOf(document.activeElement as HTMLButtonElement);
     const focusAt = (n: number) => items[(n + items.length) % items.length]?.focus();
-    const current = i >= 0 ? featureById(items[i].dataset.id ?? "") : undefined;
+    const current = i >= 0 ? rowFeature(items[i].dataset.id ?? "") : undefined;
     if (e.key === "ArrowDown") focusAt(i + 1);
     else if (e.key === "ArrowUp") focusAt(i < 0 ? -1 : i - 1);
     else if (e.key === "Home") focusAt(0);
     else if (e.key === "End") focusAt(-1);
-    else if (e.key === "ArrowRight" && current && isMenu(current)) openSubmenu(current, items[i], true);
+    else if (e.key === "ArrowRight" && current && hasSubmenu(current)) openSubmenu(current, items[i], true);
     else if (e.key === "ArrowLeft" && onBack) onBack();
     else return;
     e.preventDefault();
@@ -228,10 +235,10 @@ function MenuPanel({ entries, anchor, side, label, onClose, panelRef, focus, onB
       {sub && (
         <MenuPanel
           key={sub.id}
-          entries={submenuEntries(sub.id)}
+          entries={sub.entries}
           anchor={sub.anchor}
           side="right"
-          label={featureById(sub.id)?.label ?? ""}
+          label={sub.label}
           onClose={onClose}
           focus={sub.focusFirst ? "first" : undefined}
           onBack={() => {
@@ -262,7 +269,7 @@ export function MenuItem({ f, open, onHover, onChoose }: ItemProps) {
   const booleanOpen = useBoolean((b) => b.session !== null);
   const blocked = useRepair((r) => blockedReason(f, r, triangle, booleanOpen));
   const soon = effectiveStatus(f) === "soon";
-  const submenu = isMenu(f);
+  const submenu = hasSubmenu(f);
   const toggle = f.isActive !== undefined || f.repairActive !== undefined || f.measureActive !== undefined || f.labelActive !== undefined;
   const checked = active || repairActive || measureActive || labelActive;
   const Icon = f.icon;

@@ -221,7 +221,7 @@ const HOME_GROUPS: [string, string[]][] = [
   ["Add parts", ["home.my-machines", "home.add-part", "home.part-library", "home.platform-statistics"]],
   ["Prepare", ["home.repair", "home.run-script"]],
   ["Analyze", ["home.new-analysis", "home.measure"]],
-  ["Modify", ["home.boolean", "home.generate-shell", "home.generate-label"]],
+  ["Modify", ["home.boolean", "home.generate-shell", "home.hollow-tool", "home.generate-label"]],
   ["Arrange", ["home.scale", "home.rotate", "home.move", "home.orient", "home.duplicate", "home.pack"]],
   ["Support", ["home.generate-supports", "home.manage-supports"]],
   ["Slice parts", ["home.slice-parts"]],
@@ -1567,10 +1567,6 @@ describe("Export and Save project", () => {
     // The formats still to come stay listed in the File menu.
     expect(childrenOf("file.export-more").map((f) => f.label)).toEqual([
       "Colour STL",
-      "GTS",
-      "X3D",
-      "3DS",
-      "VRML",
       "BINVOX",
       "Compressed mesh",
       "Formlabs",

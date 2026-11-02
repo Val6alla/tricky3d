@@ -86,9 +86,24 @@ export type ImportPlacement = "ask" | "always" | "never";
 /** Export's options, remembered between runs: how STL is written, and where several parts go. */
 export interface ExportOptions {
   stl: "binary" | "ascii";
-  /** All parts in one file, or one file per part named after it. */
-  parts: "one-file" | "per-part";
+  /** All parts in one file, one file per part named after it, or one file per shell (loose piece) of each part. */
+  parts: "one-file" | "per-part" | "per-shell";
 }
+
+/** Import options' unit: the file's own (where it names one, else millimetres), or the one picked. */
+export type UnitChoice = "detect" | "mm" | "cm" | "m" | "inch" | "foot";
+/** Import options: what a file with several objects becomes. */
+export type ObjectsChoice = "ask" | "separate" | "merge";
+
+/** File › Import options, remembered between runs. */
+export interface ImportOptions {
+  units: UnitChoice;
+  objects: ObjectsChoice;
+}
+
+/** Autosave every this many minutes; 0 is off. */
+export type AutosaveMinutes = 0 | 2 | 5 | 10;
+export const AUTOSAVE_CHOICES: readonly AutosaveMinutes[] = [0, 2, 5, 10];
 
 export type SelectMode = "replace" | "add" | "toggle";
 
@@ -169,6 +184,9 @@ const HIDE_SOON_KEY = "tricky3d.hideSoon";
 const IMPORT_PLACEMENT_KEY = "tricky3d.importPlacement";
 const EXPORT_STL_KEY = "tricky3d.exportStl";
 const EXPORT_PARTS_KEY = "tricky3d.exportParts";
+const IMPORT_UNITS_KEY = "tricky3d.importUnits";
+const IMPORT_OBJECTS_KEY = "tricky3d.importObjects";
+const AUTOSAVE_KEY = "tricky3d.autosaveMinutes";
 // View settings that are remembered, as "1" or "0". Anything else stored (or nothing) means the default.
 const SHOW_PLATFORM_KEY = "tricky3d.showPlatform";
 const ALWAYS_SHOW_GIZMO_KEY = "tricky3d.alwaysShowGizmo";
@@ -197,10 +215,30 @@ function loadImportPlacement(): ImportPlacement {
 
 /** The export options remembered from an earlier run; the default (binary STL, one file) for any missing or unknown. */
 export function loadExportOptions(): ExportOptions {
+  const parts = loadSetting(EXPORT_PARTS_KEY);
   return {
     stl: loadSetting(EXPORT_STL_KEY) === "ascii" ? "ascii" : "binary",
-    parts: loadSetting(EXPORT_PARTS_KEY) === "per-part" ? "per-part" : "one-file",
+    parts: parts === "per-part" || parts === "per-shell" ? parts : "one-file",
   };
+}
+
+const UNIT_CHOICES: readonly UnitChoice[] = ["detect", "mm", "cm", "m", "inch", "foot"];
+const OBJECTS_CHOICES: readonly ObjectsChoice[] = ["ask", "separate", "merge"];
+
+/** The import options remembered from an earlier run; the default (the file's own unit, ask) for any missing or unknown. */
+export function loadImportOptions(): ImportOptions {
+  const units = loadSetting(IMPORT_UNITS_KEY);
+  const objects = loadSetting(IMPORT_OBJECTS_KEY);
+  return {
+    units: UNIT_CHOICES.find((u) => u === units) ?? "detect",
+    objects: OBJECTS_CHOICES.find((o) => o === objects) ?? "ask",
+  };
+}
+
+/** The autosave interval remembered from an earlier run; every 5 minutes when there is none. */
+export function loadAutosaveMinutes(): AutosaveMinutes {
+  const stored = Number(loadSetting(AUTOSAVE_KEY) ?? "5");
+  return AUTOSAVE_CHOICES.find((m) => m === stored) ?? 5;
 }
 
 let partSeq = 0;
@@ -280,6 +318,9 @@ export interface AppState {
   hideSoon: boolean;
   importPlacement: ImportPlacement;
   exportOptions: ExportOptions;
+  importOptions: ImportOptions;
+  /** File › Autosave: every this many minutes, 0 for off. */
+  autosaveMinutes: AutosaveMinutes;
   /** Parts last copied, in parts-list order. Empty after New project and before the first copy. */
   clipboard: ClipboardPart[];
   /** How many times the current clipboard has been pasted and not undone. The next paste steps by one more gap. */
@@ -349,6 +390,9 @@ export interface AppState {
   setImportPlacement(value: ImportPlacement): void;
   /** Remembers Export's options for the next export, also after a restart. */
   setExportOptions(options: ExportOptions): void;
+  /** Remembers File › Import options, also after a restart. */
+  setImportOptions(options: ImportOptions): void;
+  setAutosaveMinutes(minutes: AutosaveMinutes): void;
   setLastFolder(folder: string | null): void;
   newProject(): void;
   /** Replaces the scene with an opened project. Clears the undo history; the result counts as saved. */
@@ -421,6 +465,8 @@ export const useStore = create<AppState>()((set, get) => {
     hideSoon: loadSetting(HIDE_SOON_KEY) === "1",
     importPlacement: loadImportPlacement(),
     exportOptions: loadExportOptions(),
+    importOptions: loadImportOptions(),
+    autosaveMinutes: loadAutosaveMinutes(),
     clipboard: [],
     pasteCount: 0,
     lastFolder: null,
@@ -731,6 +777,17 @@ export const useStore = create<AppState>()((set, get) => {
       saveSetting(EXPORT_STL_KEY, options.stl);
       saveSetting(EXPORT_PARTS_KEY, options.parts);
       set({ exportOptions: { stl: options.stl, parts: options.parts } });
+    },
+
+    setImportOptions(options) {
+      saveSetting(IMPORT_UNITS_KEY, options.units);
+      saveSetting(IMPORT_OBJECTS_KEY, options.objects);
+      set({ importOptions: { units: options.units, objects: options.objects } });
+    },
+
+    setAutosaveMinutes(minutes) {
+      saveSetting(AUTOSAVE_KEY, String(minutes));
+      set({ autosaveMinutes: minutes });
     },
 
     setLastFolder(folder) {

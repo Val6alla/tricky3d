@@ -5,7 +5,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { boundsOf, IDENTITY, unionBounds, type Bounds } from "../mesh";
-import { primeMeshCaches } from "../meshCache";
+import { cachedStats, primeMeshCaches } from "../meshCache";
 import { closeRepair } from "../repair/session";
 import {
   DEFAULT_PACKING,
@@ -14,8 +14,10 @@ import {
   useStore,
   type AppState,
   type ExportOptions,
+  type ImportOptions,
   type ImportPlacement,
   type MeshData,
+  type UnitChoice,
   type NewPart,
   type Part,
   type Vec3,
@@ -56,13 +58,19 @@ import {
 // ---------------------------------------------------------------------------------------------
 // Formats
 
-/** Import formats in menu order; each is also its file extension. */
-export const IMPORT_FORMATS: readonly ImportFormat[] = ["stl", "obj", "ply", "3mf", "amf", "off"];
+/** Import formats in menu order; each is also its main file extension. */
+export const IMPORT_FORMATS: readonly ImportFormat[] = ["stl", "obj", "ply", "3mf", "amf", "off", "wrl", "x3d", "3ds", "gts"];
 
-const SUPPORTED_TEXT = "STL, OBJ, PLY, 3MF, AMF and OFF";
+/** Other extensions of the formats above (src-tauri/src/formats/mod.rs `extensions`): gzipped and classic VRML and X3D. */
+const EXTENSION_FORMATS: Readonly<Record<string, ImportFormat>> = { vrml: "wrl", wrz: "wrl", x3dv: "wrl", x3dvz: "wrl", x3dz: "x3d" };
+
+const SUPPORTED_TEXT = "STL, OBJ, PLY, 3MF, AMF, OFF, VRML, X3D, 3DS and GTS";
 
 /** Export's types in the order its dialog lists them (src-tauri/src/save_dialog.rs); each is also its extension. */
-export const EXPORT_TYPES: readonly ExportType[] = ["stl", "3mf", "obj", "ply", "amf", "off"];
+export const EXPORT_TYPES: readonly ExportType[] = ["stl", "3mf", "obj", "ply", "amf", "off", "wrl", "x3d", "3ds", "gts"];
+
+/** Millimetres per unit for each Import options unit; null reads the file's own. */
+export const UNIT_MM: Readonly<Record<UnitChoice, number | null>> = { detect: null, mm: 1, cm: 10, m: 1000, inch: 25.4, foot: 304.8 };
 
 const PROJECT_FILTERS: FileFilter[] = [{ name: "tricky3D project (*.3mf)", extensions: ["3mf"] }];
 
@@ -107,7 +115,7 @@ export function inFolder(folder: string | null, name: string): string {
 /** The import format for a path, by extension; null when tricky3D cannot read it. */
 export function importFormatOf(path: string): ImportFormat | null {
   const ext = extensionOf(path);
-  return IMPORT_FORMATS.find((f) => f === ext) ?? null;
+  return IMPORT_FORMATS.find((f) => f === ext) ?? EXTENSION_FORMATS[ext] ?? null;
 }
 
 /** `path` with `.ext` added unless it already ends in it (in any case). */
@@ -162,7 +170,8 @@ export interface DialogDefault {
 export function exportType(parts: readonly { source?: string }[]): ExportType {
   const source = sourceOf(parts);
   const ext = source ? extensionOf(source) : "";
-  return EXPORT_TYPES.find((t) => t === ext) ?? "stl";
+  const format = EXPORT_TYPES.find((t) => t === ext) ?? EXTENSION_FORMATS[ext];
+  return EXPORT_TYPES.find((t) => t === format) ?? "stl";
 }
 
 /**
@@ -286,8 +295,8 @@ export function placedMatrices(meshes: readonly { mesh: MeshData; matrix: readon
   return meshes.map((m) => preTranslate(m.matrix ?? IDENTITY, offset));
 }
 
-/** Formats without units, which tricky3D reads as millimetres. */
-const UNITLESS: ReadonlySet<ImportFormat> = new Set(["stl", "obj", "ply", "off"]);
+/** Formats that may name no unit, which tricky3D then reads as millimetres (3MF and AMF always have one). */
+const UNITLESS: ReadonlySet<ImportFormat> = new Set(["stl", "obj", "ply", "off", "wrl", "x3d", "3ds", "gts"]);
 
 /** Below this size across (mm), a file without units was probably modelled in metres. */
 export const METRES_BELOW = 1;
@@ -296,8 +305,8 @@ export const METRES_BELOW = 1;
  * The size across (the longest side of the box round all its meshes) of a file without units that
  * is small enough to have been modelled in metres, or null.
  */
-export function metresSize(result: Pick<ImportResult, "format" | "meshes">): number | null {
-  if (!UNITLESS.has(result.format)) return null;
+export function metresSize(result: Pick<ImportResult, "format" | "meshes" | "unit">): number | null {
+  if (!UNITLESS.has(result.format) || (result.unit ?? null) !== null) return null;
   const box = unionBounds(result.meshes.map((m) => boundsOf(m.mesh, m.matrix ?? IDENTITY)));
   if (!box) return null;
   const size = Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
@@ -431,8 +440,10 @@ export function createSaveQueue(): SaveQueue {
 
 /** The side effects of importing one file. The app's own talk to Rust, the prompts and the store; tests pass fakes. */
 export interface ImportEnv {
-  /** Reads and welds the file in Rust; `merge` joins an OBJ's objects into one mesh. */
-  read(path: string, merge: boolean): Promise<ImportResult>;
+  /** Reads and welds the file in Rust; `merge` joins its objects into one mesh; `units` is mm per unit, or null for the file's own. */
+  read(path: string, merge: boolean, units: number | null): Promise<ImportResult>;
+  /** File › Import options as they are now; the defaults when absent. */
+  options?(): ImportOptions;
   /** "One part" or "One part per object"; null when cancelled. */
   askObjects(fileName: string, count: number): Promise<ObjectsAnswer | null>;
   /** Whether to scale a file `size` mm across by 1000 (modelled in metres); null when cancelled. */
@@ -448,14 +459,17 @@ export interface ImportEnv {
 }
 
 /**
- * Imports one file: asks how to split a multi-object OBJ, asks whether to scale a file without
- * units by 1000 when it is under METRES_BELOW mm across, asks (or applies the setting) whether to
- * place it, then adds its parts as one undo step. Cancelling either prompt skips the file, and so
- * does closing its project while the file is read. Rejects with the reader's error. Main-thread
- * work stays O(vertices), and only when placing.
+ * Imports one file, as File › Import options say: in the unit picked (else the file's own), and a file with several
+ * objects as one part, one part per object, or by asking. Asks whether to scale a file that names no unit by 1000 when
+ * it is under METRES_BELOW mm across (only when reading the file's own unit), asks (or applies the setting) whether
+ * to place it, then adds its parts, with the colours the file gives them, as one undo step. Cancelling any prompt
+ * skips the file, and so does closing its project while the file is read. Rejects with the reader's error.
+ * Main-thread work stays O(vertices), and only when placing.
  */
 export async function importFile(path: string, env: ImportEnv): Promise<"added" | "skipped"> {
   const name = fileName(path);
+  const options = env.options?.() ?? { units: "detect", objects: "ask" };
+  const units = UNIT_MM[options.units];
   // Reading a big file takes seconds; its parts must not land in a project opened meanwhile.
   const closed = () => {
     if (env.current()) return false;
@@ -463,13 +477,13 @@ export async function importFile(path: string, env: ImportEnv): Promise<"added" 
     return true;
   };
 
-  let result = await env.read(path, false);
+  let result = await env.read(path, options.objects === "merge", units);
   if (closed()) return "skipped";
-  if (result.splittable) {
+  if (result.splittable && options.objects === "ask") {
     const answer = await env.askObjects(name, result.objectCount);
     if (answer === null) return "skipped";
     if (answer === "single") {
-      result = await env.read(path, true);
+      result = await env.read(path, true, units);
       if (closed()) return "skipped";
     }
   }
@@ -479,7 +493,7 @@ export async function importFile(path: string, env: ImportEnv): Promise<"added" 
     return "skipped";
   }
 
-  const size = metresSize(result);
+  const size = units === null ? metresSize(result) : null;
   if (size !== null) {
     const scale = await env.askScale(name, size);
     if (scale === null || closed()) return "skipped";
@@ -490,7 +504,14 @@ export async function importFile(path: string, env: ImportEnv): Promise<"added" 
   if (place === null || closed()) return "skipped";
   const placed = place ? placedMatrices(result.meshes, env.platform()) : null;
   const parts = result.meshes.map(
-    (m, i): NewPart => ({ name: m.name, mesh: m.mesh, matrix: placed?.[i] ?? m.matrix ?? undefined, source: path }),
+    (m, i): NewPart => ({
+      name: m.name,
+      mesh: m.mesh,
+      matrix: placed?.[i] ?? m.matrix ?? undefined,
+      source: path,
+      ...(fileColor(m.color) ? { color: fileColor(m.color) } : {}),
+      ...(m.triangleColors && m.triangleColors.length === m.mesh.indices.length ? { colors: m.triangleColors } : {}),
+    }),
   );
   env.add(parts, `Import ${name}`);
   for (const w of result.warnings) env.warn(w);
@@ -535,10 +556,10 @@ const documentGeneration = () => useStore.getState().generation;
 function appImportEnv(): ImportEnv {
   const generation = documentGeneration();
   return {
-    async read(path, merge) {
+    async read(path, merge, units) {
       const task = startTask(`Importing ${fileName(path)}`);
       try {
-        const result = await importMesh(path, merge, progressTo(task));
+        const result = await importMesh(path, merge, progressTo(task), units);
         // Rust measured the meshes while welding; keep that so the info panel and viewport do not redo it.
         for (const m of result.meshes) primeMeshCaches(m.mesh, { stats: m.stats, edges: m.edges });
         return result;
@@ -549,6 +570,7 @@ function appImportEnv(): ImportEnv {
     askObjects: (name, count) => prompt<ObjectsAnswer>((resolve) => ({ kind: "import-objects", fileName: name, count, resolve })),
     askScale: (name, size) => prompt<boolean>((resolve) => ({ kind: "scale-on-import", fileName: name, size, resolve })),
     askPlace: askPlacement,
+    options: () => useStore.getState().importOptions,
     platform: () => useStore.getState().platform,
     current: () => documentGeneration() === generation,
     add: (parts, label) => void useStore.getState().addParts(parts, label),
@@ -630,16 +652,16 @@ async function pickSavePath(options: { title: string; filters: FileFilter[] } & 
 
 /** The side effects of an export: the app's own dialogs, the store and the talk to Rust. Tests pass fakes. */
 export interface ExportEnv {
-  /** Export's options for `count` parts, opened on `last`; null when cancelled. */
-  askOptions(count: number, last: ExportOptions): Promise<ExportOptions | null>;
+  /** Export's options for `count` parts of `shells` shells in all, opened on `last`; null when cancelled. */
+  askOptions(count: number, last: ExportOptions, shells?: number): Promise<ExportOptions | null>;
   /** Keeps the options for the next export, also after a restart. */
   remember(options: ExportOptions): void;
   /** The Export dialog (pickExportFile); null when cancelled. */
   pick(request: { title: string; format: ExportType; each: boolean } & DialogDefault): Promise<ExportPick | null>;
   /** Writes every part into one file. */
   writeOne(path: string, format: ExportFormat, parts: Part[]): Promise<void>;
-  /** Writes one file per part next to `path` (exportEach). */
-  writeEach(path: string, format: ExportFormat, replace: boolean, parts: Part[]): Promise<EachResult>;
+  /** Writes one file per part next to `path` (exportEach), or with `shells` one file per shell of each part. */
+  writeEach(path: string, format: ExportFormat, replace: boolean, parts: Part[], shells?: boolean): Promise<EachResult>;
   /** Whether to replace the `existing` files in `folder`. */
   askReplace(existing: string[], folder: string): Promise<boolean>;
 }
@@ -662,13 +684,18 @@ export async function exportParts(
   context: { options: ExportOptions; projectName: string; lastFolder: string | null },
   env: ExportEnv,
 ): Promise<Exported | null> {
-  const options = await env.askOptions(parts.length, context.options);
+  const options = await env.askOptions(parts.length, context.options, shellCount(parts));
   if (!options) return null;
   env.remember(options);
-  const each = parts.length > 1 && options.parts === "per-part";
+  const shells = options.parts === "per-shell";
+  const each = shells || (parts.length > 1 && options.parts === "per-part");
   const type = exportType(parts);
   const picked = await env.pick({
-    title: each ? `Export ${countParts(parts.length)}, one file each` : `Export ${countParts(parts.length)}`,
+    title: shells
+      ? `Export ${countParts(parts.length)}, one file per shell`
+      : each
+        ? `Export ${countParts(parts.length)}, one file each`
+        : `Export ${countParts(parts.length)}`,
     format: type,
     each,
     ...(each ? eachDialogDefault(parts, type, context.lastFolder) : exportDialogDefault(parts, type, context.projectName, context.lastFolder)),
@@ -681,12 +708,17 @@ export async function exportParts(
   }
   // Rust takes the folder of the path exactly as picked.
   const folder = folderOf(picked.path);
-  let result = await env.writeEach(picked.path, target.format, false, parts);
+  let result = await env.writeEach(picked.path, target.format, false, parts, shells);
   if (result.existing.length > 0) {
     if (!(await env.askReplace(result.existing, folder))) return null;
-    result = await env.writeEach(picked.path, target.format, true, parts);
+    result = await env.writeEach(picked.path, target.format, true, parts, shells);
   }
   return { folder, files: result.written };
+}
+
+/** The parts' shells in all, as their measurements counted them (a part not measured yet counts as one). */
+export function shellCount(parts: readonly Part[]): number {
+  return parts.reduce((n, p) => n + Math.max(1, cachedStats(p.mesh)?.shells ?? 1), 0);
 }
 
 /** The toast after an export of `count` parts. */
@@ -710,7 +742,7 @@ async function exportTask<T>(path: string, write: () => Promise<T>): Promise<T> 
 /** The app's export side effects. */
 function appExportEnv(): ExportEnv {
   return {
-    askOptions: (count, last) => prompt<ExportOptions>((resolve) => ({ kind: "export-options", count, options: last, resolve })),
+    askOptions: (count, last, shells) => prompt<ExportOptions>((resolve) => ({ kind: "export-options", count, shells, options: last, resolve })),
     remember: (options) => useStore.getState().setExportOptions(options),
     async pick(request) {
       const picked = await pickExportFile(request);
@@ -718,7 +750,7 @@ function appExportEnv(): ExportEnv {
       return picked;
     },
     writeOne: (path, format, parts) => exportTask(path, () => exportMeshes(path, format, meshesOut(parts))),
-    writeEach: (path, format, replace, parts) => exportTask(path, () => exportEach(path, format, replace, meshesOut(parts))),
+    writeEach: (path, format, replace, parts, shells) => exportTask(path, () => exportEach(path, format, replace, meshesOut(parts), shells)),
     askReplace: (existing, folder) =>
       ask(replaceQuestion(existing, folder), { title: "Replace files?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }),
   };
@@ -764,6 +796,41 @@ export async function openFile(): Promise<void> {
   if (format === "3mf") await openProject(path);
   else if (format) await openMesh(path);
   else toast(unsupportedMessage([path]), "error");
+}
+
+/**
+ * File › Recent files ▸ a file: as File › Open would open it (after asking about unsaved changes): a project as the
+ * project, a mesh file as a new project holding its parts. Rust checks the file is on its list and still there.
+ */
+export async function openRecentFile(path: string, grant: (path: string) => Promise<"project" | "mesh">): Promise<void> {
+  if (browserOnly("Opening a file")) return;
+  if (!(await confirmDiscard())) return;
+  let kind: "project" | "mesh";
+  try {
+    kind = await grant(path);
+  } catch (err) {
+    toast(errorMessage(err, `Could not open "${fileName(path)}"`), "error");
+    return;
+  }
+  usedFile(path);
+  if (kind === "project") await openProject(path);
+  else await openMesh(path);
+}
+
+/**
+ * A project restored from an autosave after a crash: it replaces the open one (which is empty at start) as a new
+ * project with changes, so Save asks where to put it and closing asks first.
+ */
+export function loadRecovered(result: ProjectResult, savedAt: Date): void {
+  for (const m of result.meshes) primeMeshCaches(m.mesh, { stats: m.stats, edges: m.edges });
+  const s = useStore.getState();
+  const platform = projectPlatform(result.platform, s.platform);
+  s.loadProject({ name: "Recovered project", path: null, platform, parts: result.meshes.map(projectPart) });
+  // Nothing of it is in a file of the user's: it counts as unsaved.
+  useStore.setState({ saved: { parts: [], platform } });
+  for (const w of result.warnings) toast(w, "warn");
+  toast(`Restored the project saved automatically at ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
+  viewport.zoomTo("everything");
 }
 
 /**

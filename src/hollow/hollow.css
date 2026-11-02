@@ -1,0 +1,142 @@
+/* Hollow: its panel, the holes' list and the handles over the view. */
+
+.hw-volumes {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.hw-volumes dt {
+  color: var(--text-muted);
+}
+
+.hw-volumes dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.hw-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hw-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.hw-holes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hw-hole {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.hw-hole.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.hw-hole-pick {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hw-hole-n {
+  min-width: 1.4em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hw-hole-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hw-hole.is-bad .hw-hole-text {
+  color: var(--danger);
+  white-space: normal;
+}
+
+.hw-hole-delete {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.hw-hole-delete:hover {
+  color: var(--danger);
+}
+
+.hw-auto {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hw-count {
+  width: 4em;
+}
+
+.hw-thin {
+  border-left: 3px solid var(--danger);
+  padding-left: 6px;
+}
+
+/* A hole's handle over the view: a ring on the hole's rim, filled when selected, red when the hole is refused. */
+.hw-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: grab;
+  touch-action: none;
+  z-index: 3;
+}
+
+.hw-handle.is-selected {
+  background: var(--accent);
+}
+
+.hw-handle.is-bad {
+  border-color: var(--danger);
+}
+
+.hw-handle.is-bad.is-selected {
+  background: var(--danger);
+}
+
+.hw-handle:active {
+  cursor: grabbing;
+}

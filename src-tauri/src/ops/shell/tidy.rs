@@ -38,7 +38,8 @@ pub(crate) struct Settings {
     pub offset: Offset,
     /// Rebuild sharp edges and corners from the offset surface's tangent planes.
     pub features: bool,
-    pub smooth: bool,
+    /// Pairs of Taubin smoothing steps (0: no smoothing); Smooth result takes SMOOTH_PAIRS.
+    pub smooth: usize,
     /// Longest edge a collapse may make (Hollow part keeps it under the thickness, so the cavity
     /// never reaches the part's own surface).
     pub longest: f64,
@@ -58,7 +59,7 @@ const MAX_COST: f64 = 0.05 * 0.05;
 /// Taubin smoothing: the shrinking and the inflating step, and how many pairs of them.
 const LAMBDA: f64 = 0.5;
 const MU: f64 = -0.53;
-const SMOOTH_PAIRS: usize = 4;
+pub(crate) const SMOOTH_PAIRS: usize = 4;
 /// How many times the tidying may start again round crossings, and the most crossing pairs worth
 /// trying to keep clear of.
 const TRIES: usize = 3;
@@ -86,7 +87,7 @@ pub(crate) fn tidy(
         let span = 1.0 / TRIES as f64;
         let mut part = control.sub(attempt as f64 * span, (attempt + 1) as f64 * span);
         let mut work = Work::new(&mesh, s.longest.min(MAX_EDGE * s.cell));
-        if s.smooth {
+        if s.smooth > 0 {
             part.stage("Smoothing");
             smooth(&mut work, surface, s, &locked, &mut part.sub(0.0, 0.3))?;
         }
@@ -135,7 +136,7 @@ fn smooth(
 ) -> RepairResult<()> {
     use rayon::prelude::*;
     let n = work.pos.len();
-    let steps = 2 * SMOOTH_PAIRS;
+    let steps = 2 * s.smooth;
     for step in 0..steps {
         control.check()?;
         control.progress(step as f64 / steps as f64);

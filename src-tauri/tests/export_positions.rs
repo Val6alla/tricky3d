@@ -31,7 +31,7 @@ const TOLERANCE: f64 = 0.001;
 const PLATFORM: [f64; 3] = [200.0, 200.0, 200.0];
 
 /// Every export format with its extension.
-const FORMATS: [(&str, &str); 7] = [
+const FORMATS: [(&str, &str); 11] = [
     ("stl-binary", "stl"),
     ("stl-ascii", "stl"),
     ("obj", "obj"),
@@ -39,10 +39,15 @@ const FORMATS: [(&str, &str); 7] = [
     ("3mf", "3mf"),
     ("amf", "amf"),
     ("off", "off"),
+    ("wrl", "wrl"),
+    ("x3d", "x3d"),
+    ("3ds", "3ds"),
+    ("gts", "gts"),
 ];
 
-/// Formats that keep one object per part; the others merge every part into one mesh.
-const PER_PART: [&str; 3] = ["obj", "3mf", "amf"];
+/// Formats that keep one object per part; the others merge every part into one mesh. (3DS keeps
+/// one object per part too, but splits a part of more than 65,535 points into several.)
+const PER_PART: [&str; 5] = ["obj", "3mf", "amf", "wrl", "x3d"];
 
 /// A part as the window holds it: its own mesh and the matrix that places it.
 #[derive(Clone, Debug)]
@@ -736,6 +741,53 @@ fn one_file_per_part_names_each_file_after_its_part_and_keeps_its_place() {
             );
         }
     }
+}
+
+/// One file per shell (Export's third choice): a part of loose pieces gives a file per piece, named
+/// "<part> - shell n", each where it sat; a part of one shell keeps its own name.
+#[test]
+fn one_file_per_shell_writes_each_loose_piece_where_it_was() {
+    let dir = temp_dir("export-shells");
+    // Two cubes 30 mm apart in one part, moved and turned on the platform; and a plain cube.
+    let mut two = cube(10.0);
+    let mut far = cube(10.0);
+    tricky3d_lib::ops::translate(&mut far, [30.0, 0.0, 0.0]);
+    two = tricky3d_lib::ops::concat(&[&two, &far]).unwrap();
+    let parts = [
+        Part {
+            name: "pair".into(),
+            mesh: two,
+            matrix: trs([50.0, 60.0, 0.0], 30.0, 0.0, [1.0, 1.0, 1.0]),
+        },
+        Part {
+            name: "single".into(),
+            mesh: cube(5.0),
+            matrix: trs([0.0, 0.0, 10.0], 0.0, 0.0, [1.0, 1.0, 1.0]),
+        },
+    ];
+    let all: Vec<&Part> = parts.iter().collect();
+    let picked = dir.join("picked.stl");
+    let mut meta = Map::new();
+    meta.insert("path".into(), json!(picked.to_string_lossy()));
+    meta.insert("format".into(), json!("stl-binary"));
+    meta.insert("replace".into(), json!(false));
+    meta.insert("shells".into(), json!(true));
+    let done = jobs::export_each(bundle(meta, &all)).unwrap();
+    assert_eq!(
+        done.written,
+        ["pair - shell 1.stl", "pair - shell 2.stl", "single.stl"]
+    );
+    let shells = split_shells(&parts[0].mesh);
+    for (k, name) in done.written[..2].iter().enumerate() {
+        let back = reimported(&dir.join(name));
+        assert_eq!(back.len(), 1);
+        assert_same_triangles(&back, &[bake(&shells[k], &parts[0].matrix)], name);
+    }
+    assert_same_triangles(
+        &reimported(&dir.join("single.stl")),
+        &on_platform(&[&parts[1]]),
+        "single",
+    );
 }
 
 /// One file per part never replaces a file without asking: while any of its files is there it

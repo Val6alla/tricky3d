@@ -32,23 +32,54 @@ use crate::stats;
 
 mod analysis;
 mod arrange;
+mod hollow;
 mod modify;
 pub use analysis::{ANALYSIS_PROGRESS, AnalysisProgress, analyze_part};
 pub use arrange::{
     ARRANGE_PROGRESS, ArrangeProgress, PRESETS_FILE, arrange, load_preset_file, load_presets,
     preset_file, save_preset_file, save_presets,
 };
+pub use hollow::{
+    HOLLOW_PROGRESS, HollowCache, HollowProgress, hollow_apply, hollow_holes, hollow_preview,
+};
 pub use modify::{MODIFY_PROGRESS, ModifyProgress, modify_run};
 
 /// `import_mesh`: reads, welds and measures a file; returns the bundle described in src/io/ipc.ts.
 pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<Vec<u8>, String> {
-    let imported = formats::import_file(path, merge, progress)?;
+    let options = formats::ImportOptions { merge, units: None };
+    import_mesh_with(path, &options, progress)
+}
+
+/// `import_mesh` with the Import options: objects merged or not, and the unit to read the file in
+/// (None: the file's own, else millimetres). The meta's `unit` is the millimetres per unit used,
+/// null when the file names none. A part's colour comes as info `color` ("#rrggbb"), its triangles'
+/// colours as `extra.colors`, one 0xRRGGBB per triangle.
+pub fn import_mesh_with(
+    path: &Path,
+    options: &formats::ImportOptions,
+    progress: &mut Progress,
+) -> Result<Vec<u8>, String> {
+    let imported = formats::import_with(path, options, progress)?;
     let analyses = analyze_all(imported.parts.iter().map(|p| &p.mesh), progress);
     let mut meta = Map::new();
     meta.insert("format".into(), json!(imported.format.id()));
     meta.insert("objectCount".into(), json!(imported.object_count));
     meta.insert("splittable".into(), json!(imported.splittable));
     meta.insert("warnings".into(), json!(imported.warnings));
+    meta.insert("unit".into(), json!(imported.unit));
+    let packed: Vec<Option<Vec<u32>>> = imported
+        .parts
+        .iter()
+        .map(|part| {
+            part.colors.as_ref().map(|c| {
+                c.as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|rgb| (rgb[0] as u32) << 16 | (rgb[1] as u32) << 8 | rgb[2] as u32)
+                    .collect()
+            })
+        })
+        .collect();
     let meshes: Vec<OutMesh> = imported
         .parts
         .iter()
@@ -59,11 +90,21 @@ pub fn import_mesh(path: &Path, merge: bool, progress: &mut Progress) -> Result<
             if let Some(matrix) = &part.matrix {
                 info.insert("matrix".into(), json!(matrix.to_vec()));
             }
+            if let Some(color) = part.color {
+                info.insert("color".into(), json!(formats::scene::hex(color)));
+            }
             info.insert("stats".into(), json!(analysis.stats));
             out_mesh(info, &part.mesh, analysis)
         })
         .collect();
-    Ok(bundle::encode(&meta, &meshes))
+    let extra: Vec<Extra> = packed
+        .iter()
+        .map(|c| match c {
+            Some(c) => vec![("colors", BlobRef::U32(c))],
+            None => Vec::new(),
+        })
+        .collect();
+    Ok(bundle::encode_with_extra(&meta, &meshes, &extra))
 }
 
 /// `open_project`: reads a project 3MF with its parts' display fields and the platform size.
@@ -204,17 +245,46 @@ pub struct EachResult {
 /// instead, so the window can ask first. A part never writes over a file this export wrote for
 /// another part, even through another name the system answers to (a short 8.3 name on Windows).
 /// Each file is written whole or not at all, so running it again after a failure only rewrites
-/// files.
+/// files. With `shells` in the meta, each shell of a part (`ops::shells::split_shells`: pieces not
+/// joined to the rest) gets a file of its own, "<part> - shell 1" and so on, where it sits; a part
+/// of one shell keeps its own name.
 pub fn export_each(bundle: Bundle) -> Result<EachResult, String> {
     let path = path_field(&bundle.meta)?;
     let file = display_name(&path);
     let format = export_format(&bundle.meta, &file)?;
     let replace = bundle.meta.get("replace").and_then(Value::as_bool) == Some(true);
+    let by_shell = bundle.meta.get("shells").and_then(Value::as_bool) == Some(true);
     let folder = path
         .parent()
         .filter(|f| !f.as_os_str().is_empty())
         .ok_or_else(|| format!("Could not export next to \"{file}\": it names no folder."))?;
     let parts = parts_from(&bundle, &file)?;
+    let split: Vec<(String, Matrix, std::borrow::Cow<Mesh>)> = parts
+        .into_iter()
+        .flat_map(|(name, matrix, mesh)| {
+            let shells = if by_shell {
+                ops::shells::split_shells(mesh)
+            } else {
+                Vec::new()
+            };
+            if shells.len() <= 1 {
+                vec![(name, matrix, std::borrow::Cow::Borrowed(mesh))]
+            } else {
+                shells
+                    .into_iter()
+                    .enumerate()
+                    .map(|(k, shell)| {
+                        (
+                            format!("{name} - shell {}", k + 1),
+                            matrix,
+                            std::borrow::Cow::Owned(shell),
+                        )
+                    })
+                    .collect()
+            }
+        })
+        .collect();
+    let parts = split;
     let ext = format.extension();
     let names = formats::part_file_names(parts.iter().map(|(name, _, _)| name.as_str()), ext);
     // Anything by that name counts, a folder or a broken link too: the write would replace it. The
@@ -267,6 +337,13 @@ pub fn export_each(bundle: Bundle) -> Result<EachResult, String> {
 /// kept in the metadata (src/project.rs).
 pub fn save_project(bundle: Bundle) -> Result<(), String> {
     let path = path_field(&bundle.meta)?;
+    save_project_to(&path, &bundle)
+}
+
+/// Writes the project in `bundle` to `path` (the bundle's own path is not looked at): Save, and
+/// autosave into the app's data folder.
+pub fn save_project_to(path: &Path, bundle: &Bundle) -> Result<(), String> {
+    let path = path.to_path_buf();
     let file = display_name(&path);
     let platform = bundle
         .meta
@@ -286,7 +363,7 @@ pub fn save_project(bundle: Bundle) -> Result<(), String> {
             }
         })
         .ok_or_else(|| format!("Could not save \"{file}\": the platform size is not valid."))?;
-    let parts = parts_from(&bundle, &file)?;
+    let parts = parts_from(bundle, &file)?;
     let out: Vec<PartOut> = parts
         .iter()
         .zip(&bundle.meshes)

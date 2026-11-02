@@ -14,6 +14,10 @@ const IMPORT: FormatRow[] = [
   { name: "3MF", detail: "Objects, placement and units", ext: ".3mf" },
   { name: "AMF", detail: "Plain or zipped, with units", ext: ".amf" },
   { name: "OFF", detail: "Text, polygons split into triangles", ext: ".off" },
+  { name: "VRML", detail: "VRML 2.0 and 97, gzipped too, with colours", ext: ".wrl" },
+  { name: "X3D", detail: "XML and classic, with units and colours", ext: ".x3d" },
+  { name: "3DS", detail: "Objects with their material colours", ext: ".3ds" },
+  { name: "GTS", detail: "GNU Triangulated Surface, text", ext: ".gts" },
 ];
 
 const EXPORT: FormatRow[] = [
@@ -24,10 +28,14 @@ const EXPORT: FormatRow[] = [
   { name: "3MF", detail: "One object per part, in mm", ext: ".3mf" },
   { name: "AMF", detail: "One object per part, in mm", ext: ".amf" },
   { name: "OFF", detail: "Parts merged into one mesh", ext: ".off" },
+  { name: "VRML", detail: "One shape per part", ext: ".wrl" },
+  { name: "X3D", detail: "One shape per part, in mm", ext: ".x3d" },
+  { name: "3DS", detail: "One object per part", ext: ".3ds" },
+  { name: "GTS", detail: "Parts merged into one surface", ext: ".gts" },
 ];
 
-const IMPORT_SOON = ["X3D", "VRML", "3DS", "GTS", "Colour STL", "STEP", "IGES"];
-const EXPORT_SOON = ["Colour STL", "GTS", "X3D", "3DS", "VRML", "BINVOX", "Compressed mesh", "Formlabs", "Slice"];
+const IMPORT_SOON = ["Colour STL", "STEP", "IGES"];
+const EXPORT_SOON = ["Colour STL", "BINVOX", "Compressed mesh", "Formlabs", "Slice"];
 
 function FormatSection({ title, rows, soon, hideSoon }: { title: string; rows: FormatRow[]; soon: string[]; hideSoon: boolean }) {
   return (
@@ -70,8 +78,9 @@ export function FormatsDialog({ onClose }: { onClose(): void }) {
           <FormatSection title="Export" rows={EXPORT} soon={EXPORT_SOON} hideSoon={hideSoon} />
         </div>
         <p className="dlg-note">
-          STL, OBJ, PLY and OFF files have no units, so tricky3D reads and writes them as millimetres. Every export
-          writes each part where it sits on the platform.
+          STL, OBJ, PLY, OFF, VRML, 3DS and GTS files have no units, so tricky3D reads and writes them as millimetres;
+          X3D files say their unit or are read as millimetres too. File › Import options can read any file in another
+          unit. Every export writes each part where it sits on the platform.
         </p>
       </div>
     </Dialog>

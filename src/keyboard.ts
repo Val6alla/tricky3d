@@ -1,4 +1,5 @@
 import { closeAnalysisView, isAnalysisOpen } from "./analysis/session";
+import { deleteSelectedHole, isHollowOpen, selectHole, useHollow } from "./hollow/session";
 import { useEffect } from "react";
 import { IS_MAC, blockedReason, featureById, runFeature } from "./features";
 import { isMenuOpen } from "./menus/Menu";
@@ -133,6 +134,18 @@ function onKeyDown(e: KeyboardEvent) {
   if (isLabelOpen() && !isTextEntry(e.target) && labelKey(e.key)) {
     e.preventDefault();
     return;
+  }
+  // Hollow: Delete removes the selected hole, Esc drops the selection.
+  if (isHollowOpen() && !isTextEntry(e.target)) {
+    if ((e.key === "Delete" || e.key === "Backspace") && deleteSelectedHole()) {
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Escape" && useHollow.getState().session?.selected) {
+      e.preventDefault();
+      selectHole(null);
+      return;
+    }
   }
   const action = shortcutFor(e, IS_MAC, isRepairing());
   if (!action || controlKeepsKey(e, action)) return;

@@ -12,6 +12,7 @@ use tauri::ipc::{Channel, InvokeBody, Request, Response};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
+use crate::autosave;
 use crate::bundle::{self, Bundle};
 use crate::formats::{ExportFormat, ImportFormat};
 use crate::grants::Grants;
@@ -21,6 +22,7 @@ use crate::mesh::MeshStats;
 use crate::open_dialog;
 use crate::ops::shell::{Estimate, EstimatePart, ShellSettings};
 use crate::progress::Progress;
+use crate::recent;
 use crate::repair::defaults::Catalog;
 use crate::repair::scripts::{Imported, Script, StoredScripts};
 use crate::save_dialog;
@@ -86,21 +88,30 @@ fn target_path(meta: &Map<String, Value>) -> Option<&Path> {
     meta.get("path").and_then(Value::as_str).map(Path::new)
 }
 
+/// `units`: millimetres per unit to read the file in, or null for the file's own (Import options).
 #[tauri::command]
 pub async fn import_mesh(
+    app: AppHandle,
     grants: State<'_, Grants>,
     path: String,
     merge: bool,
+    units: Option<f64>,
     on_progress: Channel<ImportProgress>,
 ) -> Result<Response, String> {
-    grants.check_read(Path::new(&path))?;
-    heavy(move || jobs::import_mesh(Path::new(&path), merge, &mut progress_to(on_progress)))
-        .await
-        .map(Response::new)
+    let file = PathBuf::from(&path);
+    grants.check_read(&file)?;
+    let options = crate::formats::ImportOptions { merge, units };
+    let bytes = heavy(move || {
+        jobs::import_mesh_with(Path::new(&path), &options, &mut progress_to(on_progress))
+    })
+    .await?;
+    remember_recent(&app, &file, recent::Kind::Mesh).await;
+    Ok(Response::new(bytes))
 }
 
 #[tauri::command]
 pub async fn open_project(
+    app: AppHandle,
     grants: State<'_, Grants>,
     path: String,
     on_progress: Channel<ImportProgress>,
@@ -116,7 +127,52 @@ pub async fn open_project(
     grants.adopt_project(&file);
     // Save and Export open in the folders its parts were imported from, as before it was saved.
     grants.remember_source_folders(&sources);
+    remember_recent(&app, &file, recent::Kind::Project).await;
     Ok(Response::new(bytes))
+}
+
+/// Puts a file the user just opened or saved on File › Recent files, before the command answers,
+/// so the menu read next has it. The list is a convenience: a failure to keep it is logged, never
+/// shown.
+async fn remember_recent(app: &AppHandle, file: &Path, kind: recent::Kind) {
+    let Ok(dir) = config_dir(app, "Could not keep the recent files") else {
+        return;
+    };
+    let file = file.to_path_buf();
+    if let Err(e) = blocking(move || recent::add(&dir, &file, kind)).await {
+        eprintln!("tricky3d: {e}");
+    }
+}
+
+/// File › Recent files: the list, newest first, without files that are gone.
+#[tauri::command]
+pub async fn recent_list(app: AppHandle) -> Result<Vec<recent::Entry>, String> {
+    let dir = config_dir(&app, "Could not read the recent files")?;
+    blocking(move || Ok(recent::list(&dir))).await
+}
+
+/// Opening a recent file: when `path` is on the list and still there, the window may read it (a
+/// project also save back to it, as when picked in File › Open), and gets its kind.
+#[tauri::command]
+pub async fn recent_open(
+    app: AppHandle,
+    grants: State<'_, Grants>,
+    path: String,
+) -> Result<recent::Kind, String> {
+    let dir = config_dir(&app, "Could not read the recent files")?;
+    let file = PathBuf::from(&path);
+    let entry = blocking(move || Ok(recent::find(&dir, &file))).await?;
+    let Some(entry) = entry else {
+        return Err(format!(
+            "\"{}\" is no longer there, so it was taken off the recent files.",
+            crate::formats::display_name(Path::new(&path))
+        ));
+    };
+    match entry.kind {
+        recent::Kind::Project => grants.allow_project(entry.path),
+        recent::Kind::Mesh => grants.allow_read(entry.path),
+    }
+    Ok(entry.kind)
 }
 
 #[tauri::command]
@@ -148,12 +204,87 @@ pub async fn export_each(
 }
 
 #[tauri::command]
-pub async fn save_project(grants: State<'_, Grants>, request: Request<'_>) -> Result<(), String> {
+pub async fn save_project(
+    app: AppHandle,
+    grants: State<'_, Grants>,
+    request: Request<'_>,
+) -> Result<(), String> {
     let bundle = bundle_of(&request, "save the project")?;
-    if let Some(path) = target_path(&bundle.meta) {
+    let path = target_path(&bundle.meta).map(Path::to_path_buf);
+    if let Some(path) = &path {
         grants.check_write(path, "3mf", "save")?;
     }
-    heavy(move || jobs::save_project(bundle)).await
+    heavy(move || jobs::save_project(bundle)).await?;
+    if let Some(path) = &path {
+        remember_recent(&app, path, recent::Kind::Project).await;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Autosave (src/autosave.rs, src/io/autosave.ts).
+
+/// This run's autosave session, made at start; None when the data folder could not be used.
+pub struct AutosaveState(pub std::sync::Mutex<Option<autosave::Session>>);
+
+fn autosave_session(state: &AutosaveState) -> std::sync::MutexGuard<'_, Option<autosave::Session>> {
+    state.0.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Writes the open project as the next autosave, into the app's data folder, and keeps the newest
+/// three. The bundle is a project's (src/io/files.ts projectMesh) without a path.
+#[tauri::command]
+pub async fn autosave_write(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    let bundle = bundle_of(&request, "save the project automatically")?;
+    let state = app.state::<AutosaveState>();
+    let path = {
+        let mut session = autosave_session(&state);
+        let Some(session) = session.as_mut() else {
+            return Err(
+                "Could not save the project automatically: its folder cannot be used.".into(),
+            );
+        };
+        session.next_file()
+    };
+    heavy(move || jobs::save_project_to(&path, &bundle)).await?;
+    let state = app.state::<AutosaveState>();
+    if let Some(session) = autosave_session(&state).as_ref() {
+        session.prune();
+    }
+    Ok(())
+}
+
+/// The autosave a crashed run left, offered at start; null when there is none.
+#[tauri::command]
+pub fn autosave_recovery(state: State<'_, AutosaveState>) -> Option<autosave::Recovery> {
+    autosave_session(&state).as_ref()?.recovery()
+}
+
+/// Opens autosave `id` as a project bundle (as open_project answers). The window keeps it as a new
+/// project with changes: Save asks where to put it.
+#[tauri::command]
+pub async fn autosave_restore(
+    state: State<'_, AutosaveState>,
+    id: String,
+    on_progress: Channel<ImportProgress>,
+) -> Result<Response, String> {
+    let file = autosave_session(&state)
+        .as_ref()
+        .and_then(|s| s.file(&id))
+        .ok_or_else(|| "Could not restore the project: its autosave is gone.".to_string())?;
+    let bytes = heavy(move || {
+        jobs::open_project_with_sources(&file, &mut progress_to(on_progress)).map(|(b, _)| b)
+    })
+    .await?;
+    Ok(Response::new(bytes))
+}
+
+/// The crashed run was dealt with (restored or not): it is not offered again.
+#[tauri::command]
+pub fn autosave_dismiss(state: State<'_, AutosaveState>) {
+    if let Some(session) = autosave_session(&state).as_mut() {
+        session.dismiss();
+    }
 }
 
 #[tauri::command]
@@ -674,6 +805,51 @@ pub async fn modify_run(window: Window, request: Request<'_>) -> Result<Response
     })
     .await
     .map(Response::new)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hollow (src/hollow/ipc.ts).
+
+#[tauri::command]
+pub async fn hollow_preview(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "hollow the part")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        let cache = window.state::<jobs::HollowCache>();
+        jobs::hollow_preview(bundle, &registry, &cache, &mut |progress| {
+            let _ = window.emit(jobs::HOLLOW_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+#[tauri::command]
+pub async fn hollow_holes(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "place the holes")?;
+    heavy(move || jobs::hollow_holes(bundle, &window.state::<jobs::HollowCache>()))
+        .await
+        .map(Response::new)
+}
+
+#[tauri::command]
+pub async fn hollow_apply(window: Window, request: Request<'_>) -> Result<Response, String> {
+    let bundle = bundle_of(&request, "hollow the part")?;
+    heavy(move || {
+        let registry = window.state::<RepairJobs>();
+        let cache = window.state::<jobs::HollowCache>();
+        jobs::hollow_apply(bundle, &registry, &cache, &mut |progress| {
+            let _ = window.emit(jobs::HOLLOW_PROGRESS, progress);
+        })
+    })
+    .await
+    .map(Response::new)
+}
+
+/// The Hollow panel closed: its preview is no longer kept.
+#[tauri::command]
+pub fn hollow_close(cache: State<'_, jobs::HollowCache>) {
+    cache.clear();
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -5,10 +5,11 @@ import type { CutPlane } from "../ops/types";
 import type { MeshData, PartRotation, Vec3 } from "../store";
 import { decodeBundle, encodeBundle, type InMesh, type OutMesh } from "./bundle";
 
-export type ImportFormat = "stl" | "obj" | "ply" | "3mf" | "amf" | "off";
-export type ExportFormat = "stl-binary" | "stl-ascii" | "obj" | "ply" | "3mf" | "amf" | "off";
+/** A format tricky3D reads, by its main extension ("wrl" is VRML, also X3D's classic text). */
+export type ImportFormat = "stl" | "obj" | "ply" | "3mf" | "amf" | "off" | "wrl" | "x3d" | "3ds" | "gts";
+export type ExportFormat = "stl-binary" | "stl-ascii" | "obj" | "ply" | "3mf" | "amf" | "off" | "wrl" | "x3d" | "3ds" | "gts";
 /** A type in the Export dialog's list: the extension of a format tricky3D writes. */
-export type ExportType = "stl" | "3mf" | "obj" | "ply" | "amf" | "off";
+export type ExportType = "stl" | "3mf" | "obj" | "ply" | "amf" | "off" | "wrl" | "x3d" | "3ds" | "gts";
 
 /** Mesh measurements in part-local millimetres, computed in Rust. */
 export interface MeshStats {
@@ -57,16 +58,20 @@ export interface LoadedMesh {
   colors?: string;
   /** The file the part was imported from, as the project file holds it. */
   source?: string;
+  /** Imports only: a colour per triangle (r, g, b bytes) where the file gives several. */
+  triangleColors?: Uint8Array;
 }
 
 export interface ImportResult {
   format: ImportFormat;
   /** Objects in the file before any merging. */
   objectCount: number;
-  /** True when the file has several objects that `merge` would join (OBJ only). */
+  /** True when the file has several objects that `merge` would join. */
   splittable: boolean;
   warnings: string[];
   meshes: LoadedMesh[];
+  /** Millimetres per unit the file was read in: the unit asked for, else the one the file names; null when it names none (read as millimetres). */
+  unit?: number | null;
 }
 
 export interface ProjectResult {
@@ -121,9 +126,35 @@ function loadedMeshes(buffer: ArrayBuffer) {
   return decodeBundle<Record<string, unknown>, MeshInfo>(buffer);
 }
 
-function toLoaded(m: { info: MeshInfo; positions: Float32Array; indices: Uint32Array; edges: Float32Array | null }): LoadedMesh {
+/** Triangle colours packed one 0xRRGGBB per triangle (Rust's import) as r, g, b bytes. */
+export function unpackColors(packed: Uint32Array): Uint8Array {
+  const out = new Uint8Array(packed.length * 3);
+  packed.forEach((c, i) => {
+    out[3 * i] = (c >> 16) & 255;
+    out[3 * i + 1] = (c >> 8) & 255;
+    out[3 * i + 2] = c & 255;
+  });
+  return out;
+}
+
+function toLoaded(m: {
+  info: MeshInfo;
+  positions: Float32Array;
+  indices: Uint32Array;
+  edges: Float32Array | null;
+  extra?: Record<string, Float32Array | Uint32Array>;
+}): LoadedMesh {
   const { name, matrix, stats, ...rest } = m.info;
-  return { ...rest, name, matrix: matrix ?? null, stats: stats ?? null, edges: m.edges, mesh: { positions: m.positions, indices: m.indices } };
+  const packed = m.extra?.colors;
+  return {
+    ...rest,
+    name,
+    matrix: matrix ?? null,
+    stats: stats ?? null,
+    edges: m.edges,
+    mesh: { positions: m.positions, indices: m.indices },
+    ...(packed instanceof Uint32Array && packed.length * 3 === m.indices.length ? { triangleColors: unpackColors(packed) } : {}),
+  };
 }
 
 function progressChannel(onProgress?: (p: ImportProgress) => void): Channel<ImportProgress> {
@@ -133,11 +164,17 @@ function progressChannel(onProgress?: (p: ImportProgress) => void): Channel<Impo
 }
 
 /**
- * Reads a mesh file on a background thread and welds it. With `merge` an OBJ with several objects
- * becomes one mesh; otherwise each object is its own mesh. Rejects with a message to show the user.
+ * Reads a mesh file on a background thread and welds it. With `merge` a file with several objects
+ * becomes one mesh; otherwise each object is its own mesh. `units` is millimetres per unit to read it
+ * in, or null for the file's own (Import options). Rejects with a message to show the user.
  */
-export async function importMesh(path: string, merge: boolean, onProgress?: (p: ImportProgress) => void): Promise<ImportResult> {
-  const buffer = await invoke<ArrayBuffer>("import_mesh", { path, merge, onProgress: progressChannel(onProgress) });
+export async function importMesh(
+  path: string,
+  merge: boolean,
+  onProgress?: (p: ImportProgress) => void,
+  units: number | null = null,
+): Promise<ImportResult> {
+  const buffer = await invoke<ArrayBuffer>("import_mesh", { path, merge, units, onProgress: progressChannel(onProgress) });
   const { meta, meshes } = loadedMeshes(buffer);
   return {
     format: meta.format as ImportFormat,
@@ -145,6 +182,7 @@ export async function importMesh(path: string, merge: boolean, onProgress?: (p: 
     splittable: meta.splittable as boolean,
     warnings: (meta.warnings as string[] | undefined) ?? [],
     meshes: meshes.map(toLoaded),
+    unit: typeof meta.unit === "number" ? meta.unit : null,
   };
 }
 
@@ -179,8 +217,55 @@ export interface EachResult {
  * each named after its part with its matrix baked in. Unless `replace`, it writes nothing while any of those files is
  * already there and names them instead.
  */
-export function exportEach(path: string, format: ExportFormat, replace: boolean, meshes: MeshOut[]): Promise<EachResult> {
-  return invoke<EachResult>("export_each", encodeBundle({ path, format, replace }, outMeshes(meshes)));
+export function exportEach(path: string, format: ExportFormat, replace: boolean, meshes: MeshOut[], shells = false): Promise<EachResult> {
+  return invoke<EachResult>("export_each", encodeBundle({ path, format, replace, shells }, outMeshes(meshes)));
+}
+
+/** Writes the project as the next autosave, into tricky3D's own folder (src-tauri/src/autosave.rs). */
+export async function autosaveProject(platform: Vec3, meshes: MeshOut[]): Promise<void> {
+  await invoke("autosave_write", encodeBundle({ platform }, outMeshes(meshes)));
+}
+
+/** The autosave a crashed run left: its id and when it was written (ms since 1970). */
+export interface Recovery {
+  id: string;
+  savedAt: number;
+}
+
+export function autosaveRecovery(): Promise<Recovery | null> {
+  return invoke<Recovery | null>("autosave_recovery");
+}
+
+/** Reads autosave `id` as a project. */
+export async function openAutosave(id: string, onProgress?: (p: ImportProgress) => void): Promise<ProjectResult> {
+  const buffer = await invoke<ArrayBuffer>("autosave_restore", { id, onProgress: progressChannel(onProgress) });
+  const { meta, meshes } = loadedMeshes(buffer);
+  return {
+    platform: (meta.platform as Vec3 | null | undefined) ?? null,
+    warnings: (meta.warnings as string[] | undefined) ?? [],
+    meshes: meshes.map(toLoaded),
+  };
+}
+
+/** The crashed run was dealt with: it is not offered again. */
+export function dismissAutosave(): Promise<void> {
+  return invoke("autosave_dismiss");
+}
+
+/** File › Recent files: a file opened, imported or saved, as Rust keeps them (src-tauri/src/recent.rs). */
+export interface RecentFile {
+  path: string;
+  kind: "project" | "mesh";
+}
+
+/** The recent files, newest first; Rust drops the ones that are gone. */
+export function recentFiles(): Promise<RecentFile[]> {
+  return invoke<RecentFile[]>("recent_list");
+}
+
+/** Lets the window read a recent file again; rejects with a sentence when it is gone. */
+export function grantRecent(path: string): Promise<RecentFile["kind"]> {
+  return invoke<RecentFile["kind"]>("recent_open", { path });
 }
 
 /** Writes a project 3MF: one object and one build item per part, each where it sits on the platform, plus the platform. */

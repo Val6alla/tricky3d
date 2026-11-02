@@ -12,7 +12,9 @@ import { DialogHost } from "./dialogs/DialogHost";
 import { ArrangeBusy } from "./arrange/ArrangeBusy";
 import { AnalysisBusy } from "./analysis/AnalysisBusy";
 import { ModifyBusy } from "./modify/ModifyBusy";
+import { offerRecovery, startAutosave } from "./io/autosave";
 import { useCloseGuard, useFileDrop } from "./io/hooks";
+import { refreshRecent } from "./io/recent";
 import { useKeyboardShortcuts } from "./keyboard";
 import { startBadgeChecks } from "./repair/badges";
 import { isDirty, useStore } from "./store";
@@ -35,6 +37,12 @@ export default function App() {
   useCloseGuard();
   // The parts tree's damage badges: every part mesh is checked in the background, now and after each change.
   useEffect(() => startBadgeChecks(), []);
+  // Autosave runs while the app does; at start it offers what a crashed run left, and reads the recent files.
+  useEffect(() => startAutosave(), []);
+  useEffect(() => {
+    void offerRecovery();
+    void refreshRecent();
+  }, []);
 
   return (
     <div className="app">

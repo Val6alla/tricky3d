@@ -39,14 +39,19 @@ impl Filter {
 
 /// The mesh format menu, in order. The first entry is the one the dialog starts on.
 pub fn mesh_filters() -> Vec<Filter> {
-    let ids = ImportFormat::ALL.map(ImportFormat::id);
     let mut out = vec![Filter {
         name: "All supported files".into(),
-        extensions: ids.to_vec(),
+        extensions: ImportFormat::ALL
+            .iter()
+            .flat_map(|f| f.extensions().iter().copied())
+            .collect(),
     }];
-    out.extend(ids.iter().map(|&id| Filter {
-        name: format!("{} (*.{id})", id.to_ascii_uppercase()),
-        extensions: vec![id],
+    out.extend(ImportFormat::ALL.iter().map(|f| {
+        let patterns: Vec<String> = f.extensions().iter().map(|e| format!("*.{e}")).collect();
+        Filter {
+            name: format!("{} ({})", f.label(), patterns.join(", ")),
+            extensions: f.extensions().to_vec(),
+        }
     }));
     out.push(Filter {
         name: "All files".into(),
@@ -180,6 +185,10 @@ mod tests {
                 "3MF (*.3mf)",
                 "AMF (*.amf)",
                 "OFF (*.off)",
+                "VRML (*.wrl, *.vrml, *.wrz, *.x3dv, *.x3dvz)",
+                "X3D (*.x3d, *.x3dz)",
+                "3DS (*.3ds)",
+                "GTS (*.gts)",
                 "All files",
             ]
         );
@@ -197,6 +206,11 @@ mod tests {
             "b.PLY",
             "c.aMf",
             "d.OFF",
+            "e.WRL",
+            "f.x3d",
+            "g.3DS",
+            "h.gts",
+            "i.wrz",
             "/Users/пользователь/Модели 3D/деталь й.STL",
         ] {
             assert!(all.accepts(Path::new(name)), "{name}");

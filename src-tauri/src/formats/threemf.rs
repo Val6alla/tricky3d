@@ -51,6 +51,8 @@ pub struct Item {
 #[derive(Debug)]
 pub struct Package {
     pub items: Vec<Item>,
+    /// Millimetres per unit of the file (millimetres when it names none, as 3MF says).
+    pub unit: f64,
     /// Model-level `<metadata>` of the root model.
     pub metadata: Metadata,
     pub warnings: Vec<String>,
@@ -66,13 +68,15 @@ impl Package {
                 name: item.object_name,
                 matrix: Some(item.matrix),
                 mesh: item.mesh,
+                ..Object::default()
             })
             .collect();
         Loaded {
             objects,
             object_count,
-            splittable: false,
+            splittable: object_count > 1,
             warnings: self.warnings,
+            unit: Some(self.unit),
         }
     }
 
@@ -186,6 +190,7 @@ pub fn read(bytes: &[u8], progress: &mut Progress) -> Result<Package, String> {
     }
     Ok(Package {
         items,
+        unit: scale,
         metadata: root_model.metadata.clone(),
         warnings,
     })

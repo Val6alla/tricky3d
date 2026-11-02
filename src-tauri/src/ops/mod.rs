@@ -3,6 +3,7 @@
 
 pub(crate) mod collapse;
 pub mod cut;
+pub mod hollow;
 pub mod shell;
 pub mod shells;
 

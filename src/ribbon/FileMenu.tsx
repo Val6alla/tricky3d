@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { refreshRecent } from "../io/recent";
 import { fileMenuEntries } from "../menus/entries";
 import { Menu } from "../menus/Menu";
 
@@ -15,6 +16,8 @@ export function FileMenu() {
         aria-expanded={menuAt !== null}
         onClick={(e) => {
           const el = e.currentTarget;
+          // Recent files' submenu shows the list as Rust has it now.
+          if (!menuAt) void refreshRecent();
           setMenuAt((open) => (open ? null : el));
         }}
       >

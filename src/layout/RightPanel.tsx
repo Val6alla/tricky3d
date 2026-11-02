@@ -7,6 +7,7 @@ import { useLibrary } from "../library/store";
 import { useLabel } from "../label/store";
 import { useMeasure } from "../measure/store";
 import { useModify } from "../modify/session";
+import { useHollow } from "../hollow/session";
 import { useRepair } from "../repair/store";
 import { useStore } from "../store";
 import { useUi, type PanelSection } from "../ui";
@@ -26,6 +27,7 @@ const LabelPanel = lazy(() => import("../label/LabelPanel").then((m) => ({ defau
 const AnalysisPanel = lazy(() => import("../analysis/AnalysisPanel").then((m) => ({ default: m.AnalysisPanel })));
 const CollisionPanel = lazy(() => import("../analysis/CollisionPanel").then((m) => ({ default: m.CollisionPanel })));
 const ManipulatePanel = lazy(() => import("../modify/ManipulatePanel").then((m) => ({ default: m.ManipulatePanel })));
+const HollowPanel = lazy(() => import("../hollow/HollowPanel").then((m) => ({ default: m.HollowPanel })));
 
 export const RIGHT_PANEL_SIZE: PanelSize = { storageKey: "tricky3d.rightPanelWidth", min: 200, max: 480, initial: 280 };
 
@@ -62,10 +64,13 @@ export function RightPanel() {
   const analysisOpen = useStore((s) => shownAnalysis(shown, s.parts) !== null);
   const collisionsOpen = useCollisions((c) => c.open);
   const modifyOpen = useModify((m) => m.session !== null);
+  const hollowOpen = useHollow((h) => h.session !== null);
   // Manipulate mesh opened in repair mode stands in for the repair tabs until it closes.
   const mode = modifyOpen
     ? "modify"
-    : repairing
+    : hollowOpen
+      ? "hollow"
+      : repairing
     ? "repair"
     : booleanOpen
       ? "boolean"
@@ -147,6 +152,8 @@ export function RightPanel() {
         <Suspense fallback={null}>
           {mode === "modify" ? (
             <ManipulatePanel />
+          ) : mode === "hollow" ? (
+            <HollowPanel />
           ) : mode === "repair" ? (
             <RepairPanel />
           ) : mode === "boolean" ? (

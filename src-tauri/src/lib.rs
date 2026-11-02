@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod arrange;
+pub mod autosave;
 pub mod bundle;
 mod commands;
 pub mod formats;
@@ -16,6 +17,7 @@ pub mod ops;
 mod power;
 pub mod progress;
 pub mod project;
+pub mod recent;
 pub mod repair;
 mod save_dialog;
 pub mod stats;
@@ -71,7 +73,6 @@ fn on_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     }
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn log_error(message: &str) {
     eprintln!("tricky3d: {message}");
 }
@@ -100,6 +101,7 @@ pub fn run() {
         .manage(CutCache::default())
         .manage(measure::MeasureCache::default())
         .manage(jobs::Fonts::default())
+        .manage(jobs::HollowCache::default())
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::import_mesh,
@@ -150,7 +152,31 @@ pub fn run() {
             commands::shell_generate,
             commands::shell_estimate,
             commands::export_text,
-        ]);
+            commands::recent_list,
+            commands::recent_open,
+            commands::autosave_write,
+            commands::autosave_recovery,
+            commands::autosave_restore,
+            commands::autosave_dismiss,
+            commands::hollow_preview,
+            commands::hollow_holes,
+            commands::hollow_apply,
+            commands::hollow_close,
+        ])
+        .setup(|app| {
+            // This run's autosave session, before the window asks whether the last one crashed.
+            let session = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|dir| {
+                    autosave::Session::start(&dir.join("autosave")).map_err(|e| e.to_string())
+                })
+                .map_err(|e| log_error(&format!("autosave is off: {e}")))
+                .ok();
+            app.manage(commands::AutosaveState(std::sync::Mutex::new(session)));
+            Ok(())
+        });
     #[cfg(target_os = "macos")]
     let builder = builder.menu(macos_menu).on_menu_event(on_menu_event);
     let app = builder
@@ -158,5 +184,13 @@ pub fn run() {
         .expect("error while building tauri application");
     // The window opens once the app runs, so the old app's settings are in place before it reads them.
     migrate::from_old_name(app.handle());
-    app.run(|_, _| {});
+    app.run(|handle, event| {
+        // A normal end: this run's autosave lock goes, so the next start offers nothing.
+        if let tauri::RunEvent::Exit = event
+            && let Some(state) = handle.try_state::<commands::AutosaveState>()
+            && let Some(mut session) = state.0.lock().unwrap_or_else(|p| p.into_inner()).take()
+        {
+            session.end();
+        }
+    });
 }

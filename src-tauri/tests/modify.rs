@@ -190,7 +190,9 @@ fn a_cancel_before_or_during_the_run_leaves_nothing_behind() {
 ///   TRICKY3D_MODEL=path TRICKY3D_TOOL=reduce|smooth|remesh [TRICKY3D_REPAIR=extended]
 ///   cargo test --release --test modify big_model_report -- --ignored --nocapture
 /// With TRICKY3D_MODEL=sphere it makes a sphere of about a million triangles instead and checks
-/// the reduction to a tenth against mesh compare.
+/// the reduction to a tenth against mesh compare. TRICKY3D_CACHE=file keeps the repaired part in
+/// that file (positions and indices as they are in memory), so later runs skip the repair and the
+/// tool gets the whole time limit. Each step's start is printed, in seconds from the tool's start.
 #[test]
 #[ignore = "needs a big model; run through scripts/corpus/capped.ps1"]
 fn big_model_report() {
@@ -216,7 +218,17 @@ fn big_model_report() {
         mesh.triangle_count(),
         started.elapsed().as_secs_f64()
     );
+    let cache = std::env::var("TRICKY3D_CACHE").ok();
+    let cached = cache.as_deref().and_then(read_cache);
     let mesh = match std::env::var("TRICKY3D_REPAIR").as_deref() {
+        Ok("extended") if cached.is_some() => {
+            let mesh = cached.unwrap();
+            println!(
+                "extended repair: {} triangles from the cache",
+                mesh.triangle_count()
+            );
+            mesh
+        }
         Ok("extended") => {
             let t = Instant::now();
             let repaired = repair_extended(&mesh);
@@ -225,6 +237,9 @@ fn big_model_report() {
                 repaired.triangle_count(),
                 t.elapsed().as_secs_f64()
             );
+            if let Some(path) = &cache {
+                write_cache(path, &repaired);
+            }
             repaired
         }
         _ => mesh,
@@ -241,7 +256,18 @@ fn big_model_report() {
         other => remesh_settings(other, &mesh),
     };
     let t = Instant::now();
-    let reply = run(request(1, settings, &mesh, &[]), &jobs);
+    let mut stage: Option<String> = None;
+    let reply = jobs::modify_run(request(1, settings, &mesh, &[]), &jobs, &mut |p| {
+        if p.stage != stage {
+            stage = p.stage.clone();
+            println!(
+                "  {:>7.2} s  {}",
+                t.elapsed().as_secs_f64(),
+                stage.as_deref().unwrap_or("-")
+            );
+        }
+    })
+    .map(|bytes| decode(&bytes).unwrap());
     let seconds = t.elapsed().as_secs_f64();
     match reply {
         Ok(reply) => {
@@ -273,6 +299,38 @@ fn remesh_settings(method: &str, mesh: &Mesh) -> Value {
     json!({"tool": "remesh", "method": method, "edge": edge, "largeEdge": 4.0 * edge,
            "smoothing": 0.0, "keepEdges": true, "edgeAngle": 40.0, "fast": false,
            "selectedOnly": false})
+}
+
+/// A part kept by `write_cache`, if the file is there and whole.
+fn read_cache(path: &str) -> Option<Mesh> {
+    let bytes = std::fs::read(path).ok()?;
+    let word = |i: usize| -> Option<u32> {
+        Some(u32::from_le_bytes(
+            bytes.get(4 * i..4 * i + 4)?.try_into().ok()?,
+        ))
+    };
+    let (np, ni) = (word(0)? as usize, word(1)? as usize);
+    if bytes.len() != 4 * (2 + np + ni) {
+        return None;
+    }
+    let positions = (0..np)
+        .map(|i| f32::from_bits(word(2 + i).unwrap()))
+        .collect();
+    let indices = (0..ni).map(|i| word(2 + np + i).unwrap()).collect();
+    Some(Mesh { positions, indices })
+}
+
+fn write_cache(path: &str, mesh: &Mesh) {
+    let mut bytes = Vec::with_capacity(4 * (2 + mesh.positions.len() + mesh.indices.len()));
+    bytes.extend((mesh.positions.len() as u32).to_le_bytes());
+    bytes.extend((mesh.indices.len() as u32).to_le_bytes());
+    mesh.positions
+        .iter()
+        .for_each(|x| bytes.extend(x.to_bits().to_le_bytes()));
+    mesh.indices
+        .iter()
+        .for_each(|x| bytes.extend(x.to_le_bytes()));
+    std::fs::write(path, bytes).expect("write the cache");
 }
 
 /// The part after Extended repair, run as the window runs it (src-tauri/tests/shell_models.rs).

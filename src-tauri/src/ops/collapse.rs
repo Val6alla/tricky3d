@@ -8,8 +8,9 @@
 //! same vertex, those are applied, and only the edges round them are checked again. Two picked
 //! collapses share no vertex of their stars, so each one's checks still hold when both are
 //! applied: a collapse only changes its own star's triangles, its own vertices' neighbours and
-//! one position. With `ordered` the round takes the cheaper half of the candidates first, so the
-//! mesh is reduced evenly; without, it takes every candidate it can in mesh order (Fast mode).
+//! one position. With `ordered` and `half` the round takes the cheaper half of the candidates first,
+//! so the mesh is reduced evenly; with `ordered` alone it takes every candidate it can, cheapest
+//! first where two touch (remeshing); without, every candidate it can in mesh order (Fast mode).
 
 use rayon::prelude::*;
 
@@ -569,6 +570,8 @@ pub(crate) trait Rules: Sync {
     fn price(&self, work: &Work, q: &[Quadric], u: u32, v: u32) -> Option<f64>;
 
     /// The collapse of a priced edge if it passes every check: run on the edges a round picks.
+    /// A plan it returns was checked with `linked(work, plan.u, plan.v, k)` last, which leaves the
+    /// edge's two triangles in `k.shared` (`collapse_serial` collapses through them).
     fn plan(&self, work: &Work, q: &[Quadric], u: u32, v: u32, k: &mut Scratch) -> Option<Plan>;
 
     /// Called once per round with the plans that passed, before they are applied (the work is
@@ -581,6 +584,11 @@ pub(crate) trait Rules: Sync {
 pub(crate) struct Rounds {
     /// Cheapest first (even reduction); else mesh order (Fast mode).
     pub ordered: bool,
+    /// With `ordered`, a round takes only the cheaper half of the candidates, so a reduction to a
+    /// target takes the cheapest collapses of the whole part first; without, it takes every
+    /// candidate it can, cheapest first where two touch (Uniform and Adaptive remeshing, which
+    /// collapse every edge that is too short: far fewer rounds).
+    pub half: bool,
     /// Stop once this few triangles are left (0: as long as any collapse is allowed).
     pub target: usize,
 }
@@ -634,9 +642,9 @@ pub(crate) fn collapse_rounds<R: Rules>(
         } else {
             priced.par_sort_unstable_by_key(|p| (p.u, p.v));
         }
-        // The cheaper half (all of them in Fast mode), as long as no two touch the same vertex
-        // and the target is not passed.
-        let limit = if how.ordered {
+        // The cheaper half (all of them in Fast mode, or without `half`), as long as no two touch
+        // the same vertex and the target is not passed.
+        let limit = if how.ordered && how.half {
             priced.len().div_ceil(2)
         } else {
             priced.len()
@@ -645,6 +653,11 @@ pub(crate) fn collapse_rounds<R: Rules>(
         let mut kept: Vec<Priced> = Vec::new();
         for (i, p) in priced.into_iter().enumerate() {
             if i >= limit || work.live - 2 * picked.len().min(work.live / 2) <= how.target {
+                kept.push(p);
+                continue;
+            }
+            // The ends are in the star: a quick look before the whole star is gathered.
+            if picked_in[p.u as usize] == round || picked_in[p.v as usize] == round {
                 kept.push(p);
                 continue;
             }
@@ -771,9 +784,20 @@ pub(crate) fn collapse_serial<R: Rules>(
 ) -> RepairResult<()> {
     use std::collections::BinaryHeap;
     let mut version = vec![0u32; work.pos.len()];
+    // Every edge priced on all cores, then queued in mesh order, as one at a time would queue them.
+    let edges = work.edges();
+    let prices: Vec<Option<f64>> = {
+        let (w, qs, r): (&Work, &[Quadric], &R) = (work, q, rules);
+        edges
+            .par_iter()
+            .with_min_len(4096)
+            .map(|&[u, v]| r.price(w, qs, u, v))
+            .collect()
+    };
+    control.check()?;
     let mut heap = BinaryHeap::new();
-    for [u, v] in work.edges() {
-        if let Some(cost) = rules.price(work, q, u, v) {
+    for ([u, v], price) in edges.into_iter().zip(prices) {
+        if let Some(cost) = price {
             heap.push(Candidate {
                 cost,
                 ends: [u, v],
@@ -800,12 +824,12 @@ pub(crate) fn collapse_serial<R: Rules>(
         {
             continue;
         }
+        // `plan` checked the edge with `linked` on the mesh as it is, which left the edge's two
+        // triangles in `k` (see `Rules::plan`).
         let Some(p) = rules.plan(work, q, u, v, &mut k) else {
             continue;
         };
-        if !linked(work, p.u, p.v, &mut k) {
-            continue;
-        }
+        debug_assert!([p.u, p.v] == [u, v] || [p.v, p.u] == [u, v]);
         rules.before_apply(work, &[p]);
         let shared = k.shared;
         collapse(work, p.u, p.v, p.x, &shared);
