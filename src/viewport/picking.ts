@@ -6,6 +6,7 @@ import { useBoolean } from "../boolean/store";
 import { IS_MAC } from "../platform";
 import { isMeasureOpen, measureClick, type MeasureHit } from "../measure/session";
 import { isLabelOpen, labelClick } from "../label/session";
+import { addHoleAt, isHollowOpen, selectHole } from "../hollow/session";
 import { layFlatAt } from "../arrange/session";
 import { isRepairing, selectAt, selectNone, selectTriangles } from "../repair/session";
 import { useRepair } from "../repair/store";
@@ -176,6 +177,15 @@ export function attachPicking(
       if (e.button === 0 && !menu) labelClick(viewport.surfaceAt(e.clientX, e.clientY));
       return;
     }
+    // Hollow: a click on the part's outside adds a drain hole there; elsewhere it drops the hole selection.
+    if (isHollowOpen()) {
+      if (e.button === 0 && !menu) {
+        const hit = viewport.surfaceAt(e.clientX, e.clientY);
+        if (hit) addHoleAt(hit);
+        else selectHole(null);
+      }
+      return;
+    }
     // Mesh compare's Add and Remove measure point take left clicks.
     if (e.button === 0 && !menu && probeClick(e.clientX, e.clientY)) return;
     if (isMeasureOpen()) {
@@ -210,7 +220,7 @@ export function attachPicking(
    */
   function boxStartsAt(e: PointerEvent): boolean {
     if (isBooleanOpen()) return useBoolean.getState().tool === "zoom-area";
-    if (isMeasureOpen() || isLabelOpen()) return false;
+    if (isMeasureOpen() || isLabelOpen() || isHollowOpen()) return false;
     if (isRepairing() && useRepair.getState().editTool !== null) return false;
     if (isRepairing() && useRepair.getState().selectTool === "area") return true;
     return emptyAt(e);

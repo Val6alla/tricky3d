@@ -16,13 +16,17 @@ use tauri::Window;
 use crate::open_dialog::Filter;
 
 /// Every format Export writes, in the order the dialog lists them: its extension and its name.
-pub const EXPORT_TYPES: [(&str, &str); 6] = [
+pub const EXPORT_TYPES: [(&str, &str); 10] = [
     ("stl", "STL"),
     ("3mf", "3MF"),
     ("obj", "OBJ"),
     ("ply", "PLY"),
     ("amf", "AMF"),
     ("off", "OFF"),
+    ("wrl", "VRML"),
+    ("x3d", "X3D"),
+    ("3ds", "3DS"),
+    ("gts", "GTS"),
 ];
 
 /// What the dialog shows.
@@ -273,7 +277,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_type_list_is_stl_3mf_obj_ply_amf_off() {
+    fn the_type_list_is_every_format_written() {
         let request = export_request("Export".into(), None, None, "obj");
         let names: Vec<&str> = request.types.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(
@@ -284,7 +288,11 @@ mod tests {
                 "OBJ (*.obj)",
                 "PLY (*.ply)",
                 "AMF (*.amf)",
-                "OFF (*.off)"
+                "OFF (*.off)",
+                "VRML (*.wrl)",
+                "X3D (*.x3d)",
+                "3DS (*.3ds)",
+                "GTS (*.gts)"
             ]
         );
         let exts: Vec<&str> = request.types.iter().map(|f| f.extensions[0]).collect();
@@ -300,6 +308,8 @@ mod tests {
             ("ply", 3),
             ("amf", 4),
             ("off", 5),
+            ("WRL", 6),
+            ("gts", 9),
             ("step", 0),
             ("", 0),
         ] {

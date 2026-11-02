@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { useStore, type ImportPlacement } from "../store";
+import { AUTOSAVE_CHOICES, useStore, type AutosaveMinutes, type ImportPlacement } from "../store";
 import { Dialog } from "./Dialog";
 
 const PLACEMENT_OPTIONS: { value: ImportPlacement; label: string }[] = [
@@ -13,8 +13,11 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   const setHideSoon = useStore((s) => s.setHideSoon);
   const importPlacement = useStore((s) => s.importPlacement);
   const setImportPlacement = useStore((s) => s.setImportPlacement);
+  const autosave = useStore((s) => s.autosaveMinutes);
+  const setAutosave = useStore((s) => s.setAutosaveMinutes);
   const helpId = useId();
   const placementHelpId = useId();
+  const autosaveHelpId = useId();
 
   return (
     <Dialog title="Settings" onClose={onClose}>
@@ -52,7 +55,30 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             ))}
           </select>
           <span id={placementHelpId} className="dlg-help">
-            Placing rests each imported file on the platform, centred.
+            Placing rests each imported file on the platform, centred. File › Import options sets the unit and what a
+            file with several objects becomes.
+          </span>
+        </label>
+      </section>
+      <section className="dlg-section">
+        <h3 className="dlg-section-title">Saving</h3>
+        <label className="dlg-field">
+          <span className="dlg-label">Save the project automatically</span>
+          <select
+            className="dlg-input dlg-select"
+            value={autosave}
+            aria-describedby={autosaveHelpId}
+            onChange={(e) => setAutosave(AUTOSAVE_CHOICES.find((m) => m === Number(e.target.value)) ?? 5)}
+          >
+            {AUTOSAVE_CHOICES.map((m: AutosaveMinutes) => (
+              <option key={m} value={m}>
+                {m === 0 ? "Off" : `Every ${m} minutes`}
+              </option>
+            ))}
+          </select>
+          <span id={autosaveHelpId} className="dlg-help">
+            Into tricky3D's own folder, never over your file; the last three are kept. After a crash, tricky3D offers
+            the latest one when it starts.
           </span>
         </label>
       </section>

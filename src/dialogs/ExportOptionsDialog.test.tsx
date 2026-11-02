@@ -27,7 +27,7 @@ describe("ExportOptionsDialog", () => {
     ]);
   });
 
-  it("adds one file or one file per part for several parts, binary STL and one file by default", () => {
+  it("adds one file, one file per part or one file per shell for several parts, binary STL and one file by default", () => {
     const html = render(3, { stl: "binary", parts: "one-file" });
     expect(html).toContain("Export 3 parts");
     expect(choices(html)).toEqual([
@@ -35,10 +35,29 @@ describe("ExportOptionsDialog", () => {
       ["ASCII", false],
       ["One file with all parts", true],
       ["One file per part", false],
+      ["One file per shell", false],
     ]);
     expect(choices(render(3, { stl: "binary", parts: "per-part" })).slice(2)).toEqual([
       ["One file with all parts", false],
       ["One file per part", true],
+      ["One file per shell", false],
     ]);
+    expect(choices(render(3, { stl: "binary", parts: "per-shell" })).slice(2)).toEqual([
+      ["One file with all parts", false],
+      ["One file per part", false],
+      ["One file per shell", true],
+    ]);
+  });
+
+  it("offers one file per shell for one part made of loose pieces", () => {
+    const html = renderToStaticMarkup(
+      <ExportOptionsDialog count={1} shells={3} options={{ stl: "binary", parts: "one-file" }} resolve={() => {}} onClose={() => {}} />,
+    );
+    expect(choices(html).slice(2)).toEqual([
+      ["One file with all parts", true],
+      ["One file per shell", false],
+    ]);
+    // One part of one piece has nothing to choose.
+    expect(choices(render(1, { stl: "binary", parts: "per-shell" }))).toHaveLength(2);
   });
 });

@@ -15,7 +15,7 @@
 //!   collapsing edges onto the offset surface's own tangent planes (src/ops/shell/tidy.rs).
 
 pub(crate) mod field;
-mod tidy;
+pub(crate) mod tidy;
 
 use serde::{Deserialize, Serialize};
 
@@ -144,7 +144,7 @@ pub fn generate(mesh: &Mesh, s: &ShellSettings, control: &mut Control) -> Repair
         cell: h,
         offset,
         features: s.kind.improved() && !s.smooth,
-        smooth: s.smooth,
+        smooth: if s.smooth { tidy::SMOOTH_PAIRS } else { 0 },
         longest: if s.kind.hollow() { t } else { f64::INFINITY },
     };
     let tidied = tidy::tidy(made, &surface, &settings, &mut control.sub(0.75, 0.85))?;
@@ -197,6 +197,99 @@ pub fn generate(mesh: &Mesh, s: &ShellSettings, control: &mut Control) -> Repair
         mesh: Some(result),
         warnings,
     })
+}
+
+/// The cavity Hollow makes (src/ops/hollow.rs), by Hollow part's method: the inner offset surface
+/// at `thickness` on a grid of step `accuracy`, tidied and smoothed with `smooth` pairs of steps,
+/// facing out of the cavity solid (as Inner offset makes it); None when no cavity fits. Also the
+/// walls too thin to hollow, with Generate shell's sentence about them. Fails with a sentence when
+/// the part with this cavity would not be closed, oriented and free of new crossings.
+pub(crate) fn cavity(
+    mesh: &Mesh,
+    thickness: f64,
+    accuracy: f64,
+    smooth: usize,
+    control: &mut Control,
+) -> RepairResult<Cavity> {
+    let s = ShellSettings {
+        kind: ShellKind::HollowPart,
+        thickness,
+        accuracy,
+        smooth: smooth > 0,
+    };
+    if let Some(problem) = settings_problem(&s) {
+        return Err(RepairError::Failed(problem));
+    }
+    let (t, h) = (thickness, accuracy);
+    let offset = Offset::Inner(t);
+    let surface = Surface::new(mesh);
+    let Some(bounds) = mesh_bounds(mesh) else {
+        return Ok(Cavity::default());
+    };
+    if grid_points(&bounds, h) > MAX_POINTS {
+        return Err(RepairError::Failed(too_fine(h)));
+    }
+    let made = offset_surface(
+        &surface,
+        &bounds,
+        offset,
+        h,
+        false,
+        &mut control.sub(0.0, 0.7),
+    )?;
+    let Some(made) = made else {
+        return Ok(Cavity {
+            mesh: None,
+            thin: None,
+            warnings: vec![nothing_left(ShellKind::HollowPart, t)],
+        });
+    };
+    control.stage("Tidying the mesh");
+    let settings = tidy::Settings {
+        cell: h,
+        offset,
+        features: false,
+        smooth,
+        longest: t,
+    };
+    let tidied = tidy::tidy(made, &surface, &settings, &mut control.sub(0.7, 0.85))?;
+    let mut warnings = Vec::new();
+    if tidied.untouched && smooth > 0 {
+        warnings.push(
+            "The cavity could not be smoothed without its triangles crossing, so it is left as \
+             built."
+                .into(),
+        );
+    }
+    let made = tidied.mesh;
+    let thin = thin_walls(&surface, &made, t, h, control.cancel_flag()).map(|thin| {
+        let text = thin_message(ShellKind::HollowPart, t, &thin, &bounds_of(&surface));
+        (thin, text)
+    });
+    control.check()?;
+    control.stage("Checking the result");
+    let whole = super::concat(&[mesh, &turned(made.clone())])
+        .map_err(|reason| RepairError::Failed(format!("Could not hollow the part: {reason}.")))?;
+    let checked = verify(&whole, mesh.triangle_count(), &mut control.sub(0.85, 1.0))?;
+    if let Some(problem) = checked.problem() {
+        return Err(RepairError::Failed(problem));
+    }
+    control.progress(1.0);
+    Ok(Cavity {
+        mesh: Some(made),
+        thin,
+        warnings,
+    })
+}
+
+/// What `cavity` made.
+#[derive(Default)]
+pub(crate) struct Cavity {
+    /// The cavity's surface, facing out of the cavity solid; None when no cavity fits.
+    pub mesh: Option<Mesh>,
+    /// Where the walls are too thin to hollow, and the sentence saying so.
+    pub thin: Option<(ThinWalls, String)>,
+    pub warnings: Vec<String>,
 }
 
 /// The offset surface, facing out of the offset solid; None when the solid is empty. Also Modify's
@@ -286,7 +379,7 @@ fn root(f: impl Fn(f64) -> f64, f0: f64, f1: f64, tolerance: f64) -> f64 {
 }
 
 /// The mesh with every triangle turned the other way.
-fn turned(mut mesh: Mesh) -> Mesh {
+pub(crate) fn turned(mut mesh: Mesh) -> Mesh {
     for t in mesh.indices.as_chunks_mut::<3>().0 {
         t.swap(1, 2);
     }
@@ -505,7 +598,7 @@ pub(crate) struct Verified {
 }
 
 impl Verified {
-    fn problem(&self) -> Option<String> {
+    pub(crate) fn problem(&self) -> Option<String> {
         let mut what = Vec::new();
         if !self.closed {
             what.push("is not closed");

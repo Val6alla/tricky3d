@@ -32,6 +32,7 @@ const ImportObjectsDialog = onDemand(() => import("./ImportObjectsDialog").then(
 const ScaleMetresDialog = onDemand(() => import("./ScaleMetresDialog").then((m) => m.ScaleMetresDialog));
 const SplitManyDialog = onDemand(() => import("./SplitManyDialog").then((m) => m.SplitManyDialog));
 const ExportOptionsDialog = onDemand(() => import("./ExportOptionsDialog").then((m) => m.ExportOptionsDialog));
+const ImportOptionsDialog = onDemand(() => import("./ImportOptionsDialog").then((m) => m.ImportOptionsDialog));
 const ChoosePartDialog = onDemand(() => import("../repair/dialogs/ChoosePartDialog").then((m) => m.ChoosePartDialog));
 const ApplyRepairDialog = onDemand(() => import("../repair/dialogs/ApplyRepairDialog").then((m) => m.ApplyRepairDialog));
 const ScriptPickerDialog = onDemand(() => import("../repair/dialogs/ScriptPickerDialog").then((m) => m.ScriptPickerDialog));
@@ -101,7 +102,9 @@ function OpenDialog({ dialog }: { dialog: Exclude<Dialog, null> }) {
     case "split-many":
       return <SplitManyDialog count={dialog.count} partName={dialog.partName} resolve={dialog.resolve} onClose={close} />;
     case "export-options":
-      return <ExportOptionsDialog count={dialog.count} options={dialog.options} resolve={dialog.resolve} onClose={close} />;
+      return <ExportOptionsDialog count={dialog.count} shells={dialog.shells} options={dialog.options} resolve={dialog.resolve} onClose={close} />;
+    case "import-options":
+      return <ImportOptionsDialog onClose={close} />;
     case "repair-choose-part":
       // Keyed so opening it for other parts starts with the first of them picked.
       return <ChoosePartDialog key={dialog.ids.join()} ids={dialog.ids} onClose={close} />;

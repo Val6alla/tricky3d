@@ -3,7 +3,9 @@
 mod common;
 
 use common::*;
-use tricky3d_lib::formats::{ExportFormat, ImportFormat, NamedMesh, import_file, write_export};
+use tricky3d_lib::formats::{
+    ExportFormat, ImportFormat, ImportOptions, NamedMesh, import_file, import_with, write_export,
+};
 use tricky3d_lib::mesh::{IDENTITY, bounds, stats};
 use tricky3d_lib::progress::Progress;
 
@@ -11,6 +13,120 @@ const INCH: f32 = 25.4;
 
 fn import(path: &std::path::Path, merge: bool) -> tricky3d_lib::formats::Imported {
     import_file(path, merge, &mut Progress::silent()).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// Each new format reads the same 10 × 20 × 30 mm box at (5, 0, 0): 12 triangles, 8 points,
+/// 6000 mm³, facing out, with the colour the file gives it.
+#[test]
+fn vrml_x3d_3ds_and_gts_read_a_known_box() {
+    for (file, format, color) in [
+        ("box_10x20x30.wrl", ImportFormat::Vrml, Some([204, 51, 26])),
+        ("box_10x20x30.wrz", ImportFormat::Vrml, Some([204, 51, 26])),
+        ("box_10x20x30.x3d", ImportFormat::X3d, Some([26, 51, 204])),
+        ("box_10x20x30.3ds", ImportFormat::Tds, Some([0, 200, 0])),
+        ("box_10x20x30.gts", ImportFormat::Gts, None),
+    ] {
+        let got = import(&fixture(file), false);
+        assert_eq!(got.format, format, "{file}");
+        assert_eq!(got.parts.len(), 1, "{file}");
+        let part = &got.parts[0];
+        assert_eq!(part.name, "box_10x20x30", "{file}");
+        let s = stats(&part.mesh);
+        assert_eq!(
+            (s.triangles, s.vertices, s.open_edges),
+            (12, 8, 0),
+            "{file}"
+        );
+        assert_close(s.volume, 6000.0, 1e-6, file);
+        assert_eq!(
+            bounds(&part.mesh),
+            Some([[5.0, 0.0, 0.0], [15.0, 20.0, 30.0]]),
+            "{file}"
+        );
+        assert_eq!(part.color, color, "{file}");
+        assert!(part.colors.is_none(), "{file}");
+        assert!(got.warnings.is_empty(), "{file}: {:?}", got.warnings);
+    }
+    // X3D names its unit; the others do not.
+    assert_eq!(import(&fixture("box_10x20x30.x3d"), false).unit, Some(1.0));
+    assert_eq!(import(&fixture("box_10x20x30.wrl"), false).unit, None);
+}
+
+/// Import options: a file read in inches is 25.4 times larger; a file that names its own unit is
+/// read in the unit asked for instead; centimetres, metres and feet scale by 10, 1000 and 304.8.
+#[test]
+fn a_unit_asked_for_scales_the_file() {
+    let read = |path: &std::path::Path, units: Option<f64>| {
+        let options = ImportOptions {
+            merge: false,
+            units,
+        };
+        import_with(path, &options, &mut Progress::silent()).unwrap()
+    };
+    let stl = fixture("cube_20mm.stl");
+    let plain = bounds(&read(&stl, None).parts[0].mesh).unwrap();
+    for factor in [25.4, 10.0, 1000.0, 304.8] {
+        let got = read(&stl, Some(factor));
+        assert_eq!(got.unit, Some(factor));
+        let b = bounds(&got.parts[0].mesh).unwrap();
+        for k in 0..3 {
+            let want = plain[1][k] as f64 * factor;
+            assert!(
+                (b[1][k] as f64 - want).abs() <= want * 1e-6,
+                "{factor}: {b:?}"
+            );
+        }
+        assert_close(
+            stats(&got.parts[0].mesh).volume,
+            stats(&read(&stl, None).parts[0].mesh).volume * factor.powi(3),
+            1e-3 * factor.powi(3),
+            "volume",
+        );
+    }
+    // The AMF says inches: read as millimetres instead, every length is 25.4 times smaller.
+    let amf = fixture("two_objects_inch.amf");
+    assert_eq!(read(&amf, None).unit, Some(25.4));
+    let as_mm = read(&amf, Some(1.0));
+    assert_eq!(bounds(&as_mm.parts[0].mesh), Some([[0.0; 3], [1.0; 3]]));
+}
+
+/// Several objects merged into one part (Import options › One part): each where it was, as one
+/// part, with a colour per triangle when the objects had different colours.
+#[test]
+fn several_objects_merge_into_one_part_with_their_colours() {
+    let dir = temp_dir("merge-colours");
+    let path = dir.join("two.wrl");
+    std::fs::write(
+        &path,
+        "#VRML V2.0 utf8
+DEF Red Shape { appearance Appearance { material Material { diffuseColor 1 0 0 } } geometry Box { } }
+DEF Blue Transform { translation 5 0 0 children Shape {
+  appearance Appearance { material Material { diffuseColor 0 0 1 } } geometry Box { } } }",
+    )
+    .unwrap();
+    let apart = import(&path, false);
+    assert!(apart.splittable);
+    assert_eq!(apart.parts.len(), 2);
+    assert_eq!(apart.parts[0].name, "two - Red");
+    assert_eq!(apart.parts[1].color, Some([0, 0, 255]));
+    let one = import(&path, true);
+    assert!(!one.splittable);
+    assert_eq!(one.parts.len(), 1);
+    let part = &one.parts[0];
+    assert_eq!(part.name, "two");
+    assert_eq!(stats(&part.mesh).triangles, 24);
+    assert_eq!(stats(&part.mesh).shells, 2);
+    let colors = part.colors.as_ref().expect("a colour per triangle");
+    assert_eq!(colors.len(), 24 * 3);
+    assert_eq!(&colors[..3], &[255, 0, 0]);
+    assert_eq!(&colors[colors.len() - 3..], &[0, 0, 255]);
+    // A 3MF of two items merges with each item's placement baked in.
+    let amf = import(&fixture("two_objects_inch.amf"), true);
+    assert_eq!(amf.parts.len(), 1);
+    assert_eq!(
+        bounds(&amf.parts[0].mesh),
+        Some([[0.0; 3], [3.0 * INCH, INCH, INCH]])
+    );
 }
 
 #[test]

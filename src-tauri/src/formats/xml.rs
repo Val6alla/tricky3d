@@ -1,5 +1,5 @@
-//! Small helpers shared by the XML-based formats (3MF, AMF): text collection, number parsing,
-//! escaping, length units and zip access.
+//! Small helpers shared by the XML-based formats (3MF, AMF, X3D): text collection, number parsing,
+//! escaping, length units, zip access, and gzip (VRML and X3D files are often gzipped).
 
 use std::borrow::Cow;
 use std::io::{Cursor, Read};
@@ -226,6 +226,84 @@ pub fn read_entry(zip: &mut Zip, name: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// The contents of a gzip file (its first member). The deflate stream gets a zip entry's headers
+/// round it and is unpacked as a zip entry, which checks its CRC and keeps the zip limits.
+pub fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let bad = || "its gzip packing is damaged".to_string();
+    if bytes.len() < 18 || bytes[..3] != [0x1f, 0x8b, 8] {
+        return Err(bad());
+    }
+    let flags = bytes[3];
+    let mut at = 10usize;
+    if flags & 4 != 0 {
+        let extra = u16::from_le_bytes([bytes[at], bytes[at + 1]]) as usize;
+        at += 2 + extra;
+    }
+    for flag in [8, 16] {
+        if flags & flag != 0 {
+            while at < bytes.len() && bytes[at] != 0 {
+                at += 1;
+            }
+            at += 1;
+        }
+    }
+    if flags & 2 != 0 {
+        at += 2;
+    }
+    if at + 8 > bytes.len() {
+        return Err(bad());
+    }
+    let end = bytes.len() - 8;
+    let data = &bytes[at..end];
+    let (crc, size) = (&bytes[end..end + 4], &bytes[end + 4..]);
+    let packed = u32::try_from(data.len()).map_err(|_| "it is too large to unpack".to_string())?;
+    let mut zip = Vec::with_capacity(data.len() + 100);
+    // Local header, the data, the central directory with its one entry, and its end.
+    zip.extend(0x0403_4b50u32.to_le_bytes());
+    zip.extend([20, 0, 0, 0, 8, 0, 0, 0, 0x21, 0]);
+    zip.extend(crc);
+    zip.extend(packed.to_le_bytes());
+    zip.extend(size);
+    zip.extend([1, 0, 0, 0, b'x']);
+    zip.extend(data);
+    let central = zip.len() as u32;
+    zip.extend(0x0201_4b50u32.to_le_bytes());
+    zip.extend([20, 0, 20, 0, 0, 0, 8, 0, 0, 0, 0x21, 0]);
+    zip.extend(crc);
+    zip.extend(packed.to_le_bytes());
+    zip.extend(size);
+    zip.extend([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, b'x']);
+    let central_size = zip.len() as u32 - central;
+    zip.extend(0x0605_4b50u32.to_le_bytes());
+    zip.extend([0, 0, 0, 0, 1, 0, 1, 0]);
+    zip.extend(central_size.to_le_bytes());
+    zip.extend(central.to_le_bytes());
+    zip.extend([0, 0]);
+    let mut archive = open_zip(&zip).map_err(|_| bad())?;
+    read_entry(&mut archive, "x").map_err(|_| bad())
+}
+
+/// `bytes` gzipped, for tests: the zip writer's deflate stream with a gzip header and trailer.
+#[cfg(test)]
+pub(crate) fn tests_gzip(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    w.start_file("x", options).unwrap();
+    w.write_all(bytes).unwrap();
+    let zip = w.finish().unwrap().into_inner();
+    let word = |at: usize| u32::from_le_bytes(zip[at..at + 4].try_into().unwrap());
+    let half = |at: usize| u16::from_le_bytes(zip[at..at + 2].try_into().unwrap()) as usize;
+    let (crc, packed) = (word(14), word(18) as usize);
+    let start = 30 + half(26) + half(28);
+    let mut out = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff];
+    out.extend(&zip[start..start + packed]);
+    out.extend(crc.to_le_bytes());
+    out.extend((bytes.len() as u32).to_le_bytes());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -258,6 +336,17 @@ mod tests {
         };
         assert_eq!(attribute(&e, "name").unwrap(), "A & B AB");
         assert_eq!(attribute(&e, "id"), None);
+    }
+
+    #[test]
+    fn gzip_round_trip_and_damage() {
+        let text = b"#VRML V2.0 utf8\nShape { }\n".repeat(50);
+        assert_eq!(gunzip(&tests_gzip(&text)).unwrap(), text);
+        let mut broken = tests_gzip(&text);
+        let n = broken.len();
+        broken[n - 6] ^= 1;
+        assert_eq!(gunzip(&broken).unwrap_err(), "its gzip packing is damaged");
+        assert!(gunzip(b"\x1f\x8b").is_err());
     }
 
     #[test]

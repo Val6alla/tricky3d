@@ -129,6 +129,7 @@ pub fn reduce(
             &mut rules,
             Rounds {
                 ordered: !s.fast,
+                half: true,
                 target,
             },
             &mut part.sub(0.0, 0.85),

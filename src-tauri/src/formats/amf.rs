@@ -202,16 +202,17 @@ fn parse(text: &str, budget: &mut Budget, progress: &mut Progress) -> Result<Loa
         let mesh = weld_indexed(&positions, &o.indices)?;
         out.push(Object {
             name: o.name,
-            matrix: None,
             mesh,
+            ..Object::default()
         });
         progress.report(Stage::Weld, (n + 1) as f64 / object_count as f64);
     }
     Ok(Loaded {
         objects: out,
         object_count,
-        splittable: false,
+        splittable: object_count > 1,
         warnings,
+        unit: Some(scale),
     })
 }
 

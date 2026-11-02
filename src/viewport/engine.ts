@@ -20,7 +20,7 @@ import {
 } from "three";
 import { useBoolean, type BooleanState } from "../boolean/store";
 import { useCut } from "../repair/cut/store";
-import { boundsOf, centreOf, partBounds, unionBounds, type Bounds } from "../mesh";
+import { boundsOf, centreOf, IDENTITY, partBounds, unionBounds, type Bounds } from "../mesh";
 import { IS_MAC } from "../platform";
 import { selectNone, selectTriangles } from "../repair/session";
 import { useRepair, type RepairState } from "../repair/store";
@@ -55,6 +55,8 @@ import { useMeasure } from "../measure/store";
 import { labelWidth, shapeOf } from "../label/session";
 import { useLabel } from "../label/store";
 import { createLabelLayer } from "./labelLayer";
+import { createHollowLayer } from "./hollowLayer";
+import { CAVITY_ID, useHollow } from "../hollow/session";
 import { createAnalysisLayer, type AnalysisView } from "./analysisLayer";
 import { isOutOfDate, shownAnalysis, useAnalysis } from "../analysis/session";
 import { ANALYSIS_COLORS, PART_CLASS } from "../analysis/colors";
@@ -80,6 +82,9 @@ export interface ViewportEngine {
  * parts at least partly inside it, or in repair mode the working copy's triangles facing the camera.
  * dispose() releases everything it created, so React StrictMode can mount it twice.
  */
+/** Hollow's cavity: warm, so it stands out from the see-through part in either theme. */
+const CAVITY_COLOR = "#d98b3a";
+
 export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement): ViewportEngine {
   // Z is up; set before any camera, light or control copies the default.
   Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -128,6 +133,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
   const planePreview = createPlanePreview(theme, requestRender);
   const measure = createMeasureLayer(theme, host);
   const labels = createLabelLayer(theme, host);
+  const hollow = createHollowLayer(theme, host);
   const analysisLayer = createAnalysisLayer(parts);
   // Collision detection: where parts cross (red, drawn over them) and the closest points of parts too close.
   const collisionGroup = new Group();
@@ -152,7 +158,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       target.geometry = geometry;
     }
   }
-  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group, labels.group, analysisLayer.group, collisionGroup);
+  scene.add(parts.group, repair.group, tools.group, platform.group, axes.group, brackets.group, planePreview.group, measure.group, labels.group, hollow.group, analysisLayer.group, collisionGroup);
   renderer.localClippingEnabled = true;
   const clipLayer = createClipLayer(parts, requestRender);
   const gizmo = createGizmo({ scene, camera, canvas, host, orbit: controls, requestRender });
@@ -184,6 +190,7 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     tools.beforeRender(camera, height);
     measure.beforeRender(camera, width, height);
     labels.beforeRender(camera, width, height);
+    hollow.beforeRender(camera, width, height);
     const previewReach = planePreview.reach();
     if (gizmoReach || previewReach) {
       clipSphere.copy(sceneSphere);
@@ -301,6 +308,9 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       return { hidden: target, colors: new Map(), dimOthers: false, pickable: null, keep, wire };
     }
     if (wire) return { ...PLAIN_LOOK, wire };
+    // Hollow: every part see-through, the cavity inside in its own colour; only the part takes clicks (for holes).
+    const hollowSession = useHollow.getState().session;
+    if (hollowSession) return { hidden: null, colors: new Map(), dimOthers: true, pickable: new Set([hollowSession.partId]), keep: new Set([CAVITY_ID]) };
     const session = useBoolean.getState().session;
     if (!session) {
       // An analysis that paints the part draws it itself; the others show it grey, except the standard analysis.
@@ -326,11 +336,18 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     return { hidden: null, colors, dimOthers: true, pickable };
   }
 
+  /** Hollow's cavity as a stand-in part, while the panel shows one. */
+  function cavityPart(): Part | null {
+    const cavity = useHollow.getState().session?.preview?.cavity;
+    if (!cavity) return null;
+    return { id: CAVITY_ID, name: "Cavity", mesh: cavity, matrix: [...IDENTITY], visible: true, transparent: false, locked: true, color: CAVITY_COLOR };
+  }
+
   function syncParts(s: AppState) {
     const result = useBoolean.getState().session?.result;
-    const preview = modifyPreview();
+    const preview = modifyPreview() ?? cavityPart();
     // In Boolean operations the lists, not the selection, decide the colours; in the analysis view the analysis does.
-    const plain = booleanOpen() || analysisView() !== null || preview !== null;
+    const plain = booleanOpen() || analysisView() !== null || preview !== null || useHollow.getState().session !== null;
     const drawn = result ? [...s.parts, result.part] : preview ? [...s.parts, preview] : s.parts;
     parts.sync(drawn, plain ? [] : s.selection, s.view.shading, look());
     analysisLayer.sync(analysisView(), useAnalysis.getState().compare);
@@ -343,11 +360,18 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
    * show as well: its results are for the part where it stood.
    */
   function syncGizmo(s: AppState) {
-    const hidden = repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || analysisView() !== null || modifyOpen();
+    const hidden =
+      repairingId() || booleanOpen() || measureOpen() || useLabel.getState().session !== null || analysisView() !== null || modifyOpen() || useHollow.getState().session !== null;
     gizmo.sync(hidden ? { ...s, selection: [] } : s);
   }
 
   /** Measure mode: the measurements of the shown parts with their results and labels, and the clicks in progress. */
+  /** Hollow: its holes and the thin walls' box. */
+  function syncHollow() {
+    const open = useHollow.getState().session;
+    hollow.sync(open ? { holes: open.holes, selected: open.selected, thin: open.preview?.thin ?? null } : null);
+  }
+
   /** Label generation: the placed labels with their shapes and widths, and which is selected. */
   function syncLabels() {
     const l = useLabel.getState();
@@ -647,6 +671,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
     syncMeasure();
     labels.applyTheme(theme);
     syncLabels();
+    hollow.applyTheme(theme);
+    syncHollow();
     rulers.applyTheme(theme);
     cube.applyTheme(theme);
     requestRender();
@@ -720,6 +746,13 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       syncParts(useStore.getState());
     }
     syncLabels();
+    requestRender();
+  });
+  const unsubscribeHollow = useHollow.subscribe((h, prev) => {
+    if (h.session === prev.session) return;
+    if ((h.session === null) !== (prev.session === null)) syncGizmo(useStore.getState());
+    if (h.session?.preview !== prev.session?.preview || (h.session === null) !== (prev.session === null)) syncParts(useStore.getState());
+    syncHollow();
     requestRender();
   });
   const unsubscribeCollisions = useCollisions.subscribe((c, prev) => {
@@ -798,6 +831,8 @@ export function createViewportEngine(host: HTMLElement, cubeOverlay: HTMLElement
       measure.dispose();
       unsubscribeLabel();
       labels.dispose();
+      unsubscribeHollow();
+      hollow.dispose();
       unsubscribeAnalysis();
       unsubscribeModify();
       analysisLayer.dispose();

@@ -597,6 +597,7 @@ impl Iso<'_> {
             &mut rules,
             Rounds {
                 ordered: true,
+                half: false,
                 target: 0,
             },
             control,

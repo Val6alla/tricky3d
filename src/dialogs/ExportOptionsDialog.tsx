@@ -4,8 +4,10 @@ import { Dialog } from "./Dialog";
 import { answerPrompt } from "./PlacePromptDialog";
 
 export interface ExportOptionsDialogProps {
-  /** How many parts are being exported; "Several parts" only shows for more than one. */
+  /** How many parts are being exported; "Several parts" only shows for more than one, or for loose pieces. */
   count: number;
+  /** How many shells (loose pieces) the parts have in all, when known; more than `count` offers one file per shell. */
+  shells?: number;
   /** The options used last time. */
   options: ExportOptions;
   resolve(answer: ExportOptions | null): void;
@@ -29,7 +31,7 @@ function Choice({ name, checked, label, help, onPick }: { name: string; checked:
  * per part. It opens on the options used last time. Continue goes on to the save dialog; Cancel, Esc or a click
  * outside stops the export.
  */
-export function ExportOptionsDialog({ count, options, resolve, onClose }: ExportOptionsDialogProps) {
+export function ExportOptionsDialog({ count, shells = count, options, resolve, onClose }: ExportOptionsDialogProps) {
   const [stl, setStl] = useState(options.stl);
   const [parts, setParts] = useState(options.parts);
   const stlName = useId();
@@ -53,7 +55,7 @@ export function ExportOptionsDialog({ count, options, resolve, onClose }: Export
           <Choice name={stlName} checked={stl === "ascii"} label="ASCII" help="Plain text you can read, several times larger." onPick={() => setStl("ascii")} />
         </div>
       </section>
-      {count > 1 && (
+      {(count > 1 || shells > count) && (
         <section className="dlg-section" aria-labelledby={partsTitle}>
           <h3 id={partsTitle} className="dlg-section-title">
             Several parts
@@ -66,12 +68,21 @@ export function ExportOptionsDialog({ count, options, resolve, onClose }: Export
               help="The file name and type come from the next dialog."
               onPick={() => setParts("one-file")}
             />
+            {count > 1 && (
+              <Choice
+                name={partsName}
+                checked={parts === "per-part"}
+                label="One file per part"
+                help="Each file is named after its part. In the next dialog, pick the folder and the type."
+                onPick={() => setParts("per-part")}
+              />
+            )}
             <Choice
               name={partsName}
-              checked={parts === "per-part"}
-              label="One file per part"
-              help="Each file is named after its part. In the next dialog, pick the folder and the type."
-              onPick={() => setParts("per-part")}
+              checked={parts === "per-shell"}
+              label="One file per shell"
+              help="Each loose piece of a part gets a file of its own, named after the part with its number."
+              onPick={() => setParts("per-shell")}
             />
           </div>
         </section>

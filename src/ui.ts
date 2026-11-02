@@ -66,7 +66,9 @@ export type Dialog =
   /** Split shells into parts would make `count` parts; `partName` when they all come from one part. */
   | { kind: "split-many"; count: number; partName: string | null; resolve(answer: SplitAnswer | null): void }
   /** Export's options for `count` parts, opened on `options` (the last ones used). */
-  | { kind: "export-options"; count: number; options: ExportOptions; resolve(answer: ExportOptions | null): void }
+  | { kind: "export-options"; count: number; shells?: number; options: ExportOptions; resolve(answer: ExportOptions | null): void }
+  /** File › Import options: the unit files are read in, and what a file with several objects becomes. */
+  | { kind: "import-options" }
   // Repair mode (src/repair/dialogs).
   /** Several parts selected: pick the one to repair. */
   | { kind: "repair-choose-part"; ids: string[] }
